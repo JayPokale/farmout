@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "modelmux",
+  "description": "Delegate Claude Code subtasks to your other AI subscriptions through their official CLIs.",
+  "owner": {
+    "name": "Jay Pokale",
+    "url": "https://github.com/JayPokale"
+  },
+  "plugins": [
+    {
+      "name": "modelmux",
+      "description": "Parallel, read-only-by-default delegation to Antigravity, Codex, a second Claude account or any OpenAI-compatible model.",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}

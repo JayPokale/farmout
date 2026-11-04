@@ -1,0 +1,65 @@
+name: Bug report
+description: Something in modelmux does not work as expected
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: The delegate call or steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+  - type: checkboxes
+    id: workers
+    attributes:
+      label: Workers involved
+      options:
+        - label: antigravity
+        - label: codex
+        - label: claude
+        - label: api
+  - type: textarea
+    id: cli-versions
+    attributes:
+      label: CLI versions
+      placeholder: |
+        agy --version
+        codex --version
+        claude --version
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - Linux
+        - macOS
+        - other
+    validations:
+      required: true
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+    validations:
+      required: true
+  - type: input
+    id: modelmux-version
+    attributes:
+      label: modelmux version or commit
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "Redact paths, tokens and private content before pasting."
+      render: text

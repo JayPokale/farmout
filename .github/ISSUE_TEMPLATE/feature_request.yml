@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest a change to modelmux
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: non-goals
+    attributes:
+      label: Scope
+      options:
+        - label: "This is not one of the non-goals listed in CONTRIBUTING.md"
+          required: true

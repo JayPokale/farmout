@@ -1,0 +1,32 @@
+name: release
+
+# Push a vX.Y.Z tag after bumping the version in server.py and .claude-plugin/plugin.json
+# and moving CHANGELOG's Unreleased notes under "## [X.Y.Z] - date" (see CONTRIBUTING.md).
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - run: python -m unittest discover -s tests
+      - name: Check the tag matches server.py
+        run: |
+          grep -q "\"version\": \"${GITHUB_REF_NAME#v}\"" server.py \
+            || { echo "tag $GITHUB_REF_NAME does not match the version in server.py"; exit 1; }
+      - name: Publish a GitHub Release with this version's CHANGELOG notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          awk -v v="[${GITHUB_REF_NAME#v}]" '/^## \[/ { p = index($0, v); next } p' CHANGELOG.md > notes.md
+          [ -s notes.md ] || { echo "CHANGELOG.md has no section for ${GITHUB_REF_NAME#v}"; exit 1; }
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md

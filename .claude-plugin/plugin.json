@@ -1,0 +1,18 @@
+{
+  "name": "modelmux",
+  "version": "0.1.0",
+  "description": "Let Claude Code hand its grunt work to your other AI subscriptions: in parallel, read-only by default, from one dependency-free Python file.",
+  "author": {
+    "name": "Jay Pokale",
+    "url": "https://github.com/JayPokale"
+  },
+  "repository": "https://github.com/JayPokale/modelmux",
+  "license": "MIT",
+  "keywords": ["mcp", "delegation", "multi-agent", "codex", "antigravity", "gemini"],
+  "mcpServers": {
+    "modelmux": {
+      "command": "python3",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server.py"]
+    }
+  }
+}
