@@ -356,6 +356,28 @@ class DelegateTest(Base):
         self.assertIsNone(s.reply(rid, timeout=1), "a cancelled request gets no reply")
         self.assertEqual(s.call("ping")["result"], {})
 
+    def test_background_returns_at_once_and_still_stops_on_shutdown(self):
+        s = self.start()
+
+        def background(*tasks):
+            res = s.call("tools/call", {"name": "delegate", "arguments": {"background": True, "tasks": list(tasks)}},
+                         timeout=5)["result"]
+            self.assertFalse(res["isError"])
+            return [Path(p) for p in re.findall(r"^- (.+\.md)$", res["content"][0]["text"], re.M)]
+
+        [a, b] = background({"worker": "antigravity", "prompt": "say a"}, {"worker": "claude", "prompt": "say b"})
+        self.assertTrue(wait_until((a.parent / "done").exists), "no done file after all tasks ended")
+        self.assertEqual((a.read_text(), b.read_text()), ("a", "b"))
+
+        [slow, quick] = background({"worker": "codex", "prompt": "sleep bg"}, {"worker": "claude", "prompt": "say quick"})
+        pids = self.pids("bg")
+        self.assertTrue(wait_until(quick.exists))
+        self.assertEqual(quick.read_text(), "quick")
+        self.assertFalse(slow.exists() or (slow.parent / "done").exists())
+        s.p.stdin.close()
+        self.assertEqual(s.p.wait(5), 0)
+        self.assertAllDead(pids, "background workers outlived the server")
+
     def test_eof_and_sigterm_stop_running_workers(self):
         for how in ("eof", "sigterm"):
             with self.subTest(how):

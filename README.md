@@ -141,6 +141,8 @@ Work as usual. The head delegates when it pays off, and you can nudge it:
 | `write` | no | allow edits inside `cwd` (default `false`) |
 | `model` | no | override the worker's default model |
 
+Top level, next to `tasks`: `"background": true` returns at once with the result paths, so the head keeps working while workers run; each file appears when its task ends, then a `done` file.
+
 Each task comes back under a header naming its full-output file:
 
 ```text

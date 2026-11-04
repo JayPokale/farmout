@@ -45,7 +45,7 @@ RULES = """\
 Rules:
 - Workers see only their brief. Each prompt must stand alone: goal, context, constraints, exact output format, "be concise". Pass file paths in files, not pasted content.
 - Read-only by default. write:true allows edits inside cwd; never give parallel tasks write access to overlapping files.
-- Put independent subtasks in one delegate call; they run in parallel.
+- Put independent subtasks in one delegate call; they run in parallel. background:true returns at once so you can keep working; read the result files when they appear.
 - Each result is saved to the file named in its header. To chain workers, pass that path in a later task's files instead of reading it yourself.
 - Verify worker output before relying on it; cheaper models fail quietly. On FAILED, retry another worker or do it yourself."""
 
@@ -212,7 +212,8 @@ TOOL = {
             "cwd": {"type": "string", "description": "Absolute working directory. Default: where the head was launched."},
             "write": {"type": "boolean", "description": "Allow edits inside cwd (all workers but api). Default false."},
             "model": {"type": "string", "description": "Override the worker's default model."},
-        }}}}},
+        }}}, "background": {"type": "boolean", "description": "Return at once and keep working; each result file appears "
+                                                             "when its task ends, then a `done` file. Default false."}}},
 }
 
 
@@ -224,9 +225,15 @@ def task(i, t, rid, outdir):
         text, ok = ENABLED[w][0](t, rid).strip(), True
     except Exception as e:
         text, ok = f"{type(e).__name__}: {e}", False
-    path = outdir / f"{i}-{w}.md"
-    path.write_text(text)
+    path, part = outdir / f"{i}-{w}.md", outdir / f"{i}-{w}.part"
+    part.write_text(text)
+    part.replace(path)  # appears complete: background readers poll for it
     return f"## [{i}] {w} {'ok' if ok else 'FAILED'} {time.time() - t0:.0f}s -> {path}", text, ok
+
+
+def run_all(tasks, key, outdir):
+    with ThreadPoolExecutor(min(8, len(tasks))) as ex:
+        return list(ex.map(lambda a: task(*a, key, outdir), enumerate(tasks, 1)))
 
 
 def delegate(args, rid):
@@ -235,8 +242,14 @@ def delegate(args, rid):
         raise ValueError("tasks is empty")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     outdir = Path(tempfile.mkdtemp(prefix=time.strftime("%Y%m%d-%H%M%S-"), dir=OUT_DIR))
-    with ThreadPoolExecutor(min(8, len(tasks))) as ex:
-        results = list(ex.map(lambda a: task(*a, rid, outdir), enumerate(tasks, 1)))
+    if args.get("background"):  # own key: handle() forgets rid on reply, shutdown must still stop these
+        threading.Thread(target=lambda: (run_all(tasks, ("background", rid), outdir), (outdir / "done").touch()),
+                         daemon=True).start()
+        files = "\n".join(f"- {outdir}/{i}-{t.get('worker')}.md" for i, t in enumerate(tasks, 1))
+        return (f"Started {len(tasks)} task(s) in the background. Each file appears when its task ends, and "
+                f"{outdir}/done when all have. To be told, run in the background: "
+                f"until [ -e {outdir}/done ]; do sleep 5; done\n{files}"), False
+    results = run_all(tasks, rid, outdir)
     cap = BUDGET // len(tasks)
     text = "\n\n".join(f"{head}\n{body[:cap]}" + ("\n...[truncated; full output in the file above]" if len(body) > cap else "")
                        for head, body, _ in results)
