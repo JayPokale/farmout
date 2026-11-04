@@ -1,7 +1,7 @@
 """Release smoke test: drive the real worker CLIs through server.py on your own logins.
 
 Spends a little quota on every enabled worker. Export the same MODELMUX_* variables as your MCP
-registration first, e.g.  MODELMUX_CLAUDE_DIR=~/.claude-2 python3 tests/smoke.py
+registration first, e.g.  MODELMUX_CLAUDE_DIR=~/.claude-2 python3 tests/smoke.py [worker ...]
 Each worker gets these tasks, all in one parallel delegate call:
   read       it can read a file it is given
   read-only  without write:true, told to create a file and run `touch`, it changes nothing
@@ -19,7 +19,8 @@ from pathlib import Path
 
 from test_server import Server
 
-VERSION = {"antigravity": ["agy", "--version"], "codex": ["codex", "--version"], "claude": ["claude", "--version"]}
+VERSION = {"antigravity": ["agy", "--version"], "codex": ["codex", "--version"], "claude": ["claude", "--version"],
+           "copilot": ["copilot", "--version"]}
 
 
 def version(worker):
@@ -37,6 +38,7 @@ def main():
         if not tools:
             sys.exit(s.call("initialize")["result"]["instructions"])
         workers = tools[0]["inputSchema"]["properties"]["tasks"]["items"]["properties"]["worker"]["enum"]
+        workers = [w for w in workers if w in sys.argv[1:]] or workers  # optional: only the named workers
         print(f"python {platform.python_version()} on {platform.platform()}")
         for w in workers:
             print(f"{w}: {version(w)}")

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """modelmux: MCP server that lets a head model (e.g. Claude Code) hand self-contained subtasks to
 your other AI subscriptions in parallel, through their official CLIs: Antigravity (`agy`),
-Codex CLI, a second Claude Code account, plus any OpenAI-compatible endpoint.
+Codex CLI, GitHub Copilot CLI, a second Claude Code account, plus any OpenAI-compatible endpoint.
 Stdlib only, Python 3.9+, Linux/macOS. Speaks MCP over stdio (newline-delimited JSON-RPC 2.0).
 
 Register:  claude mcp add -s user modelmux -- python3 /path/to/modelmux/server.py
+Check:     python3 server.py doctor    (which workers are ready, how to enable the rest)
 Env:       MODELMUX_CLAUDE_DIR   config dir of a second Claude Code account (enables `claude`)
            MODELMUX_API_BASE, MODELMUX_API_MODEL, MODELMUX_API_KEY
                                  OpenAI-compatible endpoint, e.g. http://localhost:11434/v1 (enables `api`)
@@ -26,6 +27,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+VERSION = "0.1.0"
 TIMEOUT = int(os.environ.get("MODELMUX_TIMEOUT", 1200))
 CLAUDE_DIR = os.path.expanduser(os.environ.get("MODELMUX_CLAUDE_DIR", ""))
 API_BASE, API_MODEL, API_KEY = (os.environ.get(f"MODELMUX_API_{k}") for k in ("BASE", "MODEL", "KEY"))
@@ -134,6 +136,18 @@ def claude(t, rid):
     return run(cmd, rid, cwd, stdin=brief, env=env)
 
 
+def copilot(t, rid):
+    cwd, _, extra, brief = prep(t)
+    # --allow-all-tools (required headless) would also auto-approve the user's MCP servers, so the
+    # model only gets an allowlist: read/search/fetch, plus file edits under write. Never a shell.
+    tools = ["view", "rg", "glob", "web_fetch"] + (["apply_patch", "edit", "create"] if t.get("write") else [])
+    cmd = ["copilot", "-p", brief, "-s", "--no-color", "--allow-all-tools", "--available-tools", *tools]
+    cmd += [x for d in extra for x in ("--add-dir", d)]
+    if t.get("model"):
+        cmd += ["--model", t["model"]]
+    return run(cmd, rid, cwd)
+
+
 def api(t, rid):
     cwd, files, _, _ = prep(t)
     parts = [t["prompt"]]
@@ -164,6 +178,9 @@ WORKERS = {  # name: (function, available?, routing hint shown to the head)
     "claude": (claude, CLAUDE_DIR and shutil.which("claude"),
                "a second Claude Code account (separate quota), Sonnet by default (model: haiku|sonnet|opus). "
                "For general mid-complexity work."),
+    "copilot": (copilot, shutil.which("copilot"),
+                "GitHub Copilot CLI on your Copilot plan (spends its AI credits); model accepts any id Copilot "
+                "offers, across vendors. For code review, focused coding questions, second opinions. No shell."),
     "api": (api, API_BASE and API_MODEL,
             f"{API_MODEL} via an OpenAI-compatible API; no tools, listed files are inlined as text (PDFs via "
             "pdftotext). For bulk/simple work: extract, classify, reformat, translate, short summaries, boilerplate."),
@@ -172,8 +189,16 @@ ENABLED = {name: w for name, w in WORKERS.items() if w[1]}
 if ENABLED:
     INSTRUCTIONS = INTRO + "".join(f"- {name}: {w[2]}\n" for name, w in ENABLED.items()) + RULES
 else:
-    INSTRUCTIONS = ("modelmux: no workers available. Install `agy` or `codex`, or set MODELMUX_CLAUDE_DIR "
-                    "or MODELMUX_API_BASE + MODELMUX_API_MODEL, then restart.")
+    INSTRUCTIONS = ("modelmux: no workers available. Install `agy`, `codex` or `copilot`, or set MODELMUX_CLAUDE_DIR "
+                    "or MODELMUX_API_BASE + MODELMUX_API_MODEL, then restart. `python3 server.py doctor` explains.")
+SETUP = {  # name: (executable, how to enable), for `doctor`
+    "antigravity": ("agy", "install the Antigravity CLI (`agy`) and log in"),
+    "codex": ("codex", "install the Codex CLI and run `codex login`"),
+    "claude": ("claude", "log in a second account once with `CLAUDE_CONFIG_DIR=<dir> claude`, "
+                         "then set MODELMUX_CLAUDE_DIR=<dir>"),
+    "copilot": ("copilot", "install the GitHub Copilot CLI and run `copilot login`"),
+    "api": (None, "set MODELMUX_API_BASE and MODELMUX_API_MODEL (and MODELMUX_API_KEY if needed)"),
+}
 
 TOOL = {
     "name": "delegate",
@@ -185,7 +210,7 @@ TOOL = {
             "prompt": {"type": "string", "description": "Standalone brief: goal, context, constraints, exact output format. The worker sees nothing else."},
             "files": {"type": "array", "items": {"type": "string"}, "description": "Paths to read: PDFs, code, earlier result files. Relative paths resolve against cwd."},
             "cwd": {"type": "string", "description": "Absolute working directory. Default: where the head was launched."},
-            "write": {"type": "boolean", "description": "Allow edits inside cwd (antigravity, codex, claude). Default false."},
+            "write": {"type": "boolean", "description": "Allow edits inside cwd (all workers but api). Default false."},
             "model": {"type": "string", "description": "Override the worker's default model."},
         }}}}},
 }
@@ -230,7 +255,7 @@ def handle(msg):
         if method == "initialize":
             reply = {"result": {"protocolVersion": params.get("protocolVersion", "2025-06-18"),
                                 "capabilities": {"tools": {}},
-                                "serverInfo": {"name": "modelmux", "version": "0.1.0"},
+                                "serverInfo": {"name": "modelmux", "version": VERSION},
                                 "instructions": INSTRUCTIONS}}
         elif method == "tools/list":
             reply = {"result": {"tools": [TOOL] if ENABLED else []}}
@@ -279,5 +304,22 @@ def main():
     os._exit(0)  # don't wait for worker threads still blocked in HTTP calls
 
 
+def doctor():
+    print(f"modelmux {VERSION} on Python {sys.version.split()[0]}; results go to {OUT_DIR}")
+    for name, (_, ready, _) in WORKERS.items():
+        exe, how = SETUP[name]
+        detail = how
+        if ready and exe:
+            try:
+                out = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=30)
+                detail = f"{shutil.which(exe)} {((out.stdout or out.stderr).strip().splitlines() or ['?'])[0]}"
+            except Exception as e:
+                detail = f"{shutil.which(exe)} (--version failed: {e})"
+        elif ready:
+            detail = f"{API_MODEL} at {API_BASE}"
+        print(f"  {'ready  ' if ready else 'missing'}  {name:<12} {detail}")
+    print("Logins are not checked here. Live check (spends a little quota): python3 tests/smoke.py")
+
+
 if __name__ == "__main__":
-    main()
+    doctor() if sys.argv[1:] == ["doctor"] else main()

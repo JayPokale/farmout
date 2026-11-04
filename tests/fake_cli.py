@@ -19,9 +19,12 @@ name, args = os.path.basename(sys.argv[0]), sys.argv[1:]
 if name == "pdftotext":  # pdftotext -layout <file> -
     print(f"PDF TEXT OF {args[-2]}")
     sys.exit()
+if args == ["--version"]:
+    print(f"{name} 9.9.9")
+    sys.exit()
 
 log = os.environ["FAKE_LOG"]
-brief = args[args.index("-p") + 1] if name == "agy" else sys.stdin.read()
+brief = args[args.index("-p") + 1] if name in ("agy", "copilot") else sys.stdin.read()
 with open(os.path.join(log, f"{os.getpid()}.json"), "w") as f:
     json.dump({"name": name, "argv": args, "cwd": os.getcwd(), "brief": brief,
                "env": {k: v for k, v in os.environ.items() if k.startswith(("CLAUDE", "ANTHROPIC"))}}, f)

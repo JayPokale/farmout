@@ -21,8 +21,10 @@ HERE = Path(__file__).resolve().parent
 SERVER = HERE.parent / "server.py"
 FAKE = (HERE / "fake_cli.py").read_text()
 HEADER = re.compile(r"^## \[\d+\] (\S+) (ok|FAILED) \d+s -> (.+)$", re.M)
+READ_TOOLS = ["view", "rg", "glob", "web_fetch"]
 TRUNCATED = "\n...[truncated; full output in the file above]"
-CLI_WORKERS = ("antigravity", "codex", "claude")
+CLI_WORKERS = ("antigravity", "codex", "claude", "copilot")
+CLIS = ("agy", "codex", "claude", "copilot")
 
 
 class Server:
@@ -112,6 +114,12 @@ def flag(argv, name):
     return argv[argv.index(name) + 1]
 
 
+def listed(argv, name):
+    """Values of a variadic flag: everything after it up to the next flag."""
+    rest = argv[argv.index(name) + 1:]
+    return rest[:next((i for i, a in enumerate(rest) if a.startswith("-")), len(rest))]
+
+
 def add_dirs(argv):
     return [argv[i + 1] for i, a in enumerate(argv) if a == "--add-dir"]
 
@@ -128,13 +136,17 @@ class Base(unittest.TestCase):
         self.log.mkdir()
         self.work.mkdir()
 
-    def start(self, bins=("agy", "codex", "claude", "pdftotext"), **env):
-        """Start server.py with only the given fake CLIs on PATH. Env values of None are left unset."""
+    def make_bin(self, bins):
+        """A PATH directory holding fake CLIs under the given names."""
         bindir = Path(tempfile.mkdtemp(dir=self.tmp))
         for name in bins:
             (bindir / name).write_text(f"#!{sys.executable}\n{FAKE}")
             (bindir / name).chmod(0o755)
-        env = {"HOME": str(self.home), "PATH": str(bindir), "FAKE_LOG": str(self.log), "no_proxy": "*",
+        return bindir
+
+    def start(self, bins=CLIS + ("pdftotext",), **env):
+        """Start server.py with only the given fake CLIs on PATH. Env values of None are left unset."""
+        env = {"HOME": str(self.home), "PATH": str(self.make_bin(bins)), "FAKE_LOG": str(self.log), "no_proxy": "*",
                "MODELMUX_CLAUDE_DIR": str(self.tmp / "claude-config"), **env}
         s = Server({k: v for k, v in env.items() if v is not None})
         self.addCleanup(self.stop, s)
@@ -186,6 +198,7 @@ class ProtocolTest(Base):
         cases = [
             ((), {}, []),
             (("codex",), {}, ["codex"]),
+            (("copilot",), {}, ["copilot"]),
             (("agy", "claude"), {"MODELMUX_CLAUDE_DIR": None}, ["antigravity"]),  # claude needs its config dir
             ((), api, ["api"]),
             (("agy", "codex", "claude"), api, ["antigravity", "codex", "claude", "api"]),
@@ -216,7 +229,7 @@ class DelegateTest(Base):
         s = self.start()
         room = self.tmp / "room"
         room.mkdir()
-        is_error, results = s.delegate(*({"worker": w, "prompt": f"meet {room} 3"} for w in CLI_WORKERS))
+        is_error, results = s.delegate(*({"worker": w, "prompt": f"meet {room} {len(CLI_WORKERS)}"} for w in CLI_WORKERS))
         self.assertFalse(is_error)
         self.assertEqual([r[0] for r in results], list(CLI_WORKERS))
         for i, (worker, ok, path, body) in enumerate(results, 1):
@@ -233,23 +246,27 @@ class DelegateTest(Base):
                 extra = {} if write is None else {"write": write}
                 _, results = s.delegate(*({"worker": w, "prompt": "say hi", "cwd": str(self.work), **extra}
                                           for w in CLI_WORKERS))
-                self.assertEqual([r[1] for r in results], [True] * 3, results)
+                self.assertEqual([r[1] for r in results], [True] * len(CLI_WORKERS), results)
                 c = self.calls()
-                agy, codex, claude = (c[n]["argv"] for n in ("agy", "codex", "claude"))
+                agy, codex, claude, copilot = (c[n]["argv"] for n in CLIS)
+                self.assertIn("--allow-all-tools", copilot)
+                self.assertNotIn("--deny-tool", copilot)
                 if write:
                     self.assertEqual(flag(agy, "--mode"), "accept-edits")
                     self.assertIn("--sandbox", agy)
                     self.assertEqual(flag(codex, "-s"), "workspace-write")
                     self.assertEqual(flag(claude, "--permission-mode"), "acceptEdits")
                     self.assertNotIn("--tools", claude)
+                    self.assertEqual(listed(copilot, "--available-tools"), [*READ_TOOLS, "apply_patch", "edit", "create"])
                 else:
                     self.assertEqual(flag(agy, "--mode"), "plan")
                     self.assertNotIn("--sandbox", agy)
                     self.assertEqual(flag(codex, "-s"), "read-only")
                     self.assertEqual(flag(claude, "--tools"), "Read,Grep,Glob,WebSearch")
                     self.assertNotIn("--permission-mode", claude)
+                    self.assertEqual(listed(copilot, "--available-tools"), READ_TOOLS)
                 self.assertEqual(flag(codex, "-C"), str(self.work))
-                for name in ("agy", "codex", "claude"):
+                for name in CLIS:
                     self.assertEqual(c[name]["cwd"], str(self.work))
 
     def test_model_defaults_and_overrides(self):
@@ -259,11 +276,13 @@ class DelegateTest(Base):
         self.assertNotIn("--model", c["agy"]["argv"])
         self.assertNotIn("-m", c["codex"]["argv"])
         self.assertEqual(flag(c["claude"]["argv"], "--model"), "sonnet")
+        self.assertNotIn("--model", c["copilot"]["argv"])
         s.delegate(*({"worker": w, "prompt": "say hi", "model": "m1"} for w in CLI_WORKERS))
         c = self.calls()
         self.assertEqual(flag(c["agy"]["argv"], "--model"), "m1")
         self.assertEqual(flag(c["codex"]["argv"], "-m"), "m1")
         self.assertEqual(flag(c["claude"]["argv"], "--model"), "m1")
+        self.assertEqual(flag(c["copilot"]["argv"], "--model"), "m1")
 
     def test_claude_worker_gets_a_clean_session(self):
         s = self.start(CLAUDECODE="1", CLAUDE_CODE_ENTRYPOINT="cli", ANTHROPIC_API_KEY="sk-head",
@@ -283,9 +302,9 @@ class DelegateTest(Base):
         files = ["a.txt", str(other / "b.txt"), str(docs)]
         s.delegate(*({"worker": w, "prompt": "say hi", "files": files, "cwd": str(self.work)} for w in CLI_WORKERS))
         c = self.calls()
-        for name in ("agy", "codex", "claude"):
+        for name in CLIS:
             self.assertEqual(c[name]["brief"], f"say hi\n\nFiles:\n- {self.work / 'a.txt'}\n- {other / 'b.txt'}\n- {docs}")
-        for name in ("agy", "claude"):
+        for name in ("agy", "claude", "copilot"):
             self.assertEqual(add_dirs(c[name]["argv"]), [str(docs), str(other)])
         s.delegate({"worker": "claude", "prompt": "say hi", "files": ["a.txt"], "cwd": str(self.work)})
         self.assertEqual(add_dirs(self.calls()["claude"]["argv"]), [])
@@ -302,7 +321,7 @@ class DelegateTest(Base):
         self.assertEqual([r[1] for r in results], [False, False, False, False, True])
         bodies = [r[3] for r in results]
         self.assertEqual(bodies[0], "RuntimeError: codex exited 1: boom")
-        self.assertEqual(bodies[1], "ValueError: unknown or unavailable worker 'nope'; available: antigravity, codex, claude")
+        self.assertEqual(bodies[1], "ValueError: unknown or unavailable worker 'nope'; available: antigravity, codex, claude, copilot")
         self.assertEqual(bodies[2], f"FileNotFoundError: {self.work / 'missing.txt'}")
         self.assertIn('"status": "ERROR"', bodies[3])
         self.assertEqual(bodies[4], "fine")
@@ -349,6 +368,19 @@ class DelegateTest(Base):
                     s.p.send_signal(signal.SIGTERM)
                 self.assertEqual(s.p.wait(5), 0)
                 self.assertAllDead(pids, "worker processes outlived the server")
+
+
+class DoctorTest(Base):
+    def test_reports_ready_and_missing_workers(self):
+        env = {"HOME": str(self.home), "PATH": str(self.make_bin(("agy", "copilot"))),
+               "MODELMUX_API_BASE": "http://127.0.0.1:9/v1", "MODELMUX_API_MODEL": "some-model"}
+        out = subprocess.run([sys.executable, str(SERVER), "doctor"], env=env, capture_output=True,
+                             text=True, timeout=30).stdout
+        self.assertRegex(out, r"ready +antigravity +/\S+/agy agy 9\.9\.9\n")
+        self.assertRegex(out, r"missing +codex +install the Codex CLI")
+        self.assertRegex(out, r"missing +claude +log in a second account")
+        self.assertRegex(out, r"ready +copilot +/\S+/copilot copilot 9\.9\.9\n")
+        self.assertRegex(out, r"ready +api +some-model at http://127\.0\.0\.1:9/v1\n")
 
 
 class FakeAPI(http.server.BaseHTTPRequestHandler):
@@ -438,7 +470,7 @@ class RepoTest(unittest.TestCase):
 
     def test_plugin_version_matches_server(self):
         plugin = json.loads((SERVER.parent / ".claude-plugin" / "plugin.json").read_text())
-        self.assertIn(f'"version": "{plugin["version"]}"', SERVER.read_text())
+        self.assertIn(f'VERSION = "{plugin["version"]}"', SERVER.read_text())
 
 
 if __name__ == "__main__":

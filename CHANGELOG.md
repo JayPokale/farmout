@@ -12,6 +12,10 @@ All notable changes to modelmux are recorded here. The format follows [Keep a Ch
 - Contributor docs, issue and PR templates, and a security policy.
 - Claude Code plugin manifest: `claude plugin install modelmux --marketplace JayPokale/modelmux`.
 - Release workflow: a `v*` tag publishes a GitHub Release with that version's CHANGELOG notes.
+- `copilot` worker: GitHub Copilot CLI, read-only through a tool allowlist (`--available-tools`), because `--allow-all-tools` would also auto-approve the user's MCP servers.
+- `python3 server.py doctor`: which workers are ready, and the exact step to enable each missing one.
+- Plugin slash commands: `/modelmux:review` (parallel multi-model review of the diff, merged with agreement counts), `/modelmux:ask` (one question to every worker, compared), `/modelmux:setup` (runs `doctor`).
+- `tests/smoke.py [worker ...]` checks only the named workers.
 
 ### Fixed
 

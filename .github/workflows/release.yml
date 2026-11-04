@@ -21,7 +21,7 @@ jobs:
       - run: python -m unittest discover -s tests
       - name: Check the tag matches server.py
         run: |
-          grep -q "\"version\": \"${GITHUB_REF_NAME#v}\"" server.py \
+          grep -q "^VERSION = \"${GITHUB_REF_NAME#v}\"" server.py \
             || { echo "tag $GITHUB_REF_NAME does not match the version in server.py"; exit 1; }
       - name: Publish a GitHub Release with this version's CHANGELOG notes
         env:
