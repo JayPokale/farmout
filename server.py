@@ -212,9 +212,31 @@ TOOL = {
             "cwd": {"type": "string", "description": "Absolute working directory. Default: where the head was launched."},
             "write": {"type": "boolean", "description": "Allow edits inside cwd (all workers but api). Default false."},
             "model": {"type": "string", "description": "Override the worker's default model."},
+            "isolate": {"type": "boolean", "description": "Write in a private git worktree (HEAD + your uncommitted "
+                                                          "changes); the result names the patch. Implies write."},
         }}}, "background": {"type": "boolean", "description": "Return at once and keep working; each result file appears "
                                                              "when its task ends, then a `done` file. Default false."}}},
 }
+
+
+def git(cwd, *args, stdin=None):
+    p = subprocess.run(["git", "-C", str(cwd), *args], input=stdin, capture_output=True, text=True)
+    if p.returncode:
+        raise RuntimeError(f"git {' '.join(args[:2])}: {p.stderr.strip()[-500:]}")
+    return p.stdout
+
+
+def worktree(t, i, outdir):
+    """A private worktree for one write task: HEAD plus the user's uncommitted changes as a base commit."""
+    cwd = os.path.abspath(os.path.expanduser(t.get("cwd") or os.getcwd()))
+    top = git(cwd, "rev-parse", "--show-toplevel").strip()
+    wt, branch = outdir / f"{i}-{t['worker']}", f"modelmux/{outdir.name}-{i}"
+    git(top, "worktree", "add", "-q", "-b", branch, str(wt), "HEAD")
+    if base := git(top, "diff", "HEAD", "--binary"):
+        git(wt, "apply", "--whitespace=nowarn", stdin=base)
+        git(wt, "add", "-A")
+        git(wt, "-c", "user.name=modelmux", "-c", "user.email=modelmux@localhost", "commit", "-qm", "your uncommitted changes")
+    return {**t, "cwd": str(wt / os.path.relpath(cwd, top)), "write": True}, wt, branch
 
 
 def task(i, t, rid, outdir):
@@ -222,7 +244,15 @@ def task(i, t, rid, outdir):
     try:
         if w not in ENABLED:
             raise ValueError(f"unknown or unavailable worker {w!r}; available: {', '.join(ENABLED) or 'none'}")
+        if t.get("isolate"):
+            t, wt, branch = worktree(t, i, outdir)
         text, ok = ENABLED[w][0](t, rid).strip(), True
+        if t.get("isolate"):  # only the worker's own changes, ready for `git apply` in the user's tree
+            git(wt, "add", "-A")
+            patch = outdir / f"{i}-{w}.patch"
+            patch.write_text(git(wt, "diff", "--cached", "--binary", "HEAD"))
+            stat = git(wt, "diff", "--cached", "--stat", "HEAD").strip() or "no changes"
+            text += f"\n\n[isolated] worktree {wt}, branch {branch}, patch {patch}:\n{stat}"
     except Exception as e:
         text, ok = f"{type(e).__name__}: {e}", False
     path, part = outdir / f"{i}-{w}.md", outdir / f"{i}-{w}.part"

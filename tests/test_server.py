@@ -142,6 +142,7 @@ class Base(unittest.TestCase):
         for name in bins:
             (bindir / name).write_text(f"#!{sys.executable}\n{FAKE}")
             (bindir / name).chmod(0o755)
+        (bindir / "git").symlink_to(shutil.which("git"))  # used by isolate
         return bindir
 
     def start(self, bins=CLIS + ("pdftotext",), **env):
@@ -355,6 +356,39 @@ class DelegateTest(Base):
         self.assertAllDead(pids, "worker processes survived the cancel")
         self.assertIsNone(s.reply(rid, timeout=1), "a cancelled request gets no reply")
         self.assertEqual(s.call("ping")["result"], {})
+
+    def test_isolate_gives_each_write_task_its_own_worktree(self):
+        repo = self.work
+
+        def git(*args):
+            return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout
+
+        git("init", "-q")
+        (repo / "app.py").write_text("v1\n")
+        git("add", ".")
+        git("-c", "user.name=t", "-c", "user.email=t@localhost", "commit", "-qm", "init")
+        (repo / "app.py").write_text("v2, not committed\n")
+        s = self.start()
+        _, results = s.delegate(*({"worker": w, "prompt": f"write fix.txt by {w}", "cwd": str(repo), "isolate": True}
+                                  for w in ("codex", "claude")))
+        c = self.calls()
+        for w, ok, _, body in results:
+            self.assertTrue(ok, body)
+            wt = Path(re.search(r"worktree (\S+), branch", body).group(1))
+            patch = Path(re.search(r"patch (\S+):", body).group(1))
+            self.assertEqual(c[w]["cwd"], str(wt))
+            self.assertEqual((wt / "app.py").read_text(), "v2, not committed\n", "base includes uncommitted work")
+            self.assertIn("+by " + w, patch.read_text())
+            self.assertNotIn("v2", patch.read_text(), "the patch holds only the worker's change")
+        self.assertFalse((repo / "fix.txt").exists(), "the user's tree is untouched")
+        git("apply", str(patch))
+        self.assertEqual((repo / "fix.txt").read_text(), "by claude")
+
+        plain = self.tmp / "plain"
+        plain.mkdir()
+        _, [(_, ok, _, body)] = s.delegate({"worker": "codex", "prompt": "say x", "cwd": str(plain), "isolate": True})
+        self.assertFalse(ok)
+        self.assertIn("RuntimeError: git rev-parse", body)
 
     def test_background_returns_at_once_and_still_stops_on_shutdown(self):
         s = self.start()

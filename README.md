@@ -117,6 +117,7 @@ Work as usual. The head delegates when it pays off, and you can nudge it:
 |---|---|
 | `/modelmux:review [--base <ref>] [focus]` | every worker reviews your uncommitted changes (or the branch since `<ref>`) in parallel, read-only; Claude merges the findings, counts how many models flagged each, and checks them against the code |
 | `/modelmux:ask <question>` | the same question to every worker; you get the consensus, the disagreements and Claude's verdict |
+| `/modelmux:race <task>` | every write-capable worker attempts the same change in its own git worktree, in parallel; Claude runs your tests on each attempt, compares the patches and applies the best one when you agree |
 | `/modelmux:setup` | which workers are ready, and the exact step to enable each missing one |
 
 ### The `delegate` tool
@@ -142,6 +143,7 @@ Work as usual. The head delegates when it pays off, and you can nudge it:
 | `cwd` | no | working directory; defaults to where Claude Code was launched |
 | `write` | no | allow edits inside `cwd` (default `false`) |
 | `model` | no | override the worker's default model |
+| `isolate` | no | write in a private git worktree (HEAD plus your uncommitted changes); the result names a patch holding only the worker's changes. Implies `write` |
 
 Top level, next to `tasks`: `"background": true` returns at once with the result paths, so the head keeps working while workers run; each file appears when its task ends, then a `done` file.
 
@@ -170,7 +172,7 @@ FileNotFoundError: /home/me/project/issues.txt
 - **Why an allowlist for `copilot`:** headless Copilot needs `--allow-all-tools`, which also auto-approves every MCP server in your Copilot config (one of ours could delete cloud databases). `--available-tools` hides everything else from the model, MCP servers included.
 - **Prompt injection is real.** Workers read whatever files you hand them, and a hostile document can try to instruct them. Read-only mode limits the damage but cannot make injection impossible; for example, a worker could put file contents into a web search. Don't delegate secrets.
 - **Data leaves your head account.** Briefs and files go to each worker's provider. If your head runs on a work account, check your organization's policy before delegating its data to personal accounts.
-- **Never give two parallel tasks write access to overlapping files.**
+- **Never give two parallel tasks write access to overlapping files**, unless each has `isolate: true`: then each works in its own git worktree and your tree is untouched until you apply a patch.
 
 ## Terms of service
 

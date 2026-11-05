@@ -16,6 +16,7 @@ All notable changes to modelmux are recorded here. The format follows [Keep a Ch
 - `python3 server.py doctor`: which workers are ready, and the exact step to enable each missing one.
 - Plugin slash commands: `/modelmux:review` (parallel multi-model review of the diff, merged with agreement counts), `/modelmux:ask` (one question to every worker, compared), `/modelmux:setup` (runs `doctor`).
 - `tests/smoke.py [worker ...]` checks only the named workers.
+- `isolate: true` on a task: the worker writes in a private git worktree (HEAD plus your uncommitted changes, committed as a base) and the result names a patch with only its changes. `/modelmux:race` uses it to have every worker attempt the same fix in parallel.
 - `background: true` on `delegate`: returns the result paths at once so the head keeps working; each file appears when its task ends, then a `done` file. Shutdown still stops background workers.
 
 ### Fixed
