@@ -76,6 +76,8 @@ claude plugin install modelmux --marketplace JayPokale/modelmux
 
 A plugin's server reads its settings from your environment, so with the plugin, `export` the `MODELMUX_*` variables below in your shell profile instead of passing `-e`. Use one install method, not both.
 
+Other MCP clients can be the head too, for example `codex mcp add modelmux -- python3 ~/.local/share/modelmux/server.py` or `copilot mcp add modelmux -- python3 ~/.local/share/modelmux/server.py` (lightly tested; Claude Code is the main target).
+
 Restart Claude Code. Workers are detected at startup. To see which are ready and how to enable the rest, run `python3 server.py doctor` (or `/modelmux:setup` with the plugin).
 
 **Second Claude account:**
@@ -205,17 +207,20 @@ Good tools exist in this space; choose by what you need:
 
 | project | choose it when |
 |---|---|
+| [Codex plugin for Claude Code](https://github.com/openai/codex-plugin-cc) | you only need Codex, and want OpenAI's official rescue, session-transfer and background-job commands |
+| [Claude Octopus](https://github.com/nyldn/claude-octopus) | you want structured multi-model councils, many providers and workflow gates, and don't mind a large plugin |
+| [claude-delegator](https://github.com/jarrodwatts/claude-delegator) | you want Codex and Gemini as named experts inside Claude Code |
 | [PAL MCP Server](https://github.com/BeehiveInnovations/pal-mcp-server) (formerly Zen) | you want many workflow tools (consensus, code review, planning) and API-key models, plus its `clink` CLI bridge |
 | [llm-cli-gateway](https://github.com/verivus-oss/llm-cli-gateway) | you need sessions, retries and async jobs across Claude, Codex, Gemini, Grok and Mistral CLIs |
 | [ai-cli-mcp](https://github.com/mkXultra/ai-cli-mcp) | you want CLI agents running in the background from any MCP client |
 | [claude-code-router](https://github.com/musistudio/claude-code-router) | you want to swap the model behind Claude Code rather than delegate to other CLIs |
-| **modelmux** | you want something small enough to audit, read-only by default, with parallel fan-out in one call and Antigravity support |
+| **modelmux** | you want every subscription you have (Codex, Gemini through Antigravity, Copilot, a second Claude, local models) working in parallel from one call, read-only by default, in a file small enough to audit |
 
 ## Roadmap
 
-- `doctor` command: check that each worker is installed, logged in and headless-ready
+- More workers, each with verified read-only flags: Gemini CLI (API-key users), OpenCode, Qwen Code, Cursor CLI
+- `doctor --live`: check logins with a tiny headless prompt per worker
 - PyPI package for `uvx` installs
-- Gemini CLI worker for API-key users
 - Usage log and per-worker stats
 - Rate-limit-aware fallback between workers
 - Git-worktree isolation for parallel write tasks
