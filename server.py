@@ -50,7 +50,7 @@ Rules:
 - Verify worker output before relying on it; cheaper models fail quietly. On FAILED, retry another worker or do it yourself."""
 
 running, cancelled = {}, set()  # MCP request id -> live worker processes; ids the client cancelled
-lock, out_lock = threading.Lock(), threading.Lock()
+lock, out_lock, git_lock = threading.Lock(), threading.Lock(), threading.Lock()
 
 
 def signal_group(p, sig=signal.SIGTERM):
@@ -231,8 +231,10 @@ def worktree(t, i, outdir):
     cwd = os.path.abspath(os.path.expanduser(t.get("cwd") or os.getcwd()))
     top = git(cwd, "rev-parse", "--show-toplevel").strip()
     wt, branch = outdir / f"{i}-{t['worker']}", f"modelmux/{outdir.name}-{i}"
-    git(top, "worktree", "add", "-q", "-b", branch, str(wt), "HEAD")
-    if base := git(top, "diff", "HEAD", "--binary"):
+    with git_lock:  # parallel `worktree add`s on one repo race on git's lock files
+        git(top, "worktree", "add", "-q", "-b", branch, str(wt), "HEAD")
+        base = git(top, "diff", "HEAD", "--binary")
+    if base:
         git(wt, "apply", "--whitespace=nowarn", stdin=base)
         git(wt, "add", "-A")
         git(wt, "-c", "user.name=modelmux", "-c", "user.email=modelmux@localhost", "commit", "-qm", "your uncommitted changes")
