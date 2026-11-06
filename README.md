@@ -78,7 +78,7 @@ A plugin's server reads its settings from your environment, so with the plugin, 
 
 Other MCP clients can be the head too, for example `codex mcp add modelmux -- python3 ~/.local/share/modelmux/server.py` or `copilot mcp add modelmux -- python3 ~/.local/share/modelmux/server.py` (lightly tested; Claude Code is the main target).
 
-Restart Claude Code. Workers are detected at startup. To see which are ready and how to enable the rest, run `python3 server.py doctor` (or `/modelmux:setup` with the plugin).
+Restart Claude Code. Workers are detected at startup. To see which are ready and how to enable the rest, run `python3 server.py doctor` (or `/modelmux:setup` with the plugin); `doctor --live` also sends each one a tiny prompt to prove its login works.
 
 **Second Claude account:**
 
@@ -234,7 +234,6 @@ Good tools exist in this space; choose by what you need:
 ## Roadmap
 
 - More workers, each with verified read-only flags: Gemini CLI (API-key users), OpenCode, Qwen Code, Cursor CLI
-- `doctor --live`: check logins with a tiny headless prompt per worker
 - PyPI package for `uvx` installs
 - Usage log and per-worker stats
 - Rate-limit-aware fallback between workers

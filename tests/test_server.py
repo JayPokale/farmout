@@ -443,6 +443,15 @@ class DoctorTest(Base):
         self.assertRegex(out, r"ready +copilot +/\S+/copilot copilot 9\.9\.9\n")
         self.assertRegex(out, r"ready +api +some-model at http://127\.0\.0\.1:9/v1\n")
 
+    def test_live_check_reports_working_and_broken_logins(self):
+        bindir = self.make_bin(("agy", "codex"))
+        (bindir / "codex").write_text("#!/bin/sh\necho 'not logged in' >&2\nexit 1\n")
+        env = {"HOME": str(self.home), "PATH": str(bindir), "FAKE_LOG": str(self.log)}
+        out = subprocess.run([sys.executable, str(SERVER), "doctor", "--live"], env=env, capture_output=True,
+                             text=True, timeout=60).stdout
+        self.assertRegex(out, r"works +antigravity +\d+s")
+        self.assertRegex(out, r"BROKEN +codex +\d+s +RuntimeError: codex exited 1: not logged in")
+
 
 class FakeAPI(http.server.BaseHTTPRequestHandler):
     """POST /v1/chat/completions; the first word of the prompt picks the reply."""

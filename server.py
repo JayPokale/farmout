@@ -361,7 +361,7 @@ def main():
     os._exit(0)  # don't wait for worker threads still blocked in HTTP calls
 
 
-def doctor():
+def doctor(live=False):
     print(f"modelmux {VERSION} on Python {sys.version.split()[0]}; results go to {OUT_DIR}")
     for name, (_, ready, _) in WORKERS.items():
         exe, how = SETUP[name]
@@ -375,8 +375,14 @@ def doctor():
         elif ready:
             detail = f"{API_MODEL} at {API_BASE}"
         print(f"  {'ready  ' if ready else 'missing'}  {name:<12} {detail}")
-    print("Logins are not checked here. Live check (spends a little quota): python3 tests/smoke.py")
+    if not live:
+        print("Logins are not checked. `python3 server.py doctor --live` sends each ready worker one tiny prompt.")
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        tasks = [{"worker": w, "prompt": "Reply with exactly: ok", "cwd": tmp} for w in ENABLED]
+        for w, (head, body, ok) in zip(ENABLED, run_all(tasks, "doctor", Path(tmp)) if tasks else []):
+            print(f"  {'works  ' if ok else 'BROKEN '}  {w:<12} {head.split()[-3]}  {'' if ok else body[:300]}")
 
 
 if __name__ == "__main__":
-    doctor() if sys.argv[1:] == ["doctor"] else main()
+    doctor(live="--live" in sys.argv) if sys.argv[1:2] == ["doctor"] else main()
