@@ -227,22 +227,32 @@ def git(cwd, *args, stdin=None):
 
 
 def worktree(t, i, outdir):
-    """A private worktree for one write task: HEAD plus the user's uncommitted changes as a base commit."""
+    """A private worktree for one write task: HEAD plus the user's uncommitted and untracked files, committed
+    as a base. In-repo `files` are remapped into it, so no worker is ever granted the user's own tree."""
     cwd = os.path.abspath(os.path.expanduser(t.get("cwd") or os.getcwd()))
     top = git(cwd, "rev-parse", "--show-toplevel").strip()
     wt, branch = outdir / f"{i}-{t['worker']}", f"modelmux/{outdir.name}-{i}"
     with git_lock:  # parallel `worktree add`s on one repo race on git's lock files
         git(top, "worktree", "add", "-q", "-b", branch, str(wt), "HEAD")
         base = git(top, "diff", "HEAD", "--binary")
+        untracked = [f for f in git(top, "ls-files", "--others", "--exclude-standard", "-z").split("\0") if f]
     if base:
         git(wt, "apply", "--whitespace=nowarn", stdin=base)
+    for f in untracked:
+        (wt / f).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(Path(top) / f, wt / f)
+    if base or untracked:
         git(wt, "add", "-A")
         git(wt, "-c", "user.name=modelmux", "-c", "user.email=modelmux@localhost", "commit", "-qm", "your uncommitted changes")
-    return {**t, "cwd": str(wt / os.path.relpath(cwd, top)), "write": True}, wt, branch
+    files = []
+    for f in t.get("files") or []:
+        rel = os.path.relpath(os.path.abspath(os.path.join(cwd, os.path.expanduser(f))), top)
+        files.append(f if rel.startswith("..") or rel.split(os.sep)[0] == ".git" else str(wt / rel))
+    return {**t, "cwd": str(wt / os.path.relpath(cwd, top)), "files": files, "write": True}, wt, branch
 
 
 def task(i, t, rid, outdir):
-    t0, w = time.time(), t.get("worker")
+    t0, w, wt = time.time(), t.get("worker"), None
     try:
         if w not in ENABLED:
             raise ValueError(f"unknown or unavailable worker {w!r}; available: {', '.join(ENABLED) or 'none'}")
@@ -257,6 +267,8 @@ def task(i, t, rid, outdir):
             text += f"\n\n[isolated] worktree {wt}, branch {branch}, patch {patch}:\n{stat}"
     except Exception as e:
         text, ok = f"{type(e).__name__}: {e}", False
+        if wt:
+            text += f"\n\n[isolated] worktree {wt}, branch {branch} (kept for inspection)"
     path, part = outdir / f"{i}-{w}.md", outdir / f"{i}-{w}.part"
     part.write_text(text)
     part.replace(path)  # appears complete: background readers poll for it

@@ -368,9 +368,10 @@ class DelegateTest(Base):
         git("add", ".")
         git("-c", "user.name=t", "-c", "user.email=t@localhost", "commit", "-qm", "init")
         (repo / "app.py").write_text("v2, not committed\n")
+        (repo / "notes.txt").write_text("untracked\n")
         s = self.start()
-        _, results = s.delegate(*({"worker": w, "prompt": f"write fix.txt by {w}", "cwd": str(repo), "isolate": True}
-                                  for w in ("codex", "claude")))
+        _, results = s.delegate(*({"worker": w, "prompt": f"write fix.txt by {w}", "cwd": str(repo), "isolate": True,
+                                   "files": [str(repo / "app.py")]} for w in ("codex", "claude")))
         c = self.calls()
         for w, ok, _, body in results:
             self.assertTrue(ok, body)
@@ -378,8 +379,12 @@ class DelegateTest(Base):
             patch = Path(re.search(r"patch (\S+):", body).group(1))
             self.assertEqual(c[w]["cwd"], str(wt))
             self.assertEqual((wt / "app.py").read_text(), "v2, not committed\n", "base includes uncommitted work")
+            self.assertEqual((wt / "notes.txt").read_text(), "untracked\n", "base includes untracked files")
+            self.assertIn(f"- {wt / 'app.py'}", c[w]["brief"], "in-repo files are remapped into the worktree")
+            self.assertNotIn("notes.txt", patch.read_text())
             self.assertIn("+by " + w, patch.read_text())
             self.assertNotIn("v2", patch.read_text(), "the patch holds only the worker's change")
+        self.assertEqual(add_dirs(c["claude"]["argv"]), [], "no worker is granted the user's own tree")
         self.assertFalse((repo / "fix.txt").exists(), "the user's tree is untouched")
         git("apply", str(patch))
         self.assertEqual((repo / "fix.txt").read_text(), "by claude")
