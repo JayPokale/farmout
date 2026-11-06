@@ -3,6 +3,7 @@ name: ask
 description: Ask every modelmux worker the same question in parallel, then compare their answers
 argument-hint: "<question>"
 disable-model-invocation: true
+allowed-tools: mcp__plugin_modelmux_modelmux__delegate
 ---
 
 # /modelmux:ask

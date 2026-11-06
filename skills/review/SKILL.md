@@ -3,7 +3,7 @@ name: review
 description: Review the current changes with every modelmux worker in parallel (read-only), then merge their findings with agreement counts
 argument-hint: "[--base <ref>] [focus]"
 disable-model-invocation: true
-allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git rev-parse:*), Bash(mkdir:*), Bash(wc:*)
+allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git rev-parse:*), Bash(mkdir:*), Bash(wc:*), mcp__plugin_modelmux_modelmux__delegate
 ---
 
 # /modelmux:review

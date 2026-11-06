@@ -3,6 +3,7 @@ name: race
 description: Every write-capable modelmux worker attempts the same change in its own git worktree, in parallel; Claude compares the attempts and applies the best one when you agree
 argument-hint: "<task>"
 disable-model-invocation: true
+allowed-tools: mcp__plugin_modelmux_modelmux__delegate
 ---
 
 # /modelmux:race
