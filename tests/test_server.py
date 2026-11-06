@@ -538,6 +538,29 @@ class RepoTest(unittest.TestCase):
             mods |= {n.module for n in nodes if isinstance(n, ast.ImportFrom)}
             self.assertLessEqual({m.split(".")[0] for m in mods}, set(sys.stdlib_module_names))
 
+    def test_review_saves_the_diff_and_lists_untracked_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(os.path.realpath(tmp))
+
+            def run(*args):
+                return subprocess.run(args, cwd=repo, check=True, capture_output=True, text=True).stdout
+
+            run("git", "init", "-q")
+            (repo / "a.py").write_text("x = 1\n")
+            run("git", "add", ".")
+            run("git", "-c", "user.name=t", "-c", "user.email=t@localhost", "commit", "-qm", "init")
+            (repo / "a.py").write_text("x = 2\n")
+            (repo / "new.py").write_text("y = 1\n")
+            out = run("sh", str(SERVER.parent / "skills" / "review" / "save-diff.sh"), "focus", "words")
+            diff = repo / ".git" / "modelmux" / "review.diff"
+            self.assertIn(f"repository root: {repo}\n", out)
+            self.assertIn(f"diff file: {diff} ({diff.stat().st_size} bytes; uncommitted changes)", out)
+            self.assertIn("untracked file: new.py", out)
+            self.assertIn("+x = 2", diff.read_text())
+            out = run("sh", str(SERVER.parent / "skills" / "review" / "save-diff.sh"), "--base", "HEAD")
+            self.assertIn("(0 bytes; HEAD...HEAD)", out)
+            self.assertNotIn("untracked", out)
+
     def test_plugin_version_matches_server(self):
         plugin = json.loads((SERVER.parent / ".claude-plugin" / "plugin.json").read_text())
         self.assertIn(f'VERSION = "{plugin["version"]}"', SERVER.read_text())
