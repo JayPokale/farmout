@@ -48,7 +48,7 @@ flowchart LR
 - **Context-cheap:** at most ~60k characters come back per call; full outputs stay on disk.
 - **Auto-detected workers:** only the workers you actually have are offered to the head.
 - **Slash commands** (plugin install): `/modelmux:review` has every worker review your diff in parallel; `/modelmux:ask` gets a second opinion from all of them; `/modelmux:setup` shows what's ready.
-- **Zero dependencies:** about 330 lines of standard-library Python. Read it before you trust it with your accounts.
+- **Zero dependencies:** about 370 lines of standard-library Python. Read it before you trust it with your accounts.
 
 ## Quick start
 
@@ -172,6 +172,7 @@ FileNotFoundError: /home/me/project/issues.txt
 - **Why an allowlist for `copilot`:** headless Copilot needs `--allow-all-tools`, which also auto-approves every MCP server in your Copilot config (one of ours could delete cloud databases). `--available-tools` hides everything else from the model, MCP servers included.
 - **Prompt injection is real.** Workers read whatever files you hand them, and a hostile document can try to instruct them. Read-only mode limits the damage but cannot make injection impossible; for example, a worker could put file contents into a web search. Don't delegate secrets.
 - **Data leaves your head account.** Briefs and files go to each worker's provider. If your head runs on a work account, check your organization's policy before delegating its data to personal accounts.
+- **Where `write: true` can write:** inside `cwd`. For `antigravity`, `claude` and `copilot` it also covers the directories of any listed files outside `cwd`, because those are granted with `--add-dir`. `codex` writes only in `cwd`. With `isolate: true`, in-repo paths are remapped into the worktree, so no writer is ever granted your own tree.
 - **Never give two parallel tasks write access to overlapping files**, unless each has `isolate: true`: then each works in its own git worktree and your tree is untouched until you apply a patch.
 
 ## Terms of service
@@ -202,6 +203,18 @@ Tested with agy 1.4.6, codex-cli 0.163.0, Claude Code 2.1.323, GitHub Copilot CL
 | `MODELMUX_TIMEOUT` | `1200` | seconds per task |
 
 Full outputs are written to `~/.cache/modelmux/` and are safe to delete at any time. The `api` worker honours `http_proxy`/`no_proxy`.
+
+## FAQ
+
+**How is this different from OpenAI's Codex plugin for Claude Code?** That plugin drives Codex only, one job at a time, with OpenAI's own rescue and session-transfer flows. modelmux drives whichever subscriptions you have (Codex, Gemini through Antigravity, Copilot, a second Claude, local models), several at once, from one call.
+
+**Will it burn my other quotas?** Every task spends the quota of the worker that runs it. `/modelmux:review` and `/modelmux:ask` send one task per worker, so they cost one request on each; plain delegation runs only what Claude decides to hand off. `python3 server.py doctor` shows which workers are enabled.
+
+**Is it allowed by the providers' terms?** modelmux runs each vendor's official CLI in its documented headless mode, logged in as you; see [Terms of service](#terms-of-service). It doesn't proxy APIs, extract tokens or share accounts.
+
+**Is it slower?** Often, yes. Delegated reading took a minute where Claude alone took 13 seconds in [our benchmark](bench/README.md), but it used 59% fewer of Claude's tokens. Use `background: true` to keep Claude working while workers run.
+
+**Does it need Claude Code?** No. Any MCP client can be the head (see Quick start), but the slash commands are a Claude Code plugin feature.
 
 ## Alternatives
 

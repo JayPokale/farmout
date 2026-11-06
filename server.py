@@ -210,7 +210,7 @@ TOOL = {
             "prompt": {"type": "string", "description": "Standalone brief: goal, context, constraints, exact output format. The worker sees nothing else."},
             "files": {"type": "array", "items": {"type": "string"}, "description": "Paths to read: PDFs, code, earlier result files. Relative paths resolve against cwd."},
             "cwd": {"type": "string", "description": "Absolute working directory. Default: where the head was launched."},
-            "write": {"type": "boolean", "description": "Allow edits inside cwd (all workers but api). Default false."},
+            "write": {"type": "boolean", "description": "Allow edits in cwd; agy, claude and copilot also in the dirs of listed files outside it. Default false."},
             "model": {"type": "string", "description": "Override the worker's default model."},
             "isolate": {"type": "boolean", "description": "Write in a private git worktree (HEAD + your uncommitted "
                                                           "changes); the result names the patch. Implies write."},
