@@ -59,7 +59,7 @@ It drives the real CLIs on your own logins and spends a little quota. Export the
 
 ## Releasing
 
-1. Run `python3 tests/smoke.py`; if CLI versions changed, update "Tested with" in README.md.
+1. Run `python3 tests/smoke.py` (workers) and `sh tests/plugin_smoke.sh` (slash commands run headless without permission errors); if CLI versions changed, update "Tested with" in README.md.
 2. Bump `VERSION` in `server.py` and `version` in `.claude-plugin/plugin.json`. The offline suite fails if they differ.
 3. Move the Unreleased notes in CHANGELOG.md under `## [X.Y.Z] - YYYY-MM-DD`.
 4. Commit, then `git tag vX.Y.Z && git push --follow-tags`. The release workflow re-runs the tests, checks the tag against `server.py` and publishes a GitHub Release with that version's CHANGELOG notes.
