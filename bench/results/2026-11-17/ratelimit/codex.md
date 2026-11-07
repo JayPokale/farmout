@@ -1,0 +1,4 @@
+ratelimit.py:38 | high | unsynchronized bucket creation permits same-key rate-limit bypass | two threads call `allow` for a new key with capacity 1 simultaneously, each consumes a separate initial bucket | guard lookup/creation with a Limiter lock  
+ratelimit.py:49 | high | retry swallows all failures and returns `None` instead of re-raising | `fn` raises on every attempt | perform initial call plus retries, then re-raise last exception without sleeping after final failure  
+ratelimit.py:23 | high | negative cost mints tokens, bypassing rate limit | caller supplies `cost=-100`, then subsequent requests consume inflated balance | reject non-positive costs  
+ratelimit.py:19 | medium | wall-clock adjustments can grant rate-limit capacity early | system clock jumps forward | use `time.monotonic()` for elapsed-time accounting

@@ -1,0 +1,7 @@
+[
+  {"id": "ttl-units", "file": "cache.js", "match": ["return Date.now() - entry.at > this.ttl;"], "desc": "Date.now() is in milliseconds but ttl is in seconds: entries expire 1000x too early (after 60 ms, not 60 s)", "keywords": ["millisecond", " ms", "seconds", "unit", "1000"]},
+  {"id": "lru-recency", "file": "cache.js", "match": ["return entry.value;"], "desc": "get() never moves the entry to the back of the Map, so eviction drops the oldest inserted entry, not the least recently used: it is FIFO", "keywords": ["lru", "recen", "fifo", "move", "reinsert", "re-insert", "insertion order"]},
+  {"id": "unawaited-write", "file": "cache.js", "match": ["fs.promises.writeFile(path, data);"], "desc": "writeFile is not awaited: save() resolves before the data is written and a write error becomes an unhandled rejection", "keywords": ["await", "promise", "unhandled"]},
+  {"id": "prototype-pollution", "file": "config.js", "match": ["target[key] = merge(target[key] || {}, value);"], "desc": "JSON.parse keeps a \"__proto__\" key and for...in visits it, so {\"__proto__\": {\"admin\": true}} merges into Object.prototype", "keywords": ["__proto__", "prototype", "pollut"]},
+  {"id": "lexicographic-sort", "file": "config.js", "match": ["const sorted = tiers.slice().sort();"], "desc": "sort() without a comparator orders numbers as strings: [500, 50000, 1000000] sorts as [1000000, 500, 50000], so pickTier(tiers, 400) returns 1000000 instead of 500", "keywords": ["sort", "lexicograph", "comparator", "string"]}
+]

@@ -1,0 +1,4 @@
+files_api.py:36 | high | path traversal permits arbitrary file reads | `name=/etc/passwd` or `../../...` | reject absolute/traversal paths; resolve and enforce storage-root containment
+files_api.py:18 | high | SQL injection exposes other owners’ file metadata | owner=`' OR 1=1 -- ` | use a parameterized `WHERE owner = ?` query
+files_api.py:27 | medium | page 1 skips the first 20 files; valid pages cannot return them | owner has any files, `page=1` | calculate offset as `(page - 1) * PAGE_SIZE`
+files_api.py:48 | medium | concurrent deletes corrupt quota accounting | two requests delete files for same owner concurrently | atomically decrement quota in the transaction (`used = used - ?`) with appropriate locking

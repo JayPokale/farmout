@@ -1,0 +1,5 @@
+files_api.py:13 | high | owner is interpolated into SQL, allowing unauthorized file records to be queried | owner contains `' OR 1=1 --` | bind owner as a parameter
+files_api.py:32 | high | path traversal and absolute names allow reading arbitrary server files | name is `../../etc/passwd` or `/etc/passwd` | resolve the path and enforce it remains under the owner’s storage directory, with authorization
+files_api.py:25 | medium | page 1 skips the first 20 files due to a zero-based offset | any request with the default page=1 and at least 21 files | use `(page - 1) * PAGE_SIZE` and reject nonpositive pages
+files_api.py:42 | medium | nonexistent file IDs crash with a TypeError instead of returning an explicit not-found error | file_id does not exist in files | check for a missing row and raise the repository’s not-found error
+files_api.py:48 | medium | filesystem and database deletion are not atomic, leaving quota and metadata inconsistent when file removal fails | the file exists but `os.remove` raises an exception | perform deletion transactionally and surface/rollback failures before committing metadata changes

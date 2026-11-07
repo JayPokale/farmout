@@ -1,0 +1,6 @@
+[
+  {"id": "float-cents", "file": "billing.py", "match": ["return int(amount * 100)"], "desc": "int() truncates binary floats: int(19.99 * 100) is 1998, so prices lose a cent; needs round() or Decimal", "keywords": ["truncat", "float", "round", "1998", "decimal", "precision"]},
+  {"id": "timing-compare", "file": "billing.py", "match": ["return expected == signature"], "desc": "== on the HMAC leaks timing information; use hmac.compare_digest", "keywords": ["timing", "compare_digest", "constant"]},
+  {"id": "redos", "file": "billing.py", "match": ["return text if re.match(r\"^INV(-?[0-9]+)+$\", text) else None"], "desc": "nested quantifier (-?[0-9]+)+ backtracks catastrophically: 'INV' + 30 digits + '!' (well under the 200-char cap) hangs the worker for minutes", "keywords": ["backtrack", "redos", "catastroph", "exponential", "nested quantifier"]},
+  {"id": "dict-mutation", "file": "billing.py", "match": ["del self.sessions[session_id]"], "desc": "deleting from the dict while iterating over .items() raises RuntimeError: dictionary changed size during iteration", "keywords": ["iterat", "changed size", "runtimeerror", "copy", "list("]}
+]

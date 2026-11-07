@@ -1,0 +1,4 @@
+billing.py:47 | high | RuntimeError caused by deleting keys from dictionary while iterating over it | purge_expired() called when at least one session is expired | Iterate over list(self.sessions.items()) or collect expired keys in a list before deleting
+billing.py:32 | high | Catastrophic backtracking (ReDoS) due to nested quantifier in regex | String starting with 'INV' followed by repeated digits and a non-matching character | Replace regex with non-nested pattern such as r"^INV-?[0-9]+$"
+billing.py:12 | high | Truncation of float representation by int() produces incorrect cents | amount = 19.99 or other values subject to floating point inaccuracy | Use round(amount * 100) instead of int(amount * 100)
+billing.py:24 | medium | Non-constant-time string comparison allows timing attack to forge HMAC signature | Webhook verification where attacker measures response latency | Use hmac.compare_digest(expected, signature)

@@ -1,0 +1,5 @@
+config.js:8 | high | prototype pollution via JSON overrides | `{"__proto__":{"isAdmin":true}}` mutates `Object.prototype` | reject `__proto__`, `constructor`, and `prototype` keys; merge only own safe keys into null-prototype objects
+cache.js:28 | medium | TTL seconds compared as milliseconds | `new LRUCache(500, 60)` expires entries after ~60 ms, not 60 s | compare against `this.ttl * 1000`
+cache.js:14 | medium | cache reads do not refresh recency, so eviction is FIFO rather than LRU | read key A, then insert past capacity; A can be evicted despite being most recently used | on successful `get`, delete and reinsert the entry
+config.js:18 | medium | lexicographic sort selects wrong numeric upload tier | `pickTier([2, 10], 1)` returns `10` instead of `2` | sort numerically with `(a, b) => a - b`
+cache.js:43 | medium | `save` resolves before persistence finishes and write failures escape caller | caller awaits `save()` then reads file, or disk write fails | `return fs.promises.writeFile(path, data)` or `await` it

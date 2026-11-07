@@ -1,0 +1,5 @@
+cache.js:18 | medium | successful reads do not refresh Map order, so eviction is FIFO rather than LRU | read an older key, then insert past capacity | delete and reinsert entry on each non-expired get
+cache.js:30 | high | `ttlSeconds` is compared as milliseconds, expiring entries up to 1000× too early | construct with `ttlSeconds = 60`; entry expires after ~60 ms | compare against `this.ttl * 1000` or store TTL in milliseconds
+cache.js:43 | medium | `save()` resolves before the write completes and does not propagate write failures | caller awaits `save()` then reads file, or disk write fails | return or await `fs.promises.writeFile(path, data)`
+config.js:8 | high | user JSON can prototype-pollute `Object.prototype` through `__proto__` | overrides JSON is `{"__proto__":{"isAdmin":true}}` | reject dangerous keys and merge only own enumerable properties into null-prototype/plain safe objects
+config.js:18 | medium | default string sort orders numeric tiers lexicographically, selecting wrong tier | tiers `[100, 20]`, bytes `15` selects `100` instead of `20` | sort numerically with `(a, b) => a - b`

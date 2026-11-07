@@ -1,0 +1,6 @@
+[
+  {"id": "wall-clock", "file": "ratelimit.py", "match": ["now = time.time()", "self.updated = time.time()"], "desc": "uses the wall clock: an NTP step or a manual clock change makes elapsed negative (tokens drain) or huge (full burst); needs time.monotonic()", "keywords": ["monotonic", "wall", "clock", "time.time"]},
+  {"id": "bucket-race", "file": "ratelimit.py", "match": ["if bucket is None:", "self.buckets[key] = bucket"], "desc": "check-then-set on the shared dict without a lock: concurrent first calls for a key create two buckets, so the key gets double the allowance", "keywords": ["race", "lock", "concurren", "thread", "atomic"]},
+  {"id": "retry-count", "file": "ratelimit.py", "match": ["for attempt in range(retries):"], "desc": "docstring promises 1 + retries attempts, the loop makes only `retries` (and sleeps after the final failure)", "keywords": ["retries", "attempt", "off-by-one", "fewer"]},
+  {"id": "swallowed-error", "file": "ratelimit.py", "match": ["    return None"], "desc": "after the last failure it returns None instead of re-raising, so callers treat a failure as a None result", "keywords": ["none", "re-raise", "reraise", "swallow", "raise"]}
+]

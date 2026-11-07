@@ -1,0 +1,8 @@
+ratelimit.py:60 | high | retry returns None after exhausting retries instead of re-raising (docstring says re-raise); caller can't tell failure from a None result | fn() raises on every attempt | track last exc and `raise` it after loop
+ratelimit.py:49 | medium | retries=3 gives 3 total attempts, not 1+3 as documented; retries=0 never calls fn and returns None | retries=0, or expecting 4 calls | `for attempt in range(retries + 1)`, sleep only if attempt < retries
+ratelimit.py:57 | low | sleeps after the final failed attempt before giving up, adding a useless delay | all attempts fail | skip sleep on last attempt
+ratelimit.py:44 | high | check-then-set on `buckets` is unlocked; two threads with a new key create separate buckets, one is overwritten, so burst limit is exceeded | concurrent first calls for the same key | add a Limiter lock, or use `self.buckets.setdefault(key, TokenBucket(...))` under a lock
+ratelimit.py:41 | medium | buckets never evicted → unbounded memory growth | many distinct keys (per-IP/token) | TTL/LRU eviction of idle, full buckets
+ratelimit.py:19 | medium | time.time() is non-monotonic; a backwards clock step gives negative elapsed, which drains tokens and can block; a forward jump refills the bucket | NTP/clock adjustment | use time.monotonic()
+ratelimit.py:29 | low | cost > capacity can never be satisfied, and negative cost adds tokens | take(cost=capacity+1) or cost<0 | validate 0 < cost <= capacity
+ratelimit.py:58 | low | `except Exception` retries non-transient errors (e.g. ValueError, bugs) with no filter | fn raises a permanent error | add a `retry_on` exceptions parameter

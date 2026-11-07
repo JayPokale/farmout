@@ -1,0 +1,7 @@
+[
+  {"id": "index-zero", "file": "events.js", "match": ["if (i > 0) {"], "desc": "indexOf returns 0 for the first subscriber, and > 0 skips it, so the first subscriber can never unsubscribe; needs i !== -1", "keywords": ["index 0", "first", "-1", ">= 0", "indexof", "zero"]},
+  {"id": "replace-once", "file": "events.js", "match": ["return `events.${topic.replace('-', '_')}`;"], "desc": "String.replace with a string pattern replaces only the first '-': user-signed-up becomes user_signed-up", "keywords": ["replaceall", "first", "only one", "global", "/g", "occurrence"]},
+  {"id": "int64-precision", "file": "events.js", "match": ["return JSON.parse(json).map((u) => ({ id: Number(u.id), email: u.email }));"], "desc": "64-bit ids above 2^53 lose precision in JSON.parse/Number, so different users collide or ids change", "keywords": ["precision", "2^53", "max_safe", "bigint", "53", "safe integer"]},
+  {"id": "month-offset", "file": "events.js", "match": ["return new Date(Date.UTC(year, month, 1));"], "desc": "Date.UTC months are 0-based but month is 1-12, so every result is a month late (December rolls into next year)", "keywords": ["0-based", "zero-based", "month", "off-by-one", "off by one"]},
+  {"id": "foreach-async", "file": "events.js", "match": ["events.forEach(async (event) => {"], "desc": "forEach ignores the async callbacks' promises: deliverAll resolves before anything is saved, and a failed save is an unhandled rejection", "keywords": ["foreach", "promise", "await", "unhandled", "promise.all"]}
+]

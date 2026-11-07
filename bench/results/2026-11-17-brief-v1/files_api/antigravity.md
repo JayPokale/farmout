@@ -1,0 +1,10 @@
+files_api.py:36 | high | Path traversal allows arbitrary file read outside storage directory | name containing '../' or starting with '/' (e.g. '/etc/passwd') | Resolve path and verify it starts with STORAGE or use os.path.basename
+files_api.py:18 | high | SQL injection vulnerability allows arbitrary query execution and data leakage | owner containing single quotes or SQL commands | Use parameterized query with placeholder WHERE owner = ?
+files_api.py:52 | high | Missing db.commit() rolls back quota and file deletions on connection close while disk file is deleted | Any call to delete() | Call db.commit() before returning
+files_api.py:27 | high | Page offset calculation assumes 0-based index but pages start at 1, skipping the first page of files entirely | page=1 (the default argument) | Change offset calculation to start = (page - 1) * PAGE_SIZE
+files_api.py:44 | medium | Dereferencing row['owner'] raises TypeError when file does not exist | file_id not found in files table | Check if row is None before accessing attributes and raise appropriate error
+files_api.py:48 | medium | Non-atomic read-modify-write quota update causes lost-update race condition | Concurrent delete calls for the same owner | Use atomic SQL query: UPDATE quota SET used = used - ? WHERE owner = ?
+files_api.py:48 | medium | Indexing ['used'] raises TypeError when owner has no quota record | File owner not present in quota table | Verify quota query result is not None before accessing ['used']
+files_api.py:25 | low | Non-positive page numbers bypass page > pages check and produce incorrect slices | page < 1 (e.g. page=0 or negative) | Validate page >= 1 or return empty list when page < 1
+files_api.py:50 | low | TOCTOU race condition between exists check and file deletion | File deleted by another process between os.path.exists() and os.remove() | Call os.remove() inside try block handling FileNotFoundError
+files_api.py:44 | low | Accessing user['admin'] raises KeyError if admin key is omitted | user dict without 'admin' key passed to delete() | Use user.get('admin', False)

@@ -1,0 +1,5 @@
+ratelimit.py:60 | high | Swallows exception and returns None instead of re-raising the last exception | fn() raises an exception on all retry attempts | Re-raise the last caught exception when retries are exhausted
+ratelimit.py:38 | high | Race condition accessing and mutating self.buckets breaks thread-safety contract and allows rate limit bypass | Concurrent calls to allow() for the same key across threads | Synchronize bucket lookup and creation using a threading.Lock
+ratelimit.py:49 | high | Executes retries total attempts instead of retrying up to retries more times and never calls fn when retries=0 | retries=0 or any call expecting retries additional attempts | Loop over range(retries + 1) so fn is called initially and retried up to retries times
+ratelimit.py:19 | medium | Non-monotonic time.time() causes negative elapsed intervals and token depletion during system clock adjustments | Backward wall-clock adjustment such as NTP sync | Use time.monotonic() instead of time.time()
+ratelimit.py:57 | medium | Unnecessary delay on final failed attempt before giving up | All retry attempts fail | Do not sleep when no further retry attempts remain

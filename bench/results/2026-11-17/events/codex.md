@@ -1,0 +1,5 @@
+events.js:16 | medium | first subscriber can never be removed, causing callbacks and retained references after unsubscribe | unsubscribe a function at index 0 | change condition to `i >= 0`
+events.js:28 | medium | only first hyphen is converted, producing incorrect metric names for multi-segment topics | `metricName('user-email-verified')` returns `events.user_email-verified` | replace globally with `topic.replace(/-/g, '_')`
+events.js:36 | high | conversion of 64-bit database IDs to Number silently corrupts IDs above JavaScript’s safe-integer limit | API row has `"id":"9007199254740993"` | preserve IDs as strings or validate safe integers before conversion
+events.js:44 | high | uses one-based UI month directly as zero-based Date.UTC month, returning the following month | `monthStart(2026, 1)` returns February 1 | pass `month - 1` to `Date.UTC`
+events.js:52 | high | function resolves before saves/publishes complete and save failures become unhandled rejections while reporting success | asynchronous `store.save` or a rejected save | await all saves (for example `await Promise.all(events.map(...))`) before returning

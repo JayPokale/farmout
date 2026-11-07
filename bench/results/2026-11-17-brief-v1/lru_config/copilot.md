@@ -1,0 +1,5 @@
+config.js:7 | high | untrusted overrides can prototype-pollute global objects via `__proto__` or `constructor.prototype` | JSON contains `{"__proto__":{"polluted":true}}` | reject dangerous keys and merge only own properties into null-prototype objects
+cache.js:25 | medium | TTL is treated as milliseconds despite being named and documented as seconds | default entry expires after about 60ms instead of 60s | multiply `ttlSeconds` by 1000 or use millisecond naming
+config.js:18 | medium | numeric tiers are sorted lexicographically, so tier selection can return the wrong size | tiers such as `[100, 20, 5]` | sort numerically with `(a, b) => a - b`
+cache.js:16 | medium | successful `get` does not refresh recency, so the cache is not LRU | access an older entry before inserting another entry | delete and reinsert the entry on every successful get
+cache.js:42 | medium | `save` resolves before the file write completes and discards write failures | caller awaits `save` or writeFile rejects | return or await `fs.promises.writeFile(path, data)`

@@ -1,0 +1,4 @@
+billing.py:7 | high | Webhook signatures use a hardcoded publicly known secret, allowing forgery | any deployment using this module | load a unique secret from secure configuration and reject missing/weak secrets
+billing.py:44 | high | Deleting entries while iterating over the dictionary raises RuntimeError and aborts cleanup | purge_expired() finds any expired session | iterate over a snapshot of expired keys or rebuild the dictionary
+billing.py:23 | medium | Signature comparison is timing-sensitive | attacker can make repeated webhook requests and measure responses | use hmac.compare_digest()
+billing.py:12 | medium | Binary floating-point conversion truncates valid monetary values | amounts such as 19.99 produce 1998 cents | parse with Decimal and apply explicit currency rounding

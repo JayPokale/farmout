@@ -1,0 +1,4 @@
+ratelimit.py:38 | medium | Concurrent first calls for the same key can create separate buckets, bypassing the configured limit | multiple threads call allow() for a previously unseen key | guard bucket lookup/creation with a lock
+ratelimit.py:49 | medium | retry performs only `retries` total calls instead of the documented initial call plus `retries` retries | fn continues raising with default retries=3 | iterate over `range(retries + 1)`
+ratelimit.py:60 | medium | Exhausted failures are swallowed and the documented last exception is not re-raised | every attempted fn() call raises | retain and re-raise the final exception
+ratelimit.py:23 | low | Negative costs increase the token balance beyond capacity, allowing callers to bypass rate limiting | allow(key, cost<0) is called | reject non-positive costs before updating or consuming tokens

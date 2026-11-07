@@ -1,0 +1,7 @@
+[
+  {"id": "sql-injection", "file": "files_api.py", "match": ["WHERE owner = '{owner}'"], "desc": "owner is interpolated into the SQL string: owner = \"x' OR '1'='1\" lists every user's files", "keywords": ["inject", "sql", "parameteri"]},
+  {"id": "page-offset", "file": "files_api.py", "match": ["start = page * PAGE_SIZE"], "desc": "pages start at 1 but the offset uses page * PAGE_SIZE, so page 1 skips the first 20 files and the last page is always empty", "keywords": ["page", "offset", "off-by-one", "skip"]},
+  {"id": "path-traversal", "file": "files_api.py", "match": ["path = os.path.join(STORAGE, owner, name)"], "desc": "name from the URL is joined unchecked: ../../etc/passwd (or an absolute path) escapes the owner's directory", "keywords": ["travers", "../", "escape", "absolute"]},
+  {"id": "missing-row", "file": "files_api.py", "match": ["if row[\"owner\"] != user[\"name\"]"], "desc": "an unknown file_id makes fetchone() return None, so row[\"owner\"] raises TypeError (a 500) instead of a not-found error", "keywords": ["none", "typeerror", "not found", "not-found", "missing", "nonexist"]},
+  {"id": "no-commit", "file": "files_api.py", "match": ["db.execute(\"DELETE FROM files WHERE id = ?\""], "desc": "the UPDATE and DELETE are never committed: the file is removed from disk but the row and quota change roll back, leaving a dangling row", "keywords": ["commit", "rollback", "roll back", "transaction", "persist"]}
+]

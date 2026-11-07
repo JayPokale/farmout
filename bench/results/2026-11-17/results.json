@@ -1,0 +1,720 @@
+{
+ "runs": [
+  {
+   "case": "files_api",
+   "worker": "antigravity",
+   "ok": true,
+   "secs": 216,
+   "findings": 7
+  },
+  {
+   "case": "files_api",
+   "worker": "codex",
+   "ok": true,
+   "secs": 51,
+   "findings": 5
+  },
+  {
+   "case": "files_api",
+   "worker": "claude",
+   "ok": true,
+   "secs": 13,
+   "findings": 9
+  },
+  {
+   "case": "files_api",
+   "worker": "copilot",
+   "ok": true,
+   "secs": 26,
+   "findings": 5
+  },
+  {
+   "case": "lru_config",
+   "worker": "antigravity",
+   "ok": true,
+   "secs": 214,
+   "findings": 5
+  },
+  {
+   "case": "lru_config",
+   "worker": "codex",
+   "ok": true,
+   "secs": 25,
+   "findings": 5
+  },
+  {
+   "case": "lru_config",
+   "worker": "claude",
+   "ok": true,
+   "secs": 11,
+   "findings": 6
+  },
+  {
+   "case": "lru_config",
+   "worker": "copilot",
+   "ok": true,
+   "secs": 29,
+   "findings": 5
+  },
+  {
+   "case": "ratelimit",
+   "worker": "antigravity",
+   "ok": true,
+   "secs": 226,
+   "findings": 5
+  },
+  {
+   "case": "ratelimit",
+   "worker": "codex",
+   "ok": true,
+   "secs": 29,
+   "findings": 4
+  },
+  {
+   "case": "ratelimit",
+   "worker": "claude",
+   "ok": true,
+   "secs": 10,
+   "findings": 8
+  },
+  {
+   "case": "ratelimit",
+   "worker": "copilot",
+   "ok": true,
+   "secs": 30,
+   "findings": 4
+  },
+  {
+   "case": "billing",
+   "worker": "antigravity",
+   "ok": true,
+   "secs": 251,
+   "findings": 4
+  },
+  {
+   "case": "billing",
+   "worker": "codex",
+   "ok": true,
+   "secs": 42,
+   "findings": 4
+  },
+  {
+   "case": "billing",
+   "worker": "claude",
+   "ok": true,
+   "secs": 13,
+   "findings": 10
+  },
+  {
+   "case": "billing",
+   "worker": "copilot",
+   "ok": true,
+   "secs": 27,
+   "findings": 4
+  },
+  {
+   "case": "events",
+   "worker": "antigravity",
+   "ok": true,
+   "secs": 109,
+   "findings": 5
+  },
+  {
+   "case": "events",
+   "worker": "codex",
+   "ok": true,
+   "secs": 36,
+   "findings": 5
+  },
+  {
+   "case": "events",
+   "worker": "claude",
+   "ok": true,
+   "secs": 10,
+   "findings": 7
+  },
+  {
+   "case": "events",
+   "worker": "copilot",
+   "ok": true,
+   "secs": 22,
+   "findings": 5
+  }
+ ],
+ "calls": [
+  {
+   "case": "files_api",
+   "wall": 216
+  },
+  {
+   "case": "lru_config",
+   "wall": 214
+  },
+  {
+   "case": "ratelimit",
+   "wall": 226
+  },
+  {
+   "case": "billing",
+   "wall": 251
+  },
+  {
+   "case": "events",
+   "wall": 109
+  }
+ ],
+ "matrix": [
+  {
+   "case": "billing",
+   "id": "float-cents",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "billing",
+   "id": "timing-compare",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "billing",
+   "id": "redos",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "billing",
+   "id": "dict-mutation",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "billing",
+   "id": "float-cents",
+   "worker": "codex",
+   "hit": true
+  },
+  {
+   "case": "billing",
+   "id": "timing-compare",
+   "worker": "codex",
+   "hit": false
+  },
+  {
+   "case": "billing",
+   "id": "redos",
+   "worker": "codex",
+   "hit": true
+  },
+  {
+   "case": "billing",
+   "id": "dict-mutation",
+   "worker": "codex",
+   "hit": true
+  },
+  {
+   "case": "billing",
+   "id": "float-cents",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "billing",
+   "id": "timing-compare",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "billing",
+   "id": "redos",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "billing",
+   "id": "dict-mutation",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "billing",
+   "id": "float-cents",
+   "worker": "copilot",
+   "hit": true
+  },
+  {
+   "case": "billing",
+   "id": "timing-compare",
+   "worker": "copilot",
+   "hit": true
+  },
+  {
+   "case": "billing",
+   "id": "redos",
+   "worker": "copilot",
+   "hit": false
+  },
+  {
+   "case": "billing",
+   "id": "dict-mutation",
+   "worker": "copilot",
+   "hit": true
+  },
+  {
+   "case": "events",
+   "id": "index-zero",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "events",
+   "id": "replace-once",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "events",
+   "id": "int64-precision",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "events",
+   "id": "month-offset",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "events",
+   "id": "foreach-async",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "events",
+   "id": "index-zero",
+   "worker": "codex",
+   "hit": true
+  },
+  {
+   "case": "events",
+   "id": "replace-once",
+   "worker": "codex",
+   "hit": true
+  },
+  {
+   "case": "events",
+   "id": "int64-precision",
+   "worker": "codex",
+   "hit": true
+  },
+  {
+   "case": "events",
+   "id": "month-offset",
+   "worker": "codex",
+   "hit": true
+  },
+  {
+   "case": "events",
+   "id": "foreach-async",
+   "worker": "codex",
+   "hit": true
+  },
+  {
+   "case": "events",
+   "id": "index-zero",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "events",
+   "id": "replace-once",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "events",
+   "id": "int64-precision",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "events",
+   "id": "month-offset",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "events",
+   "id": "foreach-async",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "events",
+   "id": "index-zero",
+   "worker": "copilot",
+   "hit": true
+  },
+  {
+   "case": "events",
+   "id": "replace-once",
+   "worker": "copilot",
+   "hit": true
+  },
+  {
+   "case": "events",
+   "id": "int64-precision",
+   "worker": "copilot",
+   "hit": true
+  },
+  {
+   "case": "events",
+   "id": "month-offset",
+   "worker": "copilot",
+   "hit": true
+  },
+  {
+   "case": "events",
+   "id": "foreach-async",
+   "worker": "copilot",
+   "hit": true
+  },
+  {
+   "case": "files_api",
+   "id": "sql-injection",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "files_api",
+   "id": "page-offset",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "files_api",
+   "id": "path-traversal",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "files_api",
+   "id": "missing-row",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "files_api",
+   "id": "no-commit",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "files_api",
+   "id": "sql-injection",
+   "worker": "codex",
+   "hit": true
+  },
+  {
+   "case": "files_api",
+   "id": "page-offset",
+   "worker": "codex",
+   "hit": true
+  },
+  {
+   "case": "files_api",
+   "id": "path-traversal",
+   "worker": "codex",
+   "hit": true
+  },
+  {
+   "case": "files_api",
+   "id": "missing-row",
+   "worker": "codex",
+   "hit": true
+  },
+  {
+   "case": "files_api",
+   "id": "no-commit",
+   "worker": "codex",
+   "hit": false
+  },
+  {
+   "case": "files_api",
+   "id": "sql-injection",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "files_api",
+   "id": "page-offset",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "files_api",
+   "id": "path-traversal",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "files_api",
+   "id": "missing-row",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "files_api",
+   "id": "no-commit",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "files_api",
+   "id": "sql-injection",
+   "worker": "copilot",
+   "hit": true
+  },
+  {
+   "case": "files_api",
+   "id": "page-offset",
+   "worker": "copilot",
+   "hit": true
+  },
+  {
+   "case": "files_api",
+   "id": "path-traversal",
+   "worker": "copilot",
+   "hit": true
+  },
+  {
+   "case": "files_api",
+   "id": "missing-row",
+   "worker": "copilot",
+   "hit": true
+  },
+  {
+   "case": "files_api",
+   "id": "no-commit",
+   "worker": "copilot",
+   "hit": true
+  },
+  {
+   "case": "lru_config",
+   "id": "ttl-units",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "lru_config",
+   "id": "lru-recency",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "lru_config",
+   "id": "unawaited-write",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "lru_config",
+   "id": "prototype-pollution",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "lru_config",
+   "id": "lexicographic-sort",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "lru_config",
+   "id": "ttl-units",
+   "worker": "codex",
+   "hit": true
+  },
+  {
+   "case": "lru_config",
+   "id": "lru-recency",
+   "worker": "codex",
+   "hit": true
+  },
+  {
+   "case": "lru_config",
+   "id": "unawaited-write",
+   "worker": "codex",
+   "hit": true
+  },
+  {
+   "case": "lru_config",
+   "id": "prototype-pollution",
+   "worker": "codex",
+   "hit": true
+  },
+  {
+   "case": "lru_config",
+   "id": "lexicographic-sort",
+   "worker": "codex",
+   "hit": true
+  },
+  {
+   "case": "lru_config",
+   "id": "ttl-units",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "lru_config",
+   "id": "lru-recency",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "lru_config",
+   "id": "unawaited-write",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "lru_config",
+   "id": "prototype-pollution",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "lru_config",
+   "id": "lexicographic-sort",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "lru_config",
+   "id": "ttl-units",
+   "worker": "copilot",
+   "hit": true
+  },
+  {
+   "case": "lru_config",
+   "id": "lru-recency",
+   "worker": "copilot",
+   "hit": true
+  },
+  {
+   "case": "lru_config",
+   "id": "unawaited-write",
+   "worker": "copilot",
+   "hit": true
+  },
+  {
+   "case": "lru_config",
+   "id": "prototype-pollution",
+   "worker": "copilot",
+   "hit": true
+  },
+  {
+   "case": "lru_config",
+   "id": "lexicographic-sort",
+   "worker": "copilot",
+   "hit": true
+  },
+  {
+   "case": "ratelimit",
+   "id": "wall-clock",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "ratelimit",
+   "id": "bucket-race",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "ratelimit",
+   "id": "retry-count",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "ratelimit",
+   "id": "swallowed-error",
+   "worker": "antigravity",
+   "hit": true
+  },
+  {
+   "case": "ratelimit",
+   "id": "wall-clock",
+   "worker": "codex",
+   "hit": true
+  },
+  {
+   "case": "ratelimit",
+   "id": "bucket-race",
+   "worker": "codex",
+   "hit": true
+  },
+  {
+   "case": "ratelimit",
+   "id": "retry-count",
+   "worker": "codex",
+   "hit": true
+  },
+  {
+   "case": "ratelimit",
+   "id": "swallowed-error",
+   "worker": "codex",
+   "hit": false
+  },
+  {
+   "case": "ratelimit",
+   "id": "wall-clock",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "ratelimit",
+   "id": "bucket-race",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "ratelimit",
+   "id": "retry-count",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "ratelimit",
+   "id": "swallowed-error",
+   "worker": "claude",
+   "hit": true
+  },
+  {
+   "case": "ratelimit",
+   "id": "wall-clock",
+   "worker": "copilot",
+   "hit": false
+  },
+  {
+   "case": "ratelimit",
+   "id": "bucket-race",
+   "worker": "copilot",
+   "hit": true
+  },
+  {
+   "case": "ratelimit",
+   "id": "retry-count",
+   "worker": "copilot",
+   "hit": true
+  },
+  {
+   "case": "ratelimit",
+   "id": "swallowed-error",
+   "worker": "copilot",
+   "hit": true
+  }
+ ]
+}

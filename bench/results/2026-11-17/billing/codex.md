@@ -1,0 +1,4 @@
+billing.py:7 | high | hardcoded public webhook secret lets attackers forge accepted webhook signatures | deployment uses default SECRET | load a unique secret from protected configuration; reject startup if absent/default  
+billing.py:12 | medium | float conversion truncates legitimate prices by one cent | price `19.99` evaluates below 1999 cents | accept Decimal/string minor units and round explicitly  
+billing.py:32 | medium | nested quantifiers permit regex backtracking DoS | `INV` + many digits + a nonmatching suffix | use a non-ambiguous pattern such as `^INV-?[0-9]+$`  
+billing.py:49 | medium | deleting during dict iteration raises RuntimeError, leaving expired sessions uncleared | any session is expired when `purge_expired()` runs | iterate over `list(self.sessions.items())` or collect keys first

@@ -1,0 +1,5 @@
+files_api.py:36 | high | Path traversal exposes arbitrary readable files | `name=/etc/passwd` or `../../...` from request URL | resolve and validate path remains inside the owner’s storage directory  
+files_api.py:31 | high | Download has no ownership/authorization check | authenticated user requests another owner’s known filename | accept user context and enforce owner/admin authorization  
+files_api.py:18 | high | SQL injection leaks other users’ file metadata | owner value `x' OR 1=1 --` | parameterize owner with `WHERE owner = ?`  
+files_api.py:27 | medium | Pagination skips the first page and returns empty results for one-page listings | `page=1` with 1–20 files | use `(page - 1) * PAGE_SIZE` and validate page is at least 1  
+files_api.py:44 | medium | Deleting a nonexistent file crashes with `TypeError` | unknown `file_id` produces no row | handle a missing row with a not-found result/error before indexing it

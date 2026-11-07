@@ -1,0 +1,5 @@
+files_api.py:16 | high | SQL injection allows listing other users' files | owner contains SQL such as `' OR 1=1 --` | use a parameterized query
+files_api.py:34 | high | path traversal allows reading arbitrary files | owner or name contains `../` or name is an absolute path | validate components and enforce the resolved path remains under STORAGE
+files_api.py:27 | medium | first page is skipped and page numbering is off by one | page is 1, or any valid page request | calculate `start = (page - 1) * PAGE_SIZE`
+files_api.py:51 | medium | deletion is not persisted because the function never commits its database transaction | caller closes or reuses the connection after delete | commit after the database and filesystem updates, with failure-safe transaction handling
+files_api.py:44 | low | nonexistent file IDs crash with a TypeError instead of returning a not-found result | file_id does not exist | check for a missing row and raise/return the repository's not-found response
