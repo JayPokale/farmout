@@ -3,7 +3,7 @@ name: review
 description: Review the current changes with every modelmux worker in parallel (read-only), then merge their findings with agreement counts
 argument-hint: "[--base <ref>] [focus]"
 disable-model-invocation: true
-allowed-tools: Bash(sh ${CLAUDE_PLUGIN_ROOT}/skills/review/save-diff.sh:*), mcp__plugin_modelmux_modelmux__delegate
+allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/skills/review/save-diff.sh:*), mcp__plugin_modelmux_modelmux__delegate
 ---
 
 # /modelmux:review
@@ -13,7 +13,7 @@ Arguments: $ARGUMENTS
 ## 1. The change, already saved
 
 ```!
-sh "${CLAUDE_PLUGIN_ROOT}/skills/review/save-diff.sh" $ARGUMENTS
+"${CLAUDE_PLUGIN_ROOT}/skills/review/save-diff.sh" $ARGUMENTS
 ```
 
 The output above names the repository root, the diff file and any untracked files; don't read the diff yourself. With `--base <ref>` the target is the branch since `<ref>`, otherwise the uncommitted work. Argument text other than `--base <ref>` is the review focus. If the diff is 0 bytes and nothing is untracked, say there is nothing to review and stop.
