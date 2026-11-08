@@ -8,6 +8,12 @@
 ![MCP](https://img.shields.io/badge/MCP-stdio-6e56cf)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
+<p align="center"><img src="assets/review-demo.svg" width="900" alt="Animated terminal replay of a real run: /modelmux:review sends one uncommitted change to antigravity, codex, claude and copilot in parallel, then Claude prints a merged, verified table of nine findings with how many models flagged each"></p>
+
+- **`/modelmux:review`**: Codex, Gemini (through Antigravity), GitHub Copilot and a second Claude account review your diff at the same time, read-only. Claude merges what they found, counts how many models flagged each problem, and checks every finding against the code. In [our benchmark](bench/README.md), every one of 23 planted bugs was flagged by at least three of the four models.
+- **`/modelmux:race <task>`**: every model attempts the same fix in its own git worktree; your tests pick the winner, and nothing touches your tree until you say so.
+- **Everyday delegation**: Claude hands long reads and boilerplate to whichever subscription fits. Summarizing three papers this way cost Claude **59% fewer tokens** (74% less cost) for the same answers.
+
 You pay for Claude. Maybe also ChatGPT, Google AI, a second Claude seat, or you run an open model on a GPU. Yet your best model's quota still goes on reading PDFs and writing boilerplate while the others sit idle.
 
 modelmux makes Claude Code the **head**. It plans, splits a job into self-contained subtasks, sends each one to a model that is good enough for it, and keeps its own quota for the hard parts:

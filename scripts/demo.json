@@ -1,0 +1,503 @@
+{
+ "title": "modelmux /modelmux:review demo: four models review one diff in parallel; Claude merges and verifies the findings",
+ "window": "~/project · claude",
+ "cycle": 17,
+ "lines": [
+  {
+   "row": 0,
+   "on": 0.2,
+   "spans": [
+    [
+     "❯ ",
+     "prompt",
+     true
+    ],
+    [
+     "/modelmux:review",
+     "fg",
+     true
+    ]
+   ]
+  },
+  {
+   "row": 1,
+   "on": 1.0,
+   "spans": [
+    [
+     "⏺ ",
+     "ok"
+    ],
+    [
+     "Saved the diff of your uncommitted change ",
+     "fg"
+    ],
+    [
+     "(files_api.py, +61 lines)",
+     "dim"
+    ]
+   ]
+  },
+  {
+   "row": 2,
+   "on": 1.7,
+   "spans": [
+    [
+     "⏺ ",
+     "ok"
+    ],
+    [
+     "modelmux · delegate",
+     "fg",
+     true
+    ],
+    [
+     "  4 reviewers in parallel, read-only",
+     "dim"
+    ]
+   ]
+  },
+  {
+   "row": 3,
+   "on": 2.2,
+   "spans": [
+    [
+     "antigravity  ",
+     "antigravity"
+    ],
+    [
+     "reviewing…",
+     "dim"
+    ]
+   ],
+   "off": 5.2,
+   "indent": 3
+  },
+  {
+   "row": 3,
+   "on": 5.2,
+   "spans": [
+    [
+     "antigravity  ",
+     "antigravity"
+    ],
+    [
+     "✓ ",
+     "ok"
+    ],
+    [
+     "6 findings",
+     "fg"
+    ],
+    [
+     "   202s",
+     "dim"
+    ]
+   ],
+   "indent": 3
+  },
+  {
+   "row": 4,
+   "on": 2.2,
+   "spans": [
+    [
+     "codex        ",
+     "codex"
+    ],
+    [
+     "reviewing…",
+     "dim"
+    ]
+   ],
+   "off": 3.9,
+   "indent": 3
+  },
+  {
+   "row": 4,
+   "on": 3.9,
+   "spans": [
+    [
+     "codex        ",
+     "codex"
+    ],
+    [
+     "✓ ",
+     "ok"
+    ],
+    [
+     "4 findings",
+     "fg"
+    ],
+    [
+     "   46s",
+     "dim"
+    ]
+   ],
+   "indent": 3
+  },
+  {
+   "row": 5,
+   "on": 2.2,
+   "spans": [
+    [
+     "claude       ",
+     "claude"
+    ],
+    [
+     "reviewing…",
+     "dim"
+    ]
+   ],
+   "off": 2.9,
+   "indent": 3
+  },
+  {
+   "row": 5,
+   "on": 2.9,
+   "spans": [
+    [
+     "claude       ",
+     "claude"
+    ],
+    [
+     "✓ ",
+     "ok"
+    ],
+    [
+     "8 findings",
+     "fg"
+    ],
+    [
+     "   11s",
+     "dim"
+    ]
+   ],
+   "indent": 3
+  },
+  {
+   "row": 6,
+   "on": 2.2,
+   "spans": [
+    [
+     "copilot      ",
+     "copilot"
+    ],
+    [
+     "reviewing…",
+     "dim"
+    ]
+   ],
+   "off": 3.5,
+   "indent": 3
+  },
+  {
+   "row": 6,
+   "on": 3.5,
+   "spans": [
+    [
+     "copilot      ",
+     "copilot"
+    ],
+    [
+     "✓ ",
+     "ok"
+    ],
+    [
+     "6 findings",
+     "fg"
+    ],
+    [
+     "   34s",
+     "dim"
+    ]
+   ],
+   "indent": 3
+  },
+  {
+   "row": 8,
+   "on": 5.8,
+   "spans": [
+    [
+     "⏺ ",
+     "ok"
+    ],
+    [
+     "Merged 4 reviews and checked every finding against the code",
+     "fg"
+    ]
+   ]
+  },
+  {
+   "row": 9,
+   "on": 6.5,
+   "spans": [
+    [
+     "  severity  location          defect                                                    models",
+     "dim"
+    ]
+   ]
+  },
+  {
+   "row": 10,
+   "on": 6.8,
+   "spans": [
+    [
+     "  high      ",
+     "high"
+    ],
+    [
+     "files_api.py:18   ",
+     "fg"
+    ],
+    [
+     "SQL injection: owner interpolated into the query          ",
+     "fg"
+    ],
+    [
+     "4/4  ",
+     "fg",
+     true
+    ],
+    [
+     "✓",
+     "ok"
+    ]
+   ]
+  },
+  {
+   "row": 11,
+   "on": 7.02,
+   "spans": [
+    [
+     "  high      ",
+     "high"
+    ],
+    [
+     "files_api.py:36   ",
+     "fg"
+    ],
+    [
+     "path traversal: an absolute or ../ name escapes STORAGE   ",
+     "fg"
+    ],
+    [
+     "4/4  ",
+     "fg",
+     true
+    ],
+    [
+     "✓",
+     "ok"
+    ]
+   ]
+  },
+  {
+   "row": 12,
+   "on": 7.24,
+   "spans": [
+    [
+     "  high      ",
+     "high"
+    ],
+    [
+     "files_api.py:36   ",
+     "fg"
+    ],
+    [
+     "download has no ownership check (IDOR)                    ",
+     "fg"
+    ],
+    [
+     "2/4  ",
+     "fg",
+     true
+    ],
+    [
+     "✓",
+     "ok"
+    ]
+   ]
+  },
+  {
+   "row": 13,
+   "on": 7.46,
+   "spans": [
+    [
+     "  high      ",
+     "high"
+    ],
+    [
+     "files_api.py:52   ",
+     "fg"
+    ],
+    [
+     "delete never commits: rows roll back, file already gone   ",
+     "fg"
+    ],
+    [
+     "2/4  ",
+     "fg",
+     true
+    ],
+    [
+     "✓",
+     "ok"
+    ]
+   ]
+  },
+  {
+   "row": 14,
+   "on": 7.68,
+   "spans": [
+    [
+     "  medium    ",
+     "medium"
+    ],
+    [
+     "files_api.py:27   ",
+     "fg"
+    ],
+    [
+     "1-based pages: page 1 skips the first 20 files            ",
+     "fg"
+    ],
+    [
+     "4/4  ",
+     "fg",
+     true
+    ],
+    [
+     "✓",
+     "ok"
+    ]
+   ]
+  },
+  {
+   "row": 15,
+   "on": 7.9,
+   "spans": [
+    [
+     "  medium    ",
+     "medium"
+    ],
+    [
+     "files_api.py:43   ",
+     "fg"
+    ],
+    [
+     "unknown file_id: row is None, TypeError instead of 404    ",
+     "fg"
+    ],
+    [
+     "4/4  ",
+     "fg",
+     true
+    ],
+    [
+     "✓",
+     "ok"
+    ]
+   ]
+  },
+  {
+   "row": 16,
+   "on": 8.12,
+   "spans": [
+    [
+     "  medium    ",
+     "medium"
+    ],
+    [
+     "files_api.py:48   ",
+     "fg"
+    ],
+    [
+     "quota read-then-write races; missing quota row crashes    ",
+     "fg"
+    ],
+    [
+     "3/4  ",
+     "fg",
+     true
+    ],
+    [
+     "✓",
+     "ok"
+    ]
+   ]
+  },
+  {
+   "row": 17,
+   "on": 8.34,
+   "spans": [
+    [
+     "  low       ",
+     "low"
+    ],
+    [
+     "files_api.py:44   ",
+     "fg"
+    ],
+    [
+     "user[\"admin\"] raises KeyError when the key is missing     ",
+     "fg"
+    ],
+    [
+     "1/4  ",
+     "fg",
+     true
+    ],
+    [
+     "✓",
+     "ok"
+    ]
+   ]
+  },
+  {
+   "row": 18,
+   "on": 8.56,
+   "spans": [
+    [
+     "  low       ",
+     "low"
+    ],
+    [
+     "files_api.py:23   ",
+     "fg"
+    ],
+    [
+     "file URL built from raw names, not quoted                 ",
+     "fg"
+    ],
+    [
+     "1/4  ",
+     "fg",
+     true
+    ],
+    [
+     "✓",
+     "ok"
+    ]
+   ]
+  },
+  {
+   "row": 20,
+   "on": 9.4,
+   "spans": [
+    [
+     "  All 5 planted bugs confirmed, plus 4 real issues nobody planted. Nothing changed in your tree.",
+     "fg"
+    ]
+   ]
+  },
+  {
+   "row": 21,
+   "on": 9.9,
+   "spans": [
+    [
+     "  4 models · 1 call · 220s (antigravity 202s, claude 11s) · Claude's own cost $0.115",
+     "dim"
+    ]
+   ]
+  }
+ ]
+}

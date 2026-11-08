@@ -41,6 +41,10 @@ Codex missed the timing-unsafe HMAC compare; Copilot missed the ReDoS. Per-bug d
 - **Misses move around.** Codex missed different bugs in two runs of the same case, and Copilot missed others. The fan-out means you don't have to know which model is reliable this week.
 - **Cost in time, not in Claude's tokens.** A parallel call is as slow as its slowest worker: Antigravity averaged about 3.4 minutes per review, while Claude (Sonnet) took about 11 seconds. Running everything produced 112 findings for 23 planted bugs, so the head's merge-and-verify step matters. Some extras are real issues the cases didn't plant (missing authorization, quota races), and some are noise.
 
+### End to end
+
+`results/2026-11-17/demo-review.md` is a real `/modelmux:review` run on `files_api`, from the plugin loaded with `--plugin-dir`. It shows each worker's raw findings and Claude's merged, verified table: all five planted bugs confirmed (four at 4/4 agreement), plus four real issues nobody planted. The run took 220s; Claude's own cost was $0.115.
+
 ## Head tokens: reading papers alone vs delegating
 
 `head_tokens.py` runs one task twice with `claude -p` (Sonnet head, separate account): summarize three arXiv papers (Transformer, BERT, ResNet; 43 pages), giving method, datasets and headline number. Once the head reads the PDFs itself; once it may only call `delegate`, and Antigravity reads them. Numbers are the head's own usage from `--output-format json` (2026-11-17, one run each):
