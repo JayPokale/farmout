@@ -44,6 +44,7 @@ elif cmd == "sleep":
     time.sleep(120)
 elif cmd == "write":
     fname, _, content = reply.partition(" ")
+    os.makedirs(os.path.dirname(fname) or ".", exist_ok=True)
     with open(fname, "w") as f:
         f.write(content)
     reply = f"wrote {fname}"

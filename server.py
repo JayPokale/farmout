@@ -231,7 +231,9 @@ def worktree(t, i, outdir):
     as a base. In-repo `files` are remapped into it, so no worker is ever granted the user's own tree."""
     cwd = os.path.abspath(os.path.expanduser(t.get("cwd") or os.getcwd()))
     top = git(cwd, "rev-parse", "--show-toplevel").strip()
-    wt, branch = outdir / f"{i}-{t['worker']}", f"modelmux/{outdir.name}-{i}"
+    # Inside the repo's git dir: the head can read and test it without leaving the project.
+    wt = Path(git(top, "rev-parse", "--absolute-git-dir").strip()) / "modelmux" / outdir.name / f"{i}-{t['worker']}"
+    branch = f"modelmux/{outdir.name}-{i}"
     with git_lock:  # parallel `worktree add`s on one repo race on git's lock files
         git(top, "worktree", "add", "-q", "-b", branch, str(wt), "HEAD")
         base = git(top, "diff", "HEAD", "--binary")
@@ -260,8 +262,8 @@ def task(i, t, rid, outdir):
             t, wt, branch = worktree(t, i, outdir)
         text, ok = ENABLED[w][0](t, rid).strip(), True
         if t.get("isolate"):  # only the worker's own changes, ready for `git apply` in the user's tree
-            git(wt, "add", "-A")
-            patch = outdir / f"{i}-{w}.patch"
+            git(wt, "add", "-A", "--", ".", *(f":!*{c}*" for c in ("__pycache__", ".pyc", ".pytest_cache", "node_modules")))
+            patch = wt.parent / f"{i}-{w}.patch"
             patch.write_text(git(wt, "diff", "--cached", "--binary", "HEAD"))
             stat = git(wt, "diff", "--cached", "--stat", "HEAD").strip() or "no changes"
             text += f"\n\n[isolated] worktree {wt}, branch {branch}, patch {patch}:\n{stat}"

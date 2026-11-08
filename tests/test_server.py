@@ -371,13 +371,20 @@ class DelegateTest(Base):
         (repo / "notes.txt").write_text("untracked\n")
         s = self.start()
         _, results = s.delegate(*({"worker": w, "prompt": f"write fix.txt by {w}", "cwd": str(repo), "isolate": True,
-                                   "files": [str(repo / "app.py")]} for w in ("codex", "claude")))
+                                   "files": [str(repo / "app.py")]} for w in ("codex", "claude")),
+                                {"worker": "copilot", "prompt": "write __pycache__/m.cpython-314.pyc junk", "cwd": str(repo),
+                                 "isolate": True})
+        *results, (_, ok, _, cache_only) = results
+        self.assertTrue(ok, cache_only)
+        self.assertIn(":\nno changes", cache_only, "caches stay out of patches")
         c = self.calls()
         for w, ok, _, body in results:
             self.assertTrue(ok, body)
             wt = Path(re.search(r"worktree (\S+), branch", body).group(1))
             patch = Path(re.search(r"patch (\S+):", body).group(1))
             self.assertEqual(c[w]["cwd"], str(wt))
+            self.assertEqual(wt.parent.parent.parent, repo / ".git", "worktrees live in the repo's git dir")
+            self.assertEqual(patch.parent, wt.parent)
             self.assertEqual((wt / "app.py").read_text(), "v2, not committed\n", "base includes uncommitted work")
             self.assertEqual((wt / "notes.txt").read_text(), "untracked\n", "base includes untracked files")
             self.assertIn(f"- {wt / 'app.py'}", c[w]["brief"], "in-repo files are remapped into the worktree")
