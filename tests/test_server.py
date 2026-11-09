@@ -383,7 +383,7 @@ class DelegateTest(Base):
             wt = Path(re.search(r"worktree (\S+), branch", body).group(1))
             patch = Path(re.search(r"patch (\S+):", body).group(1))
             self.assertEqual(c[w]["cwd"], str(wt))
-            self.assertEqual(wt.parent.parent.parent, repo / ".git", "worktrees live in the repo's git dir")
+            self.assertEqual(wt.parent.parent, repo / ".modelmux", "worktrees live in the project, outside .git")
             self.assertEqual(patch.parent, wt.parent)
             self.assertEqual((wt / "app.py").read_text(), "v2, not committed\n", "base includes uncommitted work")
             self.assertEqual((wt / "notes.txt").read_text(), "untracked\n", "base includes untracked files")
@@ -393,6 +393,7 @@ class DelegateTest(Base):
             self.assertNotIn("v2", patch.read_text(), "the patch holds only the worker's change")
         self.assertEqual(add_dirs(c["claude"]["argv"]), [], "no worker is granted the user's own tree")
         self.assertFalse((repo / "fix.txt").exists(), "the user's tree is untouched")
+        self.assertNotIn(".modelmux", git("status", "--porcelain"), "worktrees stay out of git status")
         git("apply", str(patch))
         self.assertEqual((repo / "fix.txt").read_text(), "by claude")
 

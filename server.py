@@ -231,10 +231,14 @@ def worktree(t, i, outdir):
     as a base. In-repo `files` are remapped into it, so no worker is ever granted the user's own tree."""
     cwd = os.path.abspath(os.path.expanduser(t.get("cwd") or os.getcwd()))
     top = git(cwd, "rev-parse", "--show-toplevel").strip()
-    # Inside the repo's git dir: the head can read and test it without leaving the project.
-    wt = Path(git(top, "rev-parse", "--absolute-git-dir").strip()) / "modelmux" / outdir.name / f"{i}-{t['worker']}"
-    branch = f"modelmux/{outdir.name}-{i}"
+    # In the project, so the head can read and test it, but not under .git, where Claude Code refuses edits.
+    wt, branch = Path(top, ".modelmux", outdir.name, f"{i}-{t['worker']}"), f"modelmux/{outdir.name}-{i}"
+    exclude = Path(top, git(top, "rev-parse", "--git-common-dir").strip(), "info", "exclude")
     with git_lock:  # parallel `worktree add`s on one repo race on git's lock files
+        if "/.modelmux/" not in (exclude.read_text() if exclude.exists() else ""):  # keep git status clean
+            exclude.parent.mkdir(exist_ok=True)
+            with open(exclude, "a") as f:
+                f.write("\n/.modelmux/\n")
         git(top, "worktree", "add", "-q", "-b", branch, str(wt), "HEAD")
         base = git(top, "diff", "HEAD", "--binary")
         untracked = [f for f in git(top, "ls-files", "--others", "--exclude-standard", "-z").split("\0") if f]
