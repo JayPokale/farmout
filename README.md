@@ -84,7 +84,14 @@ claude plugin install modelmux --marketplace JayPokale/modelmux
 
 A plugin's server reads its settings from your environment, so with the plugin, `export` the `MODELMUX_*` variables below in your shell profile instead of passing `-e`. Use one install method, not both.
 
-Other MCP clients can be the head too, for example `codex mcp add modelmux -- python3 ~/.local/share/modelmux/server.py` or `copilot mcp add modelmux -- python3 ~/.local/share/modelmux/server.py` (lightly tested; Claude Code is the main target).
+**Other heads.** Codex CLI and Copilot CLI can drive modelmux too, so they can hand work to Claude, Gemini and each other (both tested with a round trip to the `claude` worker):
+
+```bash
+codex mcp add modelmux -- python3 ~/.local/share/modelmux/server.py
+copilot mcp add modelmux -- python3 ~/.local/share/modelmux/server.py
+```
+
+Codex asks before each MCP call. For `codex exec`, add `default_tools_approval_mode = "approve"` under `[mcp_servers.modelmux]` in `~/.codex/config.toml`. The slash commands are Claude Code only.
 
 Restart Claude Code. Workers are detected at startup. To see which are ready and how to enable the rest, run `python3 server.py doctor` (or `/modelmux:setup` with the plugin); `doctor --live` also sends each one a tiny prompt to prove its login works.
 
