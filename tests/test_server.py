@@ -303,8 +303,11 @@ class DelegateTest(Base):
         files = ["a.txt", str(other / "b.txt"), str(docs)]
         s.delegate(*({"worker": w, "prompt": "say hi", "files": files, "cwd": str(self.work)} for w in CLI_WORKERS))
         c = self.calls()
-        for name in CLIS:
-            self.assertEqual(c[name]["brief"], f"say hi\n\nFiles:\n- {self.work / 'a.txt'}\n- {other / 'b.txt'}\n- {docs}")
+        listing = f"say hi\n\nFiles:\n- {self.work / 'a.txt'}\n- {other / 'b.txt'}\n- {docs}"
+        for name in ("codex", "claude", "copilot"):
+            self.assertEqual(c[name]["brief"], listing)
+        self.assertEqual(c["agy"]["brief"], listing + "\n\nReply with the complete answer itself in this message. "
+                                                     "Do not write a plan, create files or ask for approval.")
         for name in ("agy", "claude", "copilot"):
             self.assertEqual(add_dirs(c[name]["argv"]), [str(docs), str(other)])
         s.delegate({"worker": "claude", "prompt": "say hi", "files": ["a.txt"], "cwd": str(self.work)})
@@ -459,6 +462,45 @@ class DoctorTest(Base):
                              text=True, timeout=60).stdout
         self.assertRegex(out, r"works +antigravity +\d+s")
         self.assertRegex(out, r"BROKEN +codex +\d+s +RuntimeError: codex exited 1: not logged in")
+
+
+class ReadGuardTest(unittest.TestCase):
+    """hooks/read_guard.py, the plugin's PreToolUse hook for big reads."""
+
+    def setUp(self):
+        self.tmp = Path(os.path.realpath(tempfile.mkdtemp()))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def guard(self, tool_input, session="s1", tool="Read", **env):
+        event = {"session_id": session, "tool_name": tool, "tool_input": tool_input}
+        out = subprocess.run([sys.executable, str(SERVER.parent / "hooks" / "read_guard.py")], input=json.dumps(event),
+                             capture_output=True, text=True, env={**os.environ, "TMPDIR": str(self.tmp), **env}, timeout=10)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)["hookSpecificOutput"] if out.stdout.strip() else None
+
+    def test_big_pdf_is_denied_once_per_session(self):
+        pdf = self.tmp / "paper.pdf"
+        pdf.write_bytes(b"%PDF-1.4\n" + b"<< /Type /Page >>\n" * 30 + b"<< /Type /Pages >>\n")
+        first = self.guard({"file_path": str(pdf)})
+        self.assertEqual(first["permissionDecision"], "deny")
+        self.assertIn("30-page PDF; reading 30 pages", first["permissionDecisionReason"])
+        self.assertIn("modelmux delegate tool", first["permissionDecisionReason"])
+        self.assertIsNone(self.guard({"file_path": str(pdf)}), "a second attempt goes through")
+        self.assertIsNotNone(self.guard({"file_path": str(pdf)}, session="s2"), "a new session is asked again")
+        self.assertIsNone(self.guard({"file_path": str(pdf), "pages": "1-3"}, session="s3"), "a short look is fine")
+        self.assertIn("reading 20 pages", self.guard({"file_path": str(pdf), "pages": "1-20"}, session="s4")["permissionDecisionReason"])
+        self.assertIsNotNone(self.guard({"file_path": str(pdf), "pages": "1-3,10-15"}, session="s5"))
+
+    def test_text_size_limit_and_opt_out(self):
+        small, big = self.tmp / "small.txt", self.tmp / "big.log"
+        small.write_text("x" * 1000)
+        big.write_text("x" * 250_000)
+        self.assertIsNone(self.guard({"file_path": str(small)}))
+        self.assertIn("250 KB of text", self.guard({"file_path": str(big)})["permissionDecisionReason"])
+        self.assertIsNone(self.guard({"file_path": str(big), "limit": 100}, session="s2"))
+        self.assertIsNotNone(self.guard({"file_path": str(big), "limit": 2000}, session="s5"))
+        self.assertIsNone(self.guard({"file_path": str(big)}, session="s3", MODELMUX_READ_GUARD="0"))
+        self.assertIsNone(self.guard({"file_path": str(big)}, session="s4", tool="Grep"))
 
 
 class FakeAPI(http.server.BaseHTTPRequestHandler):

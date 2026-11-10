@@ -99,6 +99,8 @@ def prep(t):
 
 def antigravity(t, rid):
     cwd, _, extra, brief = prep(t)
+    if not t.get("write"):  # plan mode otherwise sometimes returns a plan stub and waits for an approval that never comes
+        brief += "\n\nReply with the complete answer itself in this message. Do not write a plan, create files or ask for approval."
     cmd = ["agy", "-p", brief, "--output-format", "json"]
     # Plan mode answers questions but executes nothing, even under toolPermission=always-proceed,
     # where print mode would otherwise run shell commands unasked.
