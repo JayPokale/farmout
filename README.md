@@ -55,8 +55,10 @@ flowchart LR
 - **Quota-safe:** cancelling in Claude Code (Esc) kills the worker's whole process tree. Each task also has a timeout.
 - **Context-cheap:** at most ~60k characters come back per call; full outputs stay on disk.
 - **Auto-detected workers:** only the workers you actually have are offered to the head.
-- **Slash commands** (plugin install): `/modelmux:review` has every worker review your diff in parallel; `/modelmux:ask` gets a second opinion from all of them; `/modelmux:setup` shows what's ready.
-- **Zero dependencies:** about 370 lines of standard-library Python. Read it before you trust it with your accounts.
+- **Slash commands** (plugin install): `/modelmux:review` has every worker review your diff in parallel; `/modelmux:race` has them all attempt the same fix; `/modelmux:ask` gets a second opinion from all of them; `/modelmux:setup` shows what's ready.
+- **Isolated writers:** `isolate: true` gives each writing task its own git worktree and hands back a patch, so parallel writers never collide.
+- **Background mode:** `background: true` returns at once, so Claude keeps working while workers run.
+- **Zero dependencies:** about 400 lines of standard-library Python. Read it before you trust it with your accounts.
 
 ## Quick start
 
@@ -122,7 +124,7 @@ Work as usual. The head delegates when it pays off, and you can nudge it:
 
 > Read the six papers in `./papers` and draft a related-work section. Delegate the reading.
 
-> Have codex add tests for `src/dates.py` while you review the API design.
+> Have codex add tests for `src/dates.py` in the background while you review the API design.
 
 > Translate `locales/en.json` into Hindi, Spanish and German via the api worker, one task per language.
 
@@ -158,7 +160,7 @@ Work as usual. The head delegates when it pays off, and you can nudge it:
 | `cwd` | no | working directory; defaults to where Claude Code was launched |
 | `write` | no | allow edits inside `cwd` (default `false`) |
 | `model` | no | override the worker's default model |
-| `isolate` | no | write in a private git worktree (HEAD plus your uncommitted changes); the result names a patch holding only the worker's changes. Implies `write` |
+| `isolate` | no | write in a private git worktree under `<repo>/.modelmux/` (HEAD plus your uncommitted and untracked files); the result names a patch holding only the worker's changes. Implies `write` |
 
 Top level, next to `tasks`: `"background": true` returns at once with the result paths, so the head keeps working while workers run; each file appears when its task ends, then a `done` file.
 
@@ -203,6 +205,9 @@ What we found building this, in case it saves you an afternoon:
 - **A nested `claude -p` inherits the parent session's variables** (`CLAUDECODE`, `CLAUDE_CODE_*`, `CLAUDE_EFFORT`, ...). modelmux strips them so every worker is a clean session on the other account.
 - **`claude --bare` never reads OAuth credentials**, so it can't use a subscription login. Workers must not use it.
 - **Copilot CLI's `--allow-all-tools` approves your MCP servers too**, and `--deny-tool shell --deny-tool write` doesn't stop them. Allowlist with `--available-tools` instead.
+- **Claude Code refuses edits under `.git`**, even inside a git worktree placed there, so isolated worktrees live in `<repo>/.modelmux/` instead.
+- **A plugin's preprocessing command runs only if `allowed-tools` matches it exactly**, and a quoted path argument such as `python3 "…/server.py"` doesn't match. Execute the script directly.
+- **Models cite line numbers inside a `.diff` file** unless told otherwise; the review brief asks for line numbers in the current file.
 - **Claude Code may defer MCP tools**, which hides their descriptions until loaded. Routing policy therefore belongs in server instructions, not tool descriptions.
 
 Tested with agy 1.4.6, codex-cli 0.163.0, Claude Code 2.1.323, GitHub Copilot CLI 1.0.112 and Python 3.14 on Arch Linux (November 2026). CLIs change often, so if a worker breaks, please open an issue with your CLI version.
@@ -217,7 +222,7 @@ Tested with agy 1.4.6, codex-cli 0.163.0, Claude Code 2.1.323, GitHub Copilot CL
 | `MODELMUX_API_KEY` | unset | bearer token for that endpoint |
 | `MODELMUX_TIMEOUT` | `1200` | seconds per task |
 
-Full outputs are written to `~/.cache/modelmux/` and are safe to delete at any time. The `api` worker honours `http_proxy`/`no_proxy`.
+Full outputs are written to `~/.cache/modelmux/` and are safe to delete at any time. Isolated worktrees live in `<repo>/.modelmux/`, which modelmux adds to the repository's local `.git/info/exclude`; remove one with `git worktree remove --force <dir>` and `git branch -D <branch>`. The `api` worker honours `http_proxy`/`no_proxy`.
 
 ## FAQ
 
@@ -227,7 +232,7 @@ Full outputs are written to `~/.cache/modelmux/` and are safe to delete at any t
 
 **Is it allowed by the providers' terms?** modelmux runs each vendor's official CLI in its documented headless mode, logged in as you; see [Terms of service](#terms-of-service). It doesn't proxy APIs, extract tokens or share accounts.
 
-**Is it slower?** Often, yes. Delegated reading took a minute where Claude alone took 13 seconds in [our benchmark](bench/README.md), but it used 59% fewer of Claude's tokens. Use `background: true` to keep Claude working while workers run.
+**Is it slower?** Often, yes. A parallel call is as slow as its slowest worker. Delegated reading took a minute where Claude alone took 13 seconds in [our benchmark](bench/README.md), but it used 59% fewer of Claude's tokens. A four-model `/modelmux:review` takes about a minute. Use `background: true` to keep Claude working while workers run.
 
 **Does it need Claude Code?** No. Any MCP client can be the head (see Quick start), but the slash commands are a Claude Code plugin feature.
 
@@ -252,7 +257,6 @@ Good tools exist in this space; choose by what you need:
 - PyPI package for `uvx` installs
 - Usage log and per-worker stats
 - Rate-limit-aware fallback between workers
-- Git-worktree isolation for parallel write tasks
 
 ## Contributing
 
