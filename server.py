@@ -44,7 +44,7 @@ RULES = """\
 
 Rules:
 - Workers see only their brief. Each prompt must stand alone: goal, context, constraints, exact output format, "be concise". Pass file paths in files, not pasted content.
-- Read-only by default. write:true allows edits inside cwd; never give parallel tasks write access to overlapping files.
+- Read-only by default. write:true allows edits inside cwd; parallel writers on one repo need isolate:true (a private git worktree each, returned as a patch).
 - Put independent subtasks in one delegate call; they run in parallel. background:true returns at once so you can keep working; read the result files when they appear.
 - Each result is saved to the file named in its header. To chain workers, pass that path in a later task's files instead of reading it yourself.
 - Verify worker output before relying on it; cheaper models fail quietly. On FAILED, retry another worker or do it yourself."""
