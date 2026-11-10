@@ -25,6 +25,7 @@ Call the modelmux `delegate` tool once, with one task per worker in its `worker`
 - `cwd`: the repository root shown above
 - `files`: the diff file first, then any untracked files shown above
 - `prompt`: exactly the brief below, plus `Focus: <focus>` if the user gave one
+- for `antigravity` only: `"model": "gemini-3.8-flash-low"`. In our benchmark it found 22 of 23 planted bugs in about 20s, where the default model needed over 3 minutes. If that task fails on an unknown model, rerun it once without `model`.
 
 ```text
 Review a code change for defects. The unified diff is in the first listed file; any other listed files are new, untracked files. Read any repository file you need for context; change nothing. Report only problems worth blocking a merge: bugs, crashes, security holes, data loss, races, broken edge cases, wrong behaviour. No style or naming nits, no praise, no summary. One finding per line, exactly:

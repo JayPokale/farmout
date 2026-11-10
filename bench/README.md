@@ -41,9 +41,20 @@ Codex missed the timing-unsafe HMAC compare; Copilot missed the ReDoS. Per-bug d
 - **Misses move around.** Codex missed different bugs in two runs of the same case, and Copilot missed others. The fan-out means you don't have to know which model is reliable this week.
 - **Cost in time, not in Claude's tokens.** A parallel call is as slow as its slowest worker: Antigravity averaged about 3.4 minutes per review, while Claude (Sonnet) took about 11 seconds. Running everything produced 112 findings for 23 planted bugs, so the head's merge-and-verify step matters. Some extras are real issues the cases didn't plant (missing authorization, quota races), and some are noise.
 
+### Antigravity: default vs Flash low
+
+Antigravity set every review's wall time (about 3.5 minutes per review on its default model). Same brief, same five cases, model `gemini-3.8-flash-low` (2026-11-17):
+
+| case | billing | events | files_api | lru_config | ratelimit | total |
+|---|---|---|---|---|---|---|
+| found | 4/4 | 5/5 | 5/5 | 5/5 | 3/4 | **22/23** |
+| time | 43s | 19s | 20s | 23s | 20s | |
+
+It missed only `retry-count`, which the other three workers all caught, so a parallel review loses nothing on these cases. Its wall time falls to the next-slowest worker (about 45s for Codex). `/modelmux:review` now asks for this model. (`gemini-3.8-flash-medium` took 209s on `billing`, so its speed comes from the low reasoning effort.)
+
 ### End to end
 
-`results/2026-11-17/demo-review.md` is a real `/modelmux:review` run on `files_api`, from the plugin loaded with `--plugin-dir`. It shows each worker's raw findings and Claude's merged, verified table: all five planted bugs confirmed (four at 4/4 agreement), plus four real issues nobody planted. The run took 220s; Claude's own cost was $0.115.
+`results/2026-11-17/demo-review.md` is a real `/modelmux:review` run on `files_api`, from the plugin loaded with `--plugin-dir`. It shows each worker's raw findings and Claude's merged, verified table: all five planted bugs confirmed (four at 4/4 agreement), plus four real issues nobody planted. The run took 220s on Antigravity's default model; Claude's own cost was $0.115. `results/2026-11-17/demo-race.md` is a real `/modelmux:race` run: four identical fixes in parallel in 66s, verified by re-running the tests in a worktree, with the user's tree untouched.
 
 ## Head tokens: reading papers alone vs delegating
 
