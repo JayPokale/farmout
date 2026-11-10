@@ -1,7 +1,7 @@
 {
  "title": "modelmux /modelmux:review demo: four models review one diff in parallel; Claude merges and verifies the findings",
  "window": "~/project · claude",
- "cycle": 17,
+ "cycle": 15,
  "lines": [
   {
    "row": 0,
@@ -69,12 +69,12 @@
      "dim"
     ]
    ],
-   "off": 5.2,
+   "off": 3.4,
    "indent": 3
   },
   {
    "row": 3,
-   "on": 5.2,
+   "on": 3.4,
    "spans": [
     [
      "antigravity  ",
@@ -85,11 +85,11 @@
      "ok"
     ],
     [
-     "6 findings",
+     "8 findings",
      "fg"
     ],
     [
-     "   202s",
+     "   25s",
      "dim"
     ]
    ],
@@ -108,12 +108,12 @@
      "dim"
     ]
    ],
-   "off": 3.9,
+   "off": 4.0,
    "indent": 3
   },
   {
    "row": 4,
-   "on": 3.9,
+   "on": 4.0,
    "spans": [
     [
      "codex        ",
@@ -124,11 +124,11 @@
      "ok"
     ],
     [
-     "4 findings",
+     "5 findings",
      "fg"
     ],
     [
-     "   46s",
+     "   36s",
      "dim"
     ]
    ],
@@ -163,11 +163,11 @@
      "ok"
     ],
     [
-     "8 findings",
+     "9 findings",
      "fg"
     ],
     [
-     "   11s",
+     "   15s",
      "dim"
     ]
    ],
@@ -186,12 +186,12 @@
      "dim"
     ]
    ],
-   "off": 3.5,
+   "off": 3.6,
    "indent": 3
   },
   {
    "row": 6,
-   "on": 3.5,
+   "on": 3.6,
    "spans": [
     [
      "copilot      ",
@@ -202,11 +202,11 @@
      "ok"
     ],
     [
-     "6 findings",
+     "5 findings",
      "fg"
     ],
     [
-     "   34s",
+     "   29s",
      "dim"
     ]
    ],
@@ -214,7 +214,7 @@
   },
   {
    "row": 8,
-   "on": 5.8,
+   "on": 4.6,
    "spans": [
     [
      "⏺ ",
@@ -228,7 +228,7 @@
   },
   {
    "row": 9,
-   "on": 6.5,
+   "on": 5.3,
    "spans": [
     [
      "  severity  location          defect                                                    models",
@@ -238,7 +238,7 @@
   },
   {
    "row": 10,
-   "on": 6.8,
+   "on": 5.6,
    "spans": [
     [
      "  high      ",
@@ -265,7 +265,7 @@
   },
   {
    "row": 11,
-   "on": 7.02,
+   "on": 5.819999999999999,
    "spans": [
     [
      "  high      ",
@@ -276,7 +276,7 @@
      "fg"
     ],
     [
-     "path traversal: an absolute or ../ name escapes STORAGE   ",
+     "path traversal: absolute or ../ name, no owner check      ",
      "fg"
     ],
     [
@@ -292,65 +292,11 @@
   },
   {
    "row": 12,
-   "on": 7.24,
+   "on": 6.04,
    "spans": [
     [
      "  high      ",
      "high"
-    ],
-    [
-     "files_api.py:36   ",
-     "fg"
-    ],
-    [
-     "download has no ownership check (IDOR)                    ",
-     "fg"
-    ],
-    [
-     "2/4  ",
-     "fg",
-     true
-    ],
-    [
-     "✓",
-     "ok"
-    ]
-   ]
-  },
-  {
-   "row": 13,
-   "on": 7.46,
-   "spans": [
-    [
-     "  high      ",
-     "high"
-    ],
-    [
-     "files_api.py:52   ",
-     "fg"
-    ],
-    [
-     "delete never commits: rows roll back, file already gone   ",
-     "fg"
-    ],
-    [
-     "2/4  ",
-     "fg",
-     true
-    ],
-    [
-     "✓",
-     "ok"
-    ]
-   ]
-  },
-  {
-   "row": 14,
-   "on": 7.68,
-   "spans": [
-    [
-     "  medium    ",
-     "medium"
     ],
     [
      "files_api.py:27   ",
@@ -372,8 +318,8 @@
    ]
   },
   {
-   "row": 15,
-   "on": 7.9,
+   "row": 13,
+   "on": 6.26,
    "spans": [
     [
      "  medium    ",
@@ -399,8 +345,8 @@
    ]
   },
   {
-   "row": 16,
-   "on": 8.12,
+   "row": 14,
+   "on": 6.4799999999999995,
    "spans": [
     [
      "  medium    ",
@@ -426,19 +372,73 @@
    ]
   },
   {
-   "row": 17,
-   "on": 8.34,
+   "row": 15,
+   "on": 6.699999999999999,
+   "spans": [
+    [
+     "  medium    ",
+     "medium"
+    ],
+    [
+     "files_api.py:49   ",
+     "fg"
+    ],
+    [
+     "nothing commits: quota, row and disk drift apart          ",
+     "fg"
+    ],
+    [
+     "3/4  ",
+     "fg",
+     true
+    ],
+    [
+     "✓",
+     "ok"
+    ]
+   ]
+  },
+  {
+   "row": 16,
+   "on": 6.92,
    "spans": [
     [
      "  low       ",
      "low"
     ],
     [
-     "files_api.py:44   ",
+     "files_api.py:25   ",
      "fg"
     ],
     [
-     "user[\"admin\"] raises KeyError when the key is missing     ",
+     "page < 1 is not rejected                                  ",
+     "fg"
+    ],
+    [
+     "3/4  ",
+     "fg",
+     true
+    ],
+    [
+     "✓",
+     "ok"
+    ]
+   ]
+  },
+  {
+   "row": 17,
+   "on": 7.14,
+   "spans": [
+    [
+     "  low       ",
+     "low"
+    ],
+    [
+     "files_api.py:47   ",
+     "fg"
+    ],
+    [
+     "delete trusts stored names: traversal via a bad row       ",
      "fg"
     ],
     [
@@ -454,7 +454,7 @@
   },
   {
    "row": 18,
-   "on": 8.56,
+   "on": 7.359999999999999,
    "spans": [
     [
      "  low       ",
@@ -481,7 +481,7 @@
   },
   {
    "row": 20,
-   "on": 9.4,
+   "on": 8.2,
    "spans": [
     [
      "  All 5 planted bugs confirmed, plus 4 real issues nobody planted. Nothing changed in your tree.",
@@ -491,10 +491,10 @@
   },
   {
    "row": 21,
-   "on": 9.9,
+   "on": 8.7,
    "spans": [
     [
-     "  4 models · 1 call · 220s (antigravity 202s, claude 11s) · Claude's own cost $0.115",
+     "  4 models · 1 call · 59s (slowest: codex 36s) · Claude's own cost $0.12",
      "dim"
     ]
    ]

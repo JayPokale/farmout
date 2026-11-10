@@ -54,7 +54,7 @@ It missed only `retry-count`, which the other three workers all caught, so a par
 
 ### End to end
 
-`results/2026-11-17/demo-review.md` is a real `/modelmux:review` run on `files_api`, from the plugin loaded with `--plugin-dir`. It shows each worker's raw findings and Claude's merged, verified table: all five planted bugs confirmed (four at 4/4 agreement), plus four real issues nobody planted. The run took 220s on Antigravity's default model; Claude's own cost was $0.115. `results/2026-11-17/demo-race.md` is a real `/modelmux:race` run: four identical fixes in parallel in 66s, verified by re-running the tests in a worktree, with the user's tree untouched.
+`results/2026-11-17/demo-review.md` is a real `/modelmux:review` run on `files_api`, from the plugin loaded with `--plugin-dir`. It shows each worker's raw findings and Claude's merged, verified table: all five planted bugs confirmed (four at 4/4 agreement), plus four real issues nobody planted. The run took 59s with Antigravity on Flash low (an earlier run on its default model took 220s); Claude's own cost was $0.122. `results/2026-11-17/demo-race.md` is a real `/modelmux:race` run: four identical fixes in parallel in 66s, verified by re-running the tests in a worktree, with the user's tree untouched.
 
 ## Head tokens: reading papers alone vs delegating
 
