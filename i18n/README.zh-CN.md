@@ -54,7 +54,14 @@ claude plugin install modelmux --marketplace JayPokale/modelmux
 
 插件的服务端从环境变量读取配置，因此使用插件安装时，请在 Shell 配置文件中 `export` 下方列出的 `MODELMUX_*` 变量，而无需通过 `-e` 传递。两种安装方式二选一，切勿同时使用。
 
-其他 MCP 客户端同样可以作为主控，例如 `codex mcp add modelmux -- python3 ~/.local/share/modelmux/server.py` 或 `copilot mcp add modelmux -- python3 ~/.local/share/modelmux/server.py`（仅经过轻度测试；Claude Code 为主要支持目标）。
+**其他主控。** Codex CLI 和 Copilot CLI 也可以驱动 modelmux，从而把工作交给 Claude、Gemini 或彼此（两者均已通过与 `claude` worker 的往返调用测试）：
+
+```bash
+codex mcp add modelmux -- python3 ~/.local/share/modelmux/server.py
+copilot mcp add modelmux -- python3 ~/.local/share/modelmux/server.py
+```
+
+Codex 在每次调用 MCP 工具前都会请求确认。使用 `codex exec` 时，请在 `~/.codex/config.toml` 的 `[mcp_servers.modelmux]` 下添加 `default_tools_approval_mode = "approve"`。斜杠命令仅适用于 Claude Code。
 
 重启 Claude Code。所有 worker 会在启动时自动检测。要查看哪些 worker 已就绪以及如何启用其余 worker，请运行 `python3 server.py doctor`（若使用插件则运行 `/modelmux:setup`）；`doctor --live` 还会向每个 worker 发送一条简短 prompt，以验证其登录是否有效。
 

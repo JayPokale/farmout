@@ -54,7 +54,14 @@ claude plugin install modelmux --marketplace JayPokale/modelmux
 
 プラグインのサーバーは設定を環境変数から読み込みます。そのため、プラグインを使う場合は `-e` を渡す代わりに、以下の `MODELMUX_*` 変数をシェルのプロファイルで `export` してください。インストール方法は 1 つだけにし、両方は使わないでください。
 
-他の MCP クライアントをヘッドにすることもできます。たとえば `codex mcp add modelmux -- python3 ~/.local/share/modelmux/server.py` や `copilot mcp add modelmux -- python3 ~/.local/share/modelmux/server.py` です (簡単なテストのみ。主な対象は Claude Code です)。
+**他のヘッド。** Codex CLI と Copilot CLI も modelmux を操作でき、Claude や Gemini、あるいは互いに作業を任せられます (どちらも `claude` ワーカーとの往復で動作確認済み)。
+
+```bash
+codex mcp add modelmux -- python3 ~/.local/share/modelmux/server.py
+copilot mcp add modelmux -- python3 ~/.local/share/modelmux/server.py
+```
+
+Codex は MCP ツールを呼び出すたびに確認を求めます。`codex exec` で使う場合は、`~/.codex/config.toml` の `[mcp_servers.modelmux]` に `default_tools_approval_mode = "approve"` を追加してください。スラッシュコマンドは Claude Code 専用です。
 
 Claude Code を再起動してください。ワーカーは起動時に検出されます。どれが使用可能か、残りをどう有効にするかは `python3 server.py doctor` (プラグインなら `/modelmux:setup`) で確認できます。`doctor --live` は、各ワーカーに短いプロンプトも送り、ログインが機能していることを確かめます。
 
