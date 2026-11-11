@@ -67,6 +67,17 @@ It missed only `retry-count`, which the other three workers all caught, so a par
 
 **59% fewer head tokens and 74% less head cost**, with the same correct headline numbers in both answers (28.4/41.8 BLEU, GLUE 80.5, 3.57% top-5 error). The trade is wall time: Antigravity took a minute where the head took 13 seconds. Both runs pay roughly 12k cached tokens of fixed overhead (system prompt, tools); most of the rest of the first run is the PDFs, so the gap grows with every page the head no longer reads. Full answers: `results/2026-11-17/head_tokens.md`.
 
+## Read guard: a deep read with and without it
+
+Task (`claude -p`, Sonnet head, plugin loaded): "Summarize every numbered section of bert.pdf in one sentence each, including the appendix sections" (16 pages, 2026-11-17, one run each):
+
+| run | what happened | head tokens | head cost | time |
+|---|---|---|---|---|
+| guard off (`MODELMUX_READ_GUARD=0`) | Claude read pages 1-10 and 11-16 itself | 50,457 | $0.139 | 20s |
+| guard on | the 16-page read was stopped once; Claude delegated it to Antigravity and answered from the result | 43,600 | $0.069 | 240s |
+
+Claude's cost halved (writing a PDF into its context is the expensive part) for the same section-by-section answer, but it took four minutes instead of twenty seconds. An earlier guard-on run exposed an Antigravity plan-mode stub ("approve to proceed"); Claude then read the PDF anyway (85,871 tokens, $0.155). That is fixed. On skim tasks (abstracts, first pages) the guard never fires: Claude reads one page per paper and stays cheap.
+
 ## Reproduce
 
 ```bash

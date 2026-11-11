@@ -58,7 +58,7 @@ flowchart LR
 - **Slash commands** (plugin install): `/modelmux:review` has every worker review your diff in parallel; `/modelmux:race` has them all attempt the same fix; `/modelmux:ask` gets a second opinion from all of them; `/modelmux:setup` shows what's ready.
 - **Isolated writers:** `isolate: true` gives each writing task its own git worktree and hands back a patch, so parallel writers never collide.
 - **Background mode:** `background: true` returns at once, so Claude keeps working while workers run.
-- **Read guard** (plugin install): the first time Claude starts a big read in a session (more than 5 pages of a long PDF, or 500+ lines of a 200 KB+ file), it is asked once to delegate instead. Reading it again goes through.
+- **Read guard** (plugin install): the first time Claude starts a big read in a session (more than 5 pages of a long PDF, or 500+ lines of a 200 KB+ file), it is asked once to delegate instead; reading it again goes through. On a 16-page deep read this [halved Claude's cost but took minutes instead of seconds](bench/README.md#read-guard-a-deep-read-with-and-without-it); `MODELMUX_READ_GUARD=0` turns it off.
 - **Zero dependencies:** about 400 lines of standard-library Python. Read it before you trust it with your accounts.
 
 ## Quick start
