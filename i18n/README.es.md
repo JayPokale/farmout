@@ -12,7 +12,7 @@
 
 <p align="center"><img src="../assets/review-demo.svg" width="900" alt="Reproducción animada de terminal de una ejecución real: /modelmux:review envía un cambio sin confirmar a antigravity, codex, claude y copilot en paralelo; luego Claude muestra una tabla combinada y verificada de nueve hallazgos e indica cuántos modelos señalaron cada uno"></p>
 
-- **`/modelmux:review`**: Codex, Gemini (mediante Antigravity), GitHub Copilot y una segunda cuenta de Claude revisan tu diff a la vez, en modo de solo lectura. Claude combina los hallazgos, cuenta cuántos modelos señalaron cada problema y verifica cada hallazgo contra el código. En [nuestro benchmark](../bench/README.md), cada uno de los 23 bugs introducidos intencionadamente fue señalado por al menos tres de los cuatro modelos.
+- **`/modelmux:review`**: Codex, Gemini (mediante Antigravity), GitHub Copilot y una segunda cuenta de Claude revisan tu diff a la vez, en modo de solo lectura. Claude combina los hallazgos, cuenta cuántos modelos señalaron cada problema y verifica cada hallazgo contra el código. En [nuestro benchmark](../bench/README.md), cada uno de los 32 bugs (23 introducidos a propósito y 9 regresiones reales de proyectos open source) fue señalado por al menos tres de los cuatro modelos.
 - **`/modelmux:race <task>`**: cada modelo intenta la misma corrección en su propio git worktree; tus pruebas eligen al ganador y nada modifica tu árbol hasta que lo indiques.
 - **Delegación diaria**: Claude delega lecturas largas y código repetitivo a la suscripción más adecuada. Resumir tres artículos así le costó a Claude **59% menos tokens** (74% menos coste) para obtener las mismas respuestas.
 

@@ -12,7 +12,7 @@
 
 <p align="center"><img src="../assets/review-demo.svg" width="900" alt="実際の実行を再現したターミナルのアニメーション。/modelmux:review が未コミットの変更 1 件を antigravity、codex、claude、copilot に並列で送り、Claude が統合・検証済みの 9 件の指摘と、各指摘を挙げたモデル数を表にして表示する"></p>
 
-- **`/modelmux:review`**: Codex、Gemini (Antigravity 経由)、GitHub Copilot、2 つ目の Claude アカウントが、あなたの diff を読み取り専用で同時にレビューします。Claude が結果を統合し、各問題を指摘したモデル数を集計して、すべての指摘をコードと照合します。[ベンチマーク](../bench/README.md)では、仕込んだ 23 件のバグのすべてが、4 モデル中 3 モデル以上に指摘されました。
+- **`/modelmux:review`**: Codex、Gemini (Antigravity 経由)、GitHub Copilot、2 つ目の Claude アカウントが、あなたの diff を読み取り専用で同時にレビューします。Claude が結果を統合し、各問題を指摘したモデル数を集計して、すべての指摘をコードと照合します。[ベンチマーク](../bench/README.md)では、32 件のバグ (仕込んだ 23 件と、オープンソースプロジェクトの実際のリグレッション 9 件) のすべてが、4 モデル中 3 モデル以上に指摘されました。
 - **`/modelmux:race <task>`**: 各モデルが同じ修正を、それぞれ専用の git worktree で試みます。勝者はテストで決まり、あなたが承認するまで作業ツリーには一切変更が入りません。
 - **日常的な委譲**: Claude が長文の読み込みやボイラープレートの作成を、適したサブスクリプションに任せます。この方法で論文 3 本を要約したところ、同じ回答を得るのに Claude のトークン消費は **59% 減**(コストは 74% 減)でした。
 

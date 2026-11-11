@@ -12,7 +12,7 @@
 
 <p align="center"><img src="../assets/review-demo.svg" width="900" alt="真实运行的终端动画回放：/modelmux:review 将一处未提交修改并行发送给 antigravity、codex、claude 和 copilot，随后 Claude 输出合并校验后的 9 条发现结果表格，并标明各问题被多少个模型指出"></p>
 
-- **`/modelmux:review`**：Codex、Gemini（通过 Antigravity）、GitHub Copilot 以及第二个 Claude 账号同时以只读方式审查你的 diff。Claude 会合并审查结果，统计指出每个问题的模型数量，并对照代码逐一核对每项发现。在[我们的基准测试](../bench/README.md)中，预设的 23 个 Bug 全部被 4 个模型中的至少 3 个成功指出。
+- **`/modelmux:review`**：Codex、Gemini（通过 Antigravity）、GitHub Copilot 以及第二个 Claude 账号同时以只读方式审查你的 diff。Claude 会合并审查结果，统计指出每个问题的模型数量，并对照代码逐一核对每项发现。在[我们的基准测试](../bench/README.md)中，32 个 Bug（23 个预设的、9 个来自开源项目的真实回归）全部被 4 个模型中的至少 3 个指出。
 - **`/modelmux:race <task>`**：每个模型各自在独立的 git worktree 中尝试相同的修复；由你的测试选出胜者，且在得到你的许可前绝不修改你的代码树。
 - **日常委托**：Claude 将长文阅读和样板代码交给最合适的订阅处理。以此方式总结 3 篇论文，Claude 在获得相同答案的前提下**节省了 59% 的 Token**（成本降低 74%）。
 

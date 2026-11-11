@@ -12,7 +12,7 @@
 
 <p align="center"><img src="../assets/review-demo.svg" width="900" alt="실제 실행 터미널 리플레이: /modelmux:review가 커밋되지 않은 변경 사항 하나를 antigravity, codex, claude, copilot에 병렬로 전달하면, Claude가 각 문제를 지적한 모델 수와 함께 검증된 9가지 발견 항목을 병합된 표로 출력합니다"></p>
 
-- **`/modelmux:review`**: Codex, Gemini(Antigravity 경유), GitHub Copilot, 두 번째 Claude 계정이 동시에 읽기 전용으로 diff를 리뷰합니다. Claude는 각 모델이 발견한 내용을 병합하고, 문제를 지적한 모델 수를 집계하며, 코드와 대조하여 모든 항목을 검증합니다. [자체 벤치마크](../bench/README.md)에서는 의도적으로 심어둔 23개의 버그 모두가 4개 모델 중 최소 3개 이상에서 지적되었습니다.
+- **`/modelmux:review`**: Codex, Gemini(Antigravity 경유), GitHub Copilot, 두 번째 Claude 계정이 동시에 읽기 전용으로 diff를 리뷰합니다. Claude는 각 모델이 발견한 내용을 병합하고, 문제를 지적한 모델 수를 집계하며, 코드와 대조하여 모든 항목을 검증합니다. [자체 벤치마크](../bench/README.md)에서는 32개의 버그(의도적으로 심은 23개, 오픈소스 프로젝트의 실제 회귀 9개) 모두가 4개 모델 중 최소 3개에서 지적되었습니다.
 - **`/modelmux:race <task>`**: 모든 모델이 각자의 git worktree에서 동일한 수정을 시도합니다. 테스트를 통해 최적의 결과를 선택하며, 사용자가 승인하기 전까지는 기존 트리를 전혀 변경하지 않습니다.
 - **일상적인 작업 위임**: Claude가 긴 문서 읽기나 보일러플레이트 작성을 상황에 맞는 구독 서비스에 위임합니다. 이 방식으로 논문 3편을 요약했을 때 동일한 답변에 대해 Claude의 토큰 소비가 **59% 감소**(비용 74% 절감)했습니다.
 
