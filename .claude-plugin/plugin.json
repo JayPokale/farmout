@@ -8,11 +8,34 @@
   },
   "repository": "https://github.com/JayPokale/modelmux",
   "license": "MIT",
-  "keywords": ["mcp", "delegation", "multi-agent", "codex", "antigravity", "gemini"],
+  "keywords": [
+    "mcp",
+    "delegation",
+    "multi-agent",
+    "codex",
+    "antigravity",
+    "gemini"
+  ],
   "mcpServers": {
     "modelmux": {
       "command": "python3",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/server.py"]
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/server.py"
+      ]
     }
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/read_guard.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
   }
 }

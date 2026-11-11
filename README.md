@@ -58,6 +58,7 @@ flowchart LR
 - **Slash commands** (plugin install): `/modelmux:review` has every worker review your diff in parallel; `/modelmux:race` has them all attempt the same fix; `/modelmux:ask` gets a second opinion from all of them; `/modelmux:setup` shows what's ready.
 - **Isolated writers:** `isolate: true` gives each writing task its own git worktree and hands back a patch, so parallel writers never collide.
 - **Background mode:** `background: true` returns at once, so Claude keeps working while workers run.
+- **Read guard** (plugin install): the first time Claude starts a big read in a session (more than 5 pages of a long PDF, or 500+ lines of a 200 KB+ file), it is asked once to delegate instead. Reading it again goes through.
 - **Zero dependencies:** about 400 lines of standard-library Python. Read it before you trust it with your accounts.
 
 ## Quick start
@@ -202,6 +203,7 @@ What we found building this, in case it saves you an afternoon:
 
 - **Gemini CLI with a personal Google login now fails** with `IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals. To continue using Gemini, please migrate to the Antigravity suite of products`. That's why the Google worker drives Antigravity's `agy`, whose print mode works with the same login. On our account, `agy models` also listed Claude and GPT-OSS models.
 - **`agy -p` executes tools without asking under `toolPermission: always-proceed`.** Use `--mode plan` for anything meant to be read-only.
+- **In plan mode, `agy` sometimes returns only a plan** ("Plan generated in [...]. Please review and approve to proceed") and stops. modelmux asks read-only Antigravity tasks for the complete answer in the reply.
 - **A nested `claude -p` inherits the parent session's variables** (`CLAUDECODE`, `CLAUDE_CODE_*`, `CLAUDE_EFFORT`, ...). modelmux strips them so every worker is a clean session on the other account.
 - **`claude --bare` never reads OAuth credentials**, so it can't use a subscription login. Workers must not use it.
 - **Copilot CLI's `--allow-all-tools` approves your MCP servers too**, and `--deny-tool shell --deny-tool write` doesn't stop them. Allowlist with `--available-tools` instead.
@@ -221,6 +223,7 @@ Tested with agy 1.4.6, codex-cli 0.163.0, Claude Code 2.1.323, GitHub Copilot CL
 | `MODELMUX_API_MODEL` | unset | model name sent to that endpoint |
 | `MODELMUX_API_KEY` | unset | bearer token for that endpoint |
 | `MODELMUX_TIMEOUT` | `1200` | seconds per task |
+| `MODELMUX_READ_GUARD` | on | `0` turns off the plugin's read guard |
 
 Full outputs are written to `~/.cache/modelmux/` and are safe to delete at any time. Isolated worktrees live in `<repo>/.modelmux/`, which modelmux adds to the repository's local `.git/info/exclude`; remove one with `git worktree remove --force <dir>` and `git branch -D <branch>`. The `api` worker honours `http_proxy`/`no_proxy`.
 

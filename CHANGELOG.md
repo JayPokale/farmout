@@ -11,6 +11,7 @@ All notable changes to modelmux are recorded here. The format follows [Keep a Ch
 - **`isolate: true`** on a task: the worker writes in a private git worktree under `<repo>/.modelmux/` (HEAD plus your uncommitted and untracked files, committed as a base), and the result names a patch with only its changes. In-repo `files` are remapped into the worktree, caches stay out of patches, and the directory is kept out of `git status` through the repository's local exclude file.
 - **`background: true`** on `delegate`: returns the result paths at once so the head keeps working; each file appears when its task ends, then a `done` file. Shutdown still stops background workers.
 - **`python3 server.py doctor`** shows which workers are ready and the exact step to enable each missing one; `doctor --live` sends each ready worker one tiny prompt and reports broken logins.
+- **Read guard** (plugin hook): the first big read of a file in a session (more than 5 pages of a long PDF, or 500+ lines of a 200 KB+ file) is stopped once with advice to delegate; reading it again goes through. `MODELMUX_READ_GUARD=0` turns it off.
 - **Claude Code plugin manifest:** `claude plugin install modelmux --marketplace JayPokale/modelmux`, with an icon.
 - **Benchmarks** (`bench/`) with raw outputs: head tokens with and without delegation, and review recall and agreement on 23 planted bugs.
 - **Other heads:** Codex CLI and Copilot CLI are tested as MCP clients.
@@ -20,6 +21,7 @@ All notable changes to modelmux are recorded here. The format follows [Keep a Ch
 
 ### Fixed
 
+- Read-only Antigravity tasks could end with only a plan stub ("please approve to proceed"); the brief now asks for the complete answer.
 - The server now stops running workers when it receives SIGTERM, not only on EOF.
 - On EOF the server exits at once, even while an `api` request is in flight.
 - A JSON line on stdin that is not an object no longer crashes the server.
