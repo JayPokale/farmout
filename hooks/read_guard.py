@@ -60,7 +60,8 @@ def main():
         f.write(f"{path}\n")
     reason = (f"modelmux read guard: {path} is {what}. Unless you need its exact text in this context, delegate "
               f"the reading: call the modelmux delegate tool with a task whose files list this path (antigravity "
-              f"reads PDFs natively) and whose prompt says exactly what to extract. If you do need the full text "
+              f"reads PDFs natively; its model gemini-3.8-flash-low is several times faster) and whose prompt says "
+              f"exactly what to extract. If you do need the full text "
               f"yourself, read it again and the guard will let it through.")
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                              "permissionDecisionReason": reason}}))
