@@ -1,0 +1,1 @@
+tqdm/_tqdm.py:856 | low | `__len__` raises AttributeError because `self.total` is unset on valid `disable=True` instances | call `len(tqdm(unsized_iterable, disable=True))` | use `getattr(self, "total", None)` or initialize `self.total` in the disabled path

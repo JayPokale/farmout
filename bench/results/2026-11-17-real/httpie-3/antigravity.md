@@ -1,0 +1,1 @@
+httpie/sessions.py:104 | high | AttributeError: 'NoneType' object has no attribute 'decode' crashes session handling | running with `--session` and `--download` (which sets `Accept-Encoding: None`), or any request with an unset header | restore `if value is None: continue` before decoding `value`

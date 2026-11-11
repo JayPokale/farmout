@@ -1,0 +1,3 @@
+src/httpie/models.py:106 | medium | The check now runs on a plain `dict` copy, so it is case-sensitive. The original ran on `self._orig.headers`, which is a requests `CaseInsensitiveDict`. A user-supplied lowercase or mixed-case host header is no longer detected, and a second, auto-derived `Host` is added. | Request with a custom header `host:example.org`, or `HOST:`. The printed request then has both `host: example.org` and `Host: <url netloc>`. | Revert to `if 'Host' not in self._orig.headers:`, which is case-insensitive. Alternatively, check `any(k.lower() == 'host' for k in headers)`.
+
+Correction to the path: the file is `httpie/models.py:106`, not `src/httpie/models.py`.

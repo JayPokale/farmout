@@ -1,0 +1,1 @@
+tqdm/_tqdm.py:225 | medium | custom `bar_format` text surrounding `{bar}` is ignored and replaced with the default bar sides | any `bar_format` containing `{bar}`, such as `'<{bar}>'` | format `l_bar_user` and `r_bar_user` instead of `l_bar` and `r_bar`

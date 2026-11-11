@@ -1,0 +1,1 @@
+tqdm/_main.py:92 | medium | option-like text inside an option value is parsed as a new option | `tqdm --desc='build--test'` raises an unknown-option error instead of accepting the description | require a whitespace/start-of-string boundary before `-`/`--` options (restore `(?<!\S)`)

@@ -1,0 +1,1 @@
+pysnooper/pysnooper.py:26 | high | UnboundName / NameError on writing to file output | `output` is a str or PathLike | Replace `output_path` with `output` in `open(output, 'a')`

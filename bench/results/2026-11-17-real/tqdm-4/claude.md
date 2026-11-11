@@ -1,0 +1,3 @@
+Reintroduces the TypeError that the previous commit fixed (964dee6).
+
+`tqdm/_tqdm.py:323 | high | The `if total:` guard was removed. `total *= unit_scale` now raises `TypeError: unsupported operand type(s) for *=: 'NoneType' and 'int'` when total is None. It also reaches the same state when line 319 resets total to None because n > total. | `format_meter(n=5, total=None, elapsed=1, unit_scale=2)`, or `tqdm(iterable, unit_scale=2)` with no length, or any progress run where n exceeds total with a custom unit_scale. | Restore the guard: `if total: total *= unit_scale`.`

@@ -1,0 +1,3 @@
+I’ll inspect the diff and the affected repository context, then report only merge-blocking defects in the required format.
+
+cookiecutter/generate.py:85 | medium | UTF-8 cookiecutter context files can fail to load under non-UTF-8 locales, raising UnicodeDecodeError instead of generating the project | run with a cp1252/ASCII locale and a context containing unsupported non-ASCII characters | restore encoding='utf-8' when opening the context file

@@ -12,7 +12,7 @@
 
 <p align="center"><img src="assets/review-demo.svg" width="900" alt="Animated terminal replay of a real run: /modelmux:review sends one uncommitted change to antigravity, codex, claude and copilot in parallel, then Claude prints a merged, verified table of nine findings with how many models flagged each"></p>
 
-- **`/modelmux:review`**: Codex, Gemini (through Antigravity), GitHub Copilot and a second Claude account review your diff at the same time, read-only. Claude merges what they found, counts how many models flagged each problem, and checks every finding against the code. In [our benchmark](bench/README.md), every one of 23 planted bugs was flagged by at least three of the four models.
+- **`/modelmux:review`**: Codex, Gemini (through Antigravity), GitHub Copilot and a second Claude account review your diff at the same time, read-only. Claude merges what they found, counts how many models flagged each problem, and checks every finding against the code. In [our benchmark](bench/README.md), each of 32 bugs (23 planted, 9 real regressions from open-source projects) was flagged by at least three of the four models.
 - **`/modelmux:race <task>`**: every model attempts the same fix in its own git worktree; your tests pick the winner, and nothing touches your tree until you say so.
 - **Everyday delegation**: Claude hands long reads and boilerplate to whichever subscription fits. Summarizing three papers this way cost Claude **59% fewer tokens** (74% less cost) for the same answers.
 

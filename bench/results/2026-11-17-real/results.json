@@ -1,0 +1,514 @@
+{
+ "runs": [
+  {
+   "bug": "cookiecutter/1",
+   "worker": "antigravity",
+   "ok": true,
+   "secs": 17,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "cookiecutter/generate.py": [
+     85
+    ]
+   }
+  },
+  {
+   "bug": "cookiecutter/1",
+   "worker": "codex",
+   "ok": true,
+   "secs": 27,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "cookiecutter/generate.py": [
+     85
+    ]
+   }
+  },
+  {
+   "bug": "cookiecutter/1",
+   "worker": "claude",
+   "ok": true,
+   "secs": 9,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "cookiecutter/generate.py": [
+     85
+    ]
+   }
+  },
+  {
+   "bug": "cookiecutter/1",
+   "worker": "copilot",
+   "ok": true,
+   "secs": 26,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "cookiecutter/generate.py": [
+     85
+    ]
+   }
+  },
+  {
+   "bug": "httpie/3",
+   "worker": "antigravity",
+   "ok": true,
+   "secs": 88,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "httpie/sessions.py": [
+     103
+    ]
+   }
+  },
+  {
+   "bug": "httpie/3",
+   "worker": "codex",
+   "ok": true,
+   "secs": 28,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "httpie/sessions.py": [
+     103
+    ]
+   }
+  },
+  {
+   "bug": "httpie/3",
+   "worker": "claude",
+   "ok": true,
+   "secs": 8,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "httpie/sessions.py": [
+     103
+    ]
+   }
+  },
+  {
+   "bug": "httpie/3",
+   "worker": "copilot",
+   "ok": true,
+   "secs": 26,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "httpie/sessions.py": [
+     103
+    ]
+   }
+  },
+  {
+   "bug": "httpie/4",
+   "worker": "antigravity",
+   "ok": true,
+   "secs": 59,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "httpie/models.py": [
+     105,
+     106
+    ]
+   }
+  },
+  {
+   "bug": "httpie/4",
+   "worker": "codex",
+   "ok": true,
+   "secs": 28,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "httpie/models.py": [
+     105,
+     106
+    ]
+   }
+  },
+  {
+   "bug": "httpie/4",
+   "worker": "claude",
+   "ok": true,
+   "secs": 10,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "httpie/models.py": [
+     105,
+     106
+    ]
+   }
+  },
+  {
+   "bug": "httpie/4",
+   "worker": "copilot",
+   "ok": true,
+   "secs": 27,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "httpie/models.py": [
+     105,
+     106
+    ]
+   }
+  },
+  {
+   "bug": "PySnooper/3",
+   "worker": "antigravity",
+   "ok": true,
+   "secs": 16,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "pysnooper/pysnooper.py": [
+     26
+    ]
+   }
+  },
+  {
+   "bug": "PySnooper/3",
+   "worker": "codex",
+   "ok": true,
+   "secs": 22,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "pysnooper/pysnooper.py": [
+     26
+    ]
+   }
+  },
+  {
+   "bug": "PySnooper/3",
+   "worker": "claude",
+   "ok": true,
+   "secs": 9,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "pysnooper/pysnooper.py": [
+     26
+    ]
+   }
+  },
+  {
+   "bug": "PySnooper/3",
+   "worker": "copilot",
+   "ok": true,
+   "secs": 17,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "pysnooper/pysnooper.py": [
+     26
+    ]
+   }
+  },
+  {
+   "bug": "tqdm/1",
+   "worker": "antigravity",
+   "ok": true,
+   "secs": 29,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "tqdm/contrib/__init__.py": [
+     41
+    ]
+   }
+  },
+  {
+   "bug": "tqdm/1",
+   "worker": "codex",
+   "ok": true,
+   "secs": 30,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "tqdm/contrib/__init__.py": [
+     41
+    ]
+   }
+  },
+  {
+   "bug": "tqdm/1",
+   "worker": "claude",
+   "ok": true,
+   "secs": 9,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "tqdm/contrib/__init__.py": [
+     41
+    ]
+   }
+  },
+  {
+   "bug": "tqdm/1",
+   "worker": "copilot",
+   "ok": true,
+   "secs": 21,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "tqdm/contrib/__init__.py": [
+     41
+    ]
+   }
+  },
+  {
+   "bug": "tqdm/4",
+   "worker": "antigravity",
+   "ok": true,
+   "secs": 18,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "tqdm/_tqdm.py": [
+     323
+    ]
+   }
+  },
+  {
+   "bug": "tqdm/4",
+   "worker": "codex",
+   "ok": true,
+   "secs": 21,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "tqdm/_tqdm.py": [
+     323
+    ]
+   }
+  },
+  {
+   "bug": "tqdm/4",
+   "worker": "claude",
+   "ok": true,
+   "secs": 9,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "tqdm/_tqdm.py": [
+     323
+    ]
+   }
+  },
+  {
+   "bug": "tqdm/4",
+   "worker": "copilot",
+   "ok": true,
+   "secs": 24,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "tqdm/_tqdm.py": [
+     323
+    ]
+   }
+  },
+  {
+   "bug": "tqdm/6",
+   "worker": "antigravity",
+   "ok": true,
+   "secs": 36,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "tqdm/_tqdm.py": [
+     856
+    ]
+   }
+  },
+  {
+   "bug": "tqdm/6",
+   "worker": "codex",
+   "ok": true,
+   "secs": 61,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "tqdm/_tqdm.py": [
+     856
+    ]
+   }
+  },
+  {
+   "bug": "tqdm/6",
+   "worker": "claude",
+   "ok": true,
+   "secs": 13,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "tqdm/_tqdm.py": [
+     856
+    ]
+   }
+  },
+  {
+   "bug": "tqdm/6",
+   "worker": "copilot",
+   "ok": true,
+   "secs": 31,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "tqdm/_tqdm.py": [
+     856
+    ]
+   }
+  },
+  {
+   "bug": "tqdm/7",
+   "worker": "antigravity",
+   "ok": true,
+   "secs": 43,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "tqdm/_main.py": [
+     92
+    ]
+   }
+  },
+  {
+   "bug": "tqdm/7",
+   "worker": "codex",
+   "ok": true,
+   "secs": 55,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "tqdm/_main.py": [
+     92
+    ]
+   }
+  },
+  {
+   "bug": "tqdm/7",
+   "worker": "claude",
+   "ok": true,
+   "secs": 11,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "tqdm/_main.py": [
+     92
+    ]
+   }
+  },
+  {
+   "bug": "tqdm/7",
+   "worker": "copilot",
+   "ok": true,
+   "secs": 30,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "tqdm/_main.py": [
+     92
+    ]
+   }
+  },
+  {
+   "bug": "tqdm/8",
+   "worker": "antigravity",
+   "ok": true,
+   "secs": 19,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "tqdm/_tqdm.py": [
+     225
+    ]
+   }
+  },
+  {
+   "bug": "tqdm/8",
+   "worker": "codex",
+   "ok": true,
+   "secs": 23,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "tqdm/_tqdm.py": [
+     225
+    ]
+   }
+  },
+  {
+   "bug": "tqdm/8",
+   "worker": "claude",
+   "ok": true,
+   "secs": 16,
+   "findings": 3,
+   "hit": true,
+   "changed": {
+    "tqdm/_tqdm.py": [
+     225
+    ]
+   }
+  },
+  {
+   "bug": "tqdm/8",
+   "worker": "copilot",
+   "ok": true,
+   "secs": 20,
+   "findings": 1,
+   "hit": true,
+   "changed": {
+    "tqdm/_tqdm.py": [
+     225
+    ]
+   }
+  }
+ ],
+ "calls": [
+  {
+   "bug": "cookiecutter/1",
+   "wall": 27
+  },
+  {
+   "bug": "httpie/3",
+   "wall": 88
+  },
+  {
+   "bug": "httpie/4",
+   "wall": 59
+  },
+  {
+   "bug": "PySnooper/3",
+   "wall": 22
+  },
+  {
+   "bug": "tqdm/1",
+   "wall": 30
+  },
+  {
+   "bug": "tqdm/4",
+   "wall": 24
+  },
+  {
+   "bug": "tqdm/6",
+   "wall": 61
+  },
+  {
+   "bug": "tqdm/7",
+   "wall": 55
+  },
+  {
+   "bug": "tqdm/8",
+   "wall": 23
+  }
+ ]
+}

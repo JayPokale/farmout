@@ -1,0 +1,1 @@
+tqdm/_main.py:92 | high | Hyphenated argument values (e.g. `--desc=hello-world` or `--unit-scale`) are incorrectly split into separate options, corrupting CLI argument parsing and causing crashes or wrong options | Any CLI option value containing a hyphen like `--desc=foo-bar` | Restore the negative lookbehind: `re.compile(r'\s*(?<!\S)--?([^\s=]+)(?:\s*|=|$)')`

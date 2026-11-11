@@ -1,0 +1,3 @@
+The diff drops the `(?<!\S)` lookbehind from `RE_SHLEX`. Without it, a hyphen in the middle of a token starts a new option match.
+
+`tqdm/_main.py:92 | high | Dropping the lookbehind lets `-` or `--` match mid-token, so hyphens inside values or option names split the argv. This reverts the "support escaped hyphens" fix in HEAD (4efd352). | `tqdm --desc=my-task`, `--desc "a-b"`, `--bytes --delim=-`, or any value containing `-x`. The value splits into `my` plus a bogus option `task`, so `desc` is wrong and a spurious opt is passed on or rejected. | Restore `(?<!\S)`: `r'\s*(?<!\S)--?([^\s=]+)(?:\s*|=|$)'`. If escaped hyphens need handling, use a separate fix that leaves the word-boundary check in place.

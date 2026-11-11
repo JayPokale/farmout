@@ -1,0 +1,1 @@
+tqdm/contrib/__init__.py:41 | high | `start` is passed as tqdm’s `desc`, while `enumerate` always starts at zero | `tenumerate(range(9), 42)` crashes when tqdm formats integer `desc` | pass `start` to `enumerate(..., start)` and call `tqdm_class(iterable, **tqdm_kwargs)`

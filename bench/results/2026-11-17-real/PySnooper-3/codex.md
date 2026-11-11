@@ -1,0 +1,1 @@
+pysnooper/pysnooper.py:26 | medium | `output_path` is undefined, causing `NameError` instead of writing trace output | pass a string or `PathLike` as `snoop(output=...)` and execute traced code | open `output` rather than `output_path`

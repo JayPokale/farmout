@@ -1,0 +1,1 @@
+tqdm/_tqdm.py:225 | medium | custom `bar_format` text around `{bar}` is discarded | any `bar_format` containing `{bar}`, e.g. `"{desc}{bar}"` | format `l_bar_user` and `r_bar_user` instead of the default `l_bar` and `r_bar`

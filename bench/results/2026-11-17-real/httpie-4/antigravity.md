@@ -1,0 +1,1 @@
+httpie/models.py:106 | high | Case-sensitive lookup on standard dict causes duplicate Host header and overrides custom lowercase host | `self._orig.headers` containing lowercase or mixed-case `'host'` (e.g. from `headers={'host': 'foo'}`) | Check `'Host' not in self._orig.headers` instead of `headers`, or use `CaseInsensitiveDict`

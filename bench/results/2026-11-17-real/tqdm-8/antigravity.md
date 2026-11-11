@@ -1,0 +1,1 @@
+tqdm/_tqdm.py:225 | high | UnboundLocalError or ignores user-defined custom bar format sides by formatting default `l_bar`/`r_bar` instead of `l_bar_user`/`r_bar_user` | Any custom `bar_format` containing `{bar}` | `l_bar, r_bar = l_bar_user.format(**bar_args), r_bar_user.format(**bar_args)`

@@ -1,0 +1,1 @@
+tqdm/_tqdm.py:323 | medium | numeric `unit_scale` crashes unknown-total progress bars by multiplying `None` | generator/iterator without `len()` with `unit_scale=10` | guard scaling `total` with `if total is not None`

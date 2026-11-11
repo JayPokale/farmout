@@ -1,0 +1,1 @@
+tqdm/_tqdm.py:323 | high | TypeError when multiplying None total by custom unit_scale | total is None (e.g. iterable without len or total > n check failed) and custom unit_scale is provided | if total: total *= unit_scale

@@ -1,0 +1,1 @@
+pysnooper/pysnooper.py:26 | high | `output_path` is never defined in `get_write_function`, so `write()` raises `NameError` on its first call. | `@pysnooper.snoop('/tmp/log.txt')`, or any `output` that is a str or PathLike, once the traced function runs and the tracer writes. | Change it back to `open(output, 'a')`, or define `output_path = output` before `write`.

@@ -1,0 +1,1 @@
+tqdm/_tqdm.py:856 | high | disabled progress bars wrapping unsized iterators crash because `total` is never initialized on the early `disable` return | `list(tqdm(iter(range(3)), total=3, disable=True))` | retain `getattr(self, "total", None)` or initialize `self.total` before the disabled return

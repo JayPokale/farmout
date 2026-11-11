@@ -1,0 +1,1 @@
+tqdm/contrib/__init__.py:39 | high | tenumerate ignores the requested starting index and passes it as tqdm's desc argument | calling tenumerate(iterable, start=42) yields indices starting at 0 (and may misformat the progress display) | pass start to enumerate as the second argument, not to tqdm_class

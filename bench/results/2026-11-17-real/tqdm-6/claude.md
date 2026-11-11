@@ -1,0 +1,3 @@
+src/tqdm/_tqdm.py:856 | high | The diff replaces `getattr(self, "total", None)` with `self.total`. A bar created with `disable=True` (or `disable=None` on a non-TTY) returns at line 742 before `self.total` is set at line 800. `__len__` then raises AttributeError. | `len(tqdm(gen(), disable=True))`, where `gen()` is a generator with no `__len__`. Also `len(tqdm(disable=True))`, where `iterable` is None and line 853 reads `self.total` directly. | Revert to `getattr(self, "total", None)`. Alternatively set `self.total = total` in the disabled branch at line 737.
+
+(The path is relative to the repo root: `tqdm/_tqdm.py`.)

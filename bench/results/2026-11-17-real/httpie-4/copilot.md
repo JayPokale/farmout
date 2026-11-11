@@ -1,0 +1,3 @@
+I’ll inspect the diff first, then read the affected code and relevant call sites/tests to validate only merge-blocking defects.
+
+httpie/models.py:106 | medium | Case-sensitive check adds a duplicate Host header to rendered requests | user supplies `host:example.com` and prints request headers | check Host membership case-insensitively on the original headers or normalize header names before testing

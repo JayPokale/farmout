@@ -1,0 +1,1 @@
+httpie/models.py:106 | medium | Converts case-insensitive request headers to a plain dict before checking `Host`, causing a second Host header in displayed requests | User supplies `host:example.com` with `--print=H` | Check headers case-insensitively or preserve `self._orig.headers` for the membership test

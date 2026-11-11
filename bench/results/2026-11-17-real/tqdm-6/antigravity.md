@@ -1,0 +1,1 @@
+tqdm/_tqdm.py:856 | high | AttributeError when checking length of disabled tqdm wrapping an unsized iterable | `len(tqdm((x for x in range(5)), disable=True))` where `self.total` is not set because `__init__` returned early on `disable=True` | revert to `else getattr(self, "total", None)` or set `self.total = total` in `if disable:` block of `__init__`

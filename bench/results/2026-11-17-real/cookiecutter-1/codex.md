@@ -1,0 +1,1 @@
+cookiecutter/generate.py:85 | medium | JSON templates are decoded using the process locale instead of required UTF-8 | Running under ASCII/legacy locale with non-ASCII `cookiecutter.json` values raises `UnicodeDecodeError` or corrupts values | restore `encoding='utf-8'`

@@ -1,0 +1,1 @@
+httpie/sessions.py:104 | high | crashes decoding unset header value | `--session` with `--download` sets `Accept-Encoding=None` | retain `None` guard before `decode()`

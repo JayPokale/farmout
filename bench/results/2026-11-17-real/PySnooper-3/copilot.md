@@ -1,0 +1,1 @@
+pysnooper/pysnooper.py:26 | medium | `@snoop` configured with a path raises `NameError` when it writes trace output because `output_path` is undefined | pass `output` to `open` instead

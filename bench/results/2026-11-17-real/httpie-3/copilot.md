@@ -1,0 +1,1 @@
+httpie/sessions.py:104 | medium | `--download` with a session crashes while persisting headers because `Download.pre_request` inserts `Accept-Encoding: None`, which has no `decode` method | run a session-backed download | restore the `None` guard before decoding header values

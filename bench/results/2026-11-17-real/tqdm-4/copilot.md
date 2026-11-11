@@ -1,0 +1,1 @@
+tqdm/_tqdm.py:323 | medium | `format_meter` raises TypeError when scaling an indeterminate total | `unit_scale` is a numeric value other than 1 and `total=None`, common for generator-backed progress bars | only multiply `total` when it is not None (preserve the existing guard)

@@ -1,0 +1,1 @@
+tqdm/_main.py:92 | medium | option-like `--` substrings inside argument values are parsed as new options | `tqdm --desc foo--bar` raises `TqdmKeyError` or corrupts parsed arguments | require `--` to start at whitespace or input start as before
