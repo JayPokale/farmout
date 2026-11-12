@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
-"""modelmux: MCP server that lets a head model (e.g. Claude Code) hand self-contained subtasks to
-your other AI subscriptions in parallel, through their official CLIs: Antigravity (`agy`),
-Codex CLI, GitHub Copilot CLI, a second Claude Code account, plus any OpenAI-compatible endpoint.
-Stdlib only, Python 3.9+, Linux/macOS. Speaks MCP over stdio (newline-delimited JSON-RPC 2.0).
+"""modelmux: MCP server that lets a head model (e.g. Claude Code) hand self-contained subtasks to your other AI
+subscriptions in parallel, through their official CLIs (agy, codex, copilot, a second claude account) or any
+OpenAI-compatible endpoint. Stdlib only, Python 3.9+, Linux/macOS, MCP over stdio. Settings: README.md.
 
 Register:  claude mcp add -s user modelmux -- python3 /path/to/modelmux/server.py
-Check:     python3 server.py doctor    (which workers are ready, how to enable the rest)
-Env:       MODELMUX_CLAUDE_DIR   config dir of a second Claude Code account (enables `claude`)
-           MODELMUX_API_BASE, MODELMUX_API_MODEL, MODELMUX_API_KEY
-                                 OpenAI-compatible endpoint, e.g. http://localhost:11434/v1 (enables `api`)
-           MODELMUX_TIMEOUT      seconds per task (default 1200)
-Outputs:   ~/.cache/modelmux/<call>/<n>-<worker>.md
+Check:     python3 server.py doctor [--live]
 """
 import json
 import os
@@ -106,8 +100,7 @@ def antigravity(t, rid):
     # where print mode would otherwise run shell commands unasked.
     cmd += ["--mode", "accept-edits", "--sandbox"] if t.get("write") else ["--mode", "plan"]
     cmd += [x for d in extra for x in ("--add-dir", d)]
-    if t.get("model"):
-        cmd += ["--model", t["model"]]
+    cmd += ["--model", t["model"]] if t.get("model") else []
     res = json.loads(run(cmd, rid, cwd))
     if res.get("status") != "SUCCESS":
         raise RuntimeError(json.dumps(res)[:1500])
@@ -120,8 +113,7 @@ def codex(t, rid):
         last = os.path.join(tmp, "last.md")
         cmd = ["codex", "exec", "--skip-git-repo-check", "--ephemeral", "--color", "never",
                "-s", "workspace-write" if t.get("write") else "read-only", "-C", cwd, "-o", last]
-        if t.get("model"):
-            cmd += ["-m", t["model"]]
+        cmd += ["-m", t["model"]] if t.get("model") else []
         run(cmd + ["-"], rid, cwd, stdin=brief)
         return Path(last).read_text()
 
@@ -145,8 +137,7 @@ def copilot(t, rid):
     tools = ["view", "rg", "glob", "web_fetch"] + (["apply_patch", "edit", "create"] if t.get("write") else [])
     cmd = ["copilot", "-p", brief, "-s", "--no-color", "--allow-all-tools", "--available-tools", *tools]
     cmd += [x for d in extra for x in ("--add-dir", d)]
-    if t.get("model"):
-        cmd += ["--model", t["model"]]
+    cmd += ["--model", t["model"]] if t.get("model") else []
     return run(cmd, rid, cwd)
 
 
@@ -196,8 +187,7 @@ else:
 SETUP = {  # name: (executable, how to enable), for `doctor`
     "antigravity": ("agy", "install the Antigravity CLI (`agy`) and log in"),
     "codex": ("codex", "install the Codex CLI and run `codex login`"),
-    "claude": ("claude", "log in a second account once with `CLAUDE_CONFIG_DIR=<dir> claude`, "
-                         "then set MODELMUX_CLAUDE_DIR=<dir>"),
+    "claude": ("claude", "log in a second account once (`CLAUDE_CONFIG_DIR=<dir> claude`), then set MODELMUX_CLAUDE_DIR=<dir>"),
     "copilot": ("copilot", "install the GitHub Copilot CLI and run `copilot login`"),
     "api": (None, "set MODELMUX_API_BASE and MODELMUX_API_MODEL (and MODELMUX_API_KEY if needed)"),
 }
@@ -214,15 +204,13 @@ TOOL = {
             "cwd": {"type": "string", "description": "Absolute working directory. Default: where the head was launched."},
             "write": {"type": "boolean", "description": "Allow edits in cwd; agy, claude and copilot also in the dirs of listed files outside it. Default false."},
             "model": {"type": "string", "description": "Override the worker's default model."},
-            "isolate": {"type": "boolean", "description": "Write in a private git worktree (HEAD + your uncommitted "
-                                                          "changes); the result names the patch. Implies write."},
-        }}}, "background": {"type": "boolean", "description": "Return at once and keep working; each result file appears "
-                                                             "when its task ends, then a `done` file. Default false."}}},
+            "isolate": {"type": "boolean", "description": "Write in a private git worktree; the result names a patch. Implies write."},
+        }}}, "background": {"type": "boolean", "description": "Return at once; result files appear as tasks end, then `done`."}}},
 }
 
 
 def git(cwd, *args, stdin=None):
-    p = subprocess.run(["git", "-C", str(cwd), *args], input=stdin, capture_output=True, text=True)
+    p = subprocess.run(["git", "-C", str(cwd), *args], input=stdin, capture_output=True, text=True, errors="surrogateescape")
     if p.returncode:
         raise RuntimeError(f"git {' '.join(args[:2])}: {p.stderr.strip()[-500:]}")
     return p.stdout
@@ -230,8 +218,8 @@ def git(cwd, *args, stdin=None):
 
 def worktree(t, i, outdir):
     """A private worktree for one write task: HEAD plus the user's uncommitted and untracked files, committed
-    as a base. In-repo `files` are remapped into it, so no worker is ever granted the user's own tree."""
-    cwd = os.path.abspath(os.path.expanduser(t.get("cwd") or os.getcwd()))
+    as a base. In-repo `files` are remapped (ignored ones copied) into it, so no worker is granted the user's tree."""
+    cwd = os.path.realpath(os.path.expanduser(t.get("cwd") or os.getcwd()))
     top = git(cwd, "rev-parse", "--show-toplevel").strip()
     # In the project, so the head can read and test it, but not under .git, where Claude Code refuses edits.
     wt, branch = Path(top, ".modelmux", outdir.name, f"{i}-{t['worker']}"), f"modelmux/{outdir.name}-{i}"
@@ -244,19 +232,33 @@ def worktree(t, i, outdir):
         git(top, "worktree", "add", "-q", "-b", branch, str(wt), "HEAD")
         base = git(top, "diff", "HEAD", "--binary")
         untracked = [f for f in git(top, "ls-files", "--others", "--exclude-standard", "-z").split("\0") if f]
-    if base:
-        git(wt, "apply", "--whitespace=nowarn", stdin=base)
-    for f in untracked:
-        (wt / f).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(Path(top) / f, wt / f)
-    if base or untracked:
-        git(wt, "add", "-A")
-        git(wt, "-c", "user.name=modelmux", "-c", "user.email=modelmux@localhost", "commit", "-qm", "your uncommitted changes")
-    files = []
-    for f in t.get("files") or []:
-        rel = os.path.relpath(os.path.abspath(os.path.join(cwd, os.path.expanduser(f))), top)
-        files.append(f if rel.startswith("..") or rel.split(os.sep)[0] == ".git" else str(wt / rel))
-    return {**t, "cwd": str(wt / os.path.relpath(cwd, top)), "files": files, "write": True}, wt, branch
+    try:
+        if base:
+            git(wt, "apply", "--whitespace=nowarn", stdin=base)
+        for f in untracked:
+            (wt / f).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(Path(top) / f, wt / f, follow_symlinks=False)
+        if base or untracked:
+            git(wt, "add", "-A")
+            git(wt, "-c", "user.name=modelmux", "-c", "user.email=modelmux@localhost", "commit", "-qm", "your uncommitted changes")
+        files = []
+        for f in t.get("files") or []:
+            src = os.path.realpath(os.path.join(cwd, os.path.expanduser(f)))
+            rel = os.path.relpath(src, top)
+            inside = os.path.exists(src) and rel.split(os.sep)[0] not in ("..", ".git")
+            if inside and not (wt / rel).exists():  # an ignored file the task needs: copy it in too
+                (wt / rel).parent.mkdir(parents=True, exist_ok=True)
+                if os.path.isdir(src):
+                    shutil.copytree(src, wt / rel, symlinks=True)
+                else:
+                    shutil.copy2(src, wt / rel, follow_symlinks=False)
+            files.append(str(wt / rel) if inside else src)
+    except Exception:  # don't leave a half-made worktree and branch behind
+        for args in (["worktree", "remove", "--force", str(wt)], ["branch", "-D", branch]):
+            subprocess.run(["git", "-C", top, *args], capture_output=True)
+        raise
+    t = {**t, "cwd": str(wt / os.path.relpath(cwd, top)), "files": files, "write": True}
+    return t, wt, branch, git(wt, "rev-parse", "HEAD").strip()
 
 
 def task(i, t, rid, outdir):
@@ -265,13 +267,13 @@ def task(i, t, rid, outdir):
         if w not in ENABLED:
             raise ValueError(f"unknown or unavailable worker {w!r}; available: {', '.join(ENABLED) or 'none'}")
         if t.get("isolate"):
-            t, wt, branch = worktree(t, i, outdir)
+            t, wt, branch, base = worktree(t, i, outdir)
         text, ok = ENABLED[w][0](t, rid).strip(), True
         if t.get("isolate"):  # only the worker's own changes, ready for `git apply` in the user's tree
             git(wt, "add", "-A", "--", ".", *(f":!*{c}*" for c in ("__pycache__", ".pyc", ".pytest_cache", "node_modules")))
             patch = wt.parent / f"{i}-{w}.patch"
-            patch.write_text(git(wt, "diff", "--cached", "--binary", "HEAD"))
-            stat = git(wt, "diff", "--cached", "--stat", "HEAD").strip() or "no changes"
+            patch.write_text(git(wt, "diff", "--cached", "--binary", base), errors="surrogateescape")  # base: the
+            stat = git(wt, "diff", "--cached", "--stat", base).strip() or "no changes"  # worker may have committed
             text += f"\n\n[isolated] worktree {wt}, branch {branch}, patch {patch}:\n{stat}"
     except Exception as e:
         text, ok = f"{type(e).__name__}: {e}", False
@@ -283,9 +285,13 @@ def task(i, t, rid, outdir):
     return f"## [{i}] {w} {'ok' if ok else 'FAILED'} {time.time() - t0:.0f}s -> {path}", text, ok
 
 
-def run_all(tasks, key, outdir):
-    with ThreadPoolExecutor(min(8, len(tasks))) as ex:
-        return list(ex.map(lambda a: task(*a, key, outdir), enumerate(tasks, 1)))
+def run_all(tasks, key, outdir, done=None):
+    try:
+        with ThreadPoolExecutor(min(8, len(tasks))) as ex:
+            return list(ex.map(lambda a: task(*a, key, outdir), enumerate(tasks, 1)))
+    finally:
+        if done:  # even after an error, so a poller waiting for it never hangs
+            done.touch()
 
 
 def delegate(args, rid):
@@ -295,8 +301,7 @@ def delegate(args, rid):
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     outdir = Path(tempfile.mkdtemp(prefix=time.strftime("%Y%m%d-%H%M%S-"), dir=OUT_DIR))
     if args.get("background"):  # own key: handle() forgets rid on reply, shutdown must still stop these
-        threading.Thread(target=lambda: (run_all(tasks, ("background", rid), outdir), (outdir / "done").touch()),
-                         daemon=True).start()
+        threading.Thread(target=run_all, args=(tasks, ("background", rid), outdir, outdir / "done"), daemon=True).start()
         files = "\n".join(f"- {outdir}/{i}-{t.get('worker')}.md" for i, t in enumerate(tasks, 1))
         return (f"Started {len(tasks)} task(s) in the background. Each file appears when its task ends, and "
                 f"{outdir}/done when all have. To be told, run in the background: "
@@ -373,15 +378,13 @@ def doctor(live=False):
     print(f"modelmux {VERSION} on Python {sys.version.split()[0]}; results go to {OUT_DIR}")
     for name, (_, ready, _) in WORKERS.items():
         exe, how = SETUP[name]
-        detail = how
+        detail = f"{API_MODEL} at {API_BASE}" if ready and not exe else how
         if ready and exe:
             try:
                 out = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=30)
                 detail = f"{shutil.which(exe)} {((out.stdout or out.stderr).strip().splitlines() or ['?'])[0]}"
             except Exception as e:
                 detail = f"{shutil.which(exe)} (--version failed: {e})"
-        elif ready:
-            detail = f"{API_MODEL} at {API_BASE}"
         print(f"  {'ready  ' if ready else 'missing'}  {name:<12} {detail}")
     if not live:
         print("Logins are not checked. `python3 server.py doctor --live` sends each ready worker one tiny prompt.")

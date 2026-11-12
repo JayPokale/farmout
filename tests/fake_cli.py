@@ -7,6 +7,7 @@ Each run is logged to $FAKE_LOG/<pid>.json; then the first line of the brief say
   fail <message>  print <message> to stderr and exit 1
   sleep <tag>     start a grandchild, write both pids to $FAKE_LOG/<tag>.pids, sleep until killed
   write <f> <text> write <text> to file <f> in cwd
+  commit <f> <text> the same, then git commit it
   meet <dir> <n>  check in to <dir>, wait until n workers have (fail after 10s), reply "met"
   agyerror        agy reports a non-SUCCESS status
 """
@@ -48,6 +49,13 @@ elif cmd == "write":
     with open(fname, "w") as f:
         f.write(content)
     reply = f"wrote {fname}"
+elif cmd == "commit":  # like write, then commit it, as some agents do
+    fname, _, content = reply.partition(" ")
+    with open(fname, "w") as f:
+        f.write(content)
+    subprocess.run(["git", "add", "-A"], check=True)
+    subprocess.run(["git", "-c", "user.name=f", "-c", "user.email=f@localhost", "commit", "-qm", "worker"], check=True)
+    reply = f"committed {fname}"
 elif cmd == "meet":
     room, n = reply.split()
     open(os.path.join(room, str(os.getpid())), "w").close()

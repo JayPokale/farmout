@@ -406,6 +406,32 @@ class DelegateTest(Base):
         self.assertFalse(ok)
         self.assertIn("RuntimeError: git rev-parse", body)
 
+    def test_isolate_edge_cases(self):
+        repo = self.work
+
+        def git(*args):
+            return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout
+
+        git("init", "-q")
+        (repo / ".gitignore").write_text(".env\n")
+        (repo / "latin1.txt").write_bytes(b"caf\xe9\n")
+        git("add", ".")
+        git("-c", "user.name=t", "-c", "user.email=t@localhost", "commit", "-qm", "init")
+        (repo / "latin1.txt").write_bytes(b"caf\xe9 cr\xe8me\n")  # a non-UTF-8 uncommitted change
+        (repo / ".env").write_text("TOKEN=x\n")  # ignored, but listed in files
+        (repo / "dangling").symlink_to(repo / "nowhere")  # an untracked, dangling symlink
+        s = self.start()
+        _, [(_, ok, _, body)] = s.delegate({"worker": "codex", "prompt": "commit fix.txt by codex", "cwd": str(repo),
+                                            "isolate": True, "files": [".env"]})
+        self.assertTrue(ok, body)
+        wt = Path(re.search(r"worktree (\S+), branch", body).group(1))
+        patch = Path(re.search(r"patch (\S+):", body).group(1)).read_text()
+        self.assertIn("+by codex", patch, "a worker's own commit still ends up in the patch")
+        self.assertNotIn("crème", patch)
+        self.assertTrue((wt / "dangling").is_symlink(), "untracked symlinks are copied as links")
+        self.assertEqual((wt / ".env").read_text(), "TOKEN=x\n", "listed ignored files are copied in")
+        self.assertIn(f"- {wt / '.env'}", self.calls()["codex"]["brief"])
+
     def test_background_returns_at_once_and_still_stops_on_shutdown(self):
         s = self.start()
 
@@ -501,6 +527,10 @@ class ReadGuardTest(unittest.TestCase):
         self.assertIsNotNone(self.guard({"file_path": str(big), "limit": 2000}, session="s5"))
         self.assertIsNone(self.guard({"file_path": str(big)}, session="s3", MODELMUX_READ_GUARD="0"))
         self.assertIsNone(self.guard({"file_path": str(big)}, session="s4", tool="Grep"))
+        png = self.tmp / "screenshot.png"
+        png.write_bytes(b"\x89PNG" + b"\0" * 300_000)
+        self.assertIsNone(self.guard({"file_path": str(png)}, session="s6"), "images are not text")
+        self.assertIsNone(self.guard({"file_path": str(big), "limit": 0}, session="s7"))
 
 
 class FakeAPI(http.server.BaseHTTPRequestHandler):
@@ -610,6 +640,10 @@ class RepoTest(unittest.TestCase):
             out = run("sh", str(SERVER.parent / "skills" / "review" / "save-diff.sh"), "--base", "HEAD")
             self.assertIn("(0 bytes; HEAD...HEAD)", out)
             self.assertNotIn("untracked", out)
+            bad = subprocess.run(["sh", str(SERVER.parent / "skills" / "review" / "save-diff.sh"), "--base", "--output=x"],
+                                 cwd=repo, capture_output=True, text=True)
+            self.assertNotEqual(bad.returncode, 0)
+            self.assertFalse((repo / "x...HEAD").exists(), "--base must not smuggle in a git option")
 
     def test_plugin_version_matches_server(self):
         plugin = json.loads((SERVER.parent / ".claude-plugin" / "plugin.json").read_text())
