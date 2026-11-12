@@ -647,6 +647,15 @@ class RepoTest(unittest.TestCase):
             self.assertNotEqual(bad.returncode, 0)
             self.assertFalse((repo / "x...HEAD").exists(), "--base must not smuggle in a git option")
 
+    def test_every_skill_has_name_and_description(self):
+        skills = sorted((SERVER.parent / "skills").glob("*/SKILL.md"))
+        self.assertEqual([p.parent.name for p in skills], ["ask", "race", "review", "setup"])
+        for p in skills:
+            head = p.read_text().split("---")[1]
+            self.assertIn(f"\nname: {p.parent.name}\n", head, p)
+            self.assertRegex(head, r"\ndescription: \S", p)
+            self.assertIn("disable-model-invocation: true", head, f"{p}: fan-out commands must be typed, not auto-run")
+
     def test_plugin_version_matches_server(self):
         plugin = json.loads((SERVER.parent / ".claude-plugin" / "plugin.json").read_text())
         self.assertIn(f'VERSION = "{plugin["version"]}"', SERVER.read_text())
