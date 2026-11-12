@@ -1,0 +1,49 @@
+{
+ "antigravity": [
+  "dict-mutation",
+  "foreach-async",
+  "index-zero",
+  "page-offset",
+  "path-traversal",
+  "prototype-pollution",
+  "sql-injection",
+  "timing-compare",
+  "ttl-units",
+  "unawaited-write"
+ ],
+ "codex": [
+  "bucket-race",
+  "dict-mutation",
+  "foreach-async",
+  "int64-precision",
+  "month-offset",
+  "path-traversal",
+  "prototype-pollution",
+  "sql-injection",
+  "ttl-units"
+ ],
+ "claude": [
+  "dict-mutation",
+  "float-cents",
+  "foreach-async",
+  "month-offset",
+  "page-offset",
+  "path-traversal",
+  "prototype-pollution",
+  "redos",
+  "sql-injection",
+  "swallowed-error"
+ ],
+ "copilot": [
+  "dict-mutation",
+  "float-cents",
+  "foreach-async",
+  "int64-precision",
+  "lexicographic-sort",
+  "page-offset",
+  "path-traversal",
+  "sql-injection",
+  "timing-compare",
+  "ttl-units"
+ ]
+}

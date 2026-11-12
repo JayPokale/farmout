@@ -48,9 +48,23 @@ Codex missed the timing-unsafe HMAC compare; Copilot missed the ReDoS. Per-bug d
 
 Scoring is by location, so we read the four subtlest outputs by hand (`tqdm/6`, `tqdm/7`, `tqdm/8`, `httpie/4`): every model named the actual root cause, e.g. the dropped `(?<!\S)` lookbehind, `l_bar` formatted instead of `l_bar_user`, `self.total` unset on the `disable=True` early return, and a case-sensitive `Host` check on a plain dict. Caveat: a reversed fix is a small, focused diff that points straight at the bug. Bugs buried in large changes are harder, and these runs don't measure that.
 
+### Set 4: one big change (all 23 planted bugs in one diff), 2026-11-17
+
+`big_change.py` puts every planted case into a single change and asks each worker once. Two runs: the brief's default cap of 10 findings, then the same brief allowing 30.
+
+| reviewer | found, top 10 | found, up to 30 |
+|---|---|---|
+| antigravity (Flash low) | 10 | 17 |
+| codex | 9 | 16 |
+| claude (Sonnet) | 10 | **23** |
+| copilot | 10 | 19 |
+| **all four, in parallel** | **17** | **23** |
+
+With the cap at 10, every reviewer filled its list, and together they covered 17 of 23: each model listed at least one bug no other did. Allowed 30, Claude (Sonnet) alone found all 23. So on a big change the cap, not the models, limited coverage. Breadth from parallel reviewers helps when each review must stay short, but the best single model given room did as well. `/modelmux:review` now allows 20 findings per reviewer. Raw outputs: `results/2026-11-17-big-cap10/`, `results/2026-11-17-big-cap30/`.
+
 ### What this does and doesn't show
 
-- **No recall gain over the best single model, on these cases.** Antigravity and Claude (Sonnet) each found all 23 planted bugs, and all four models found all 9 real regressions, so running all four found nothing more. Planted, well-known bug classes are within every 2026 frontier model's reach. A harder benchmark (real bug-fix commits) is future work.
+- **No recall gain over the best single model, given room.** Antigravity and Claude (Sonnet) each found all 23 planted bugs, all four models found all 9 real regressions, and on one big change Claude found all 23 when allowed 30 findings. Parallel reviewers covered more only when each was held to a short list (17 vs 10 of 23). Planted, well-known bug classes are within every 2026 frontier model's reach. A harder benchmark (real bug-fix commits) is future work.
 - **Strong agreement.** Across all 32 bugs (23 planted, 9 real), every one was flagged by at least three of the four models, and 27 by all four. When `/modelmux:review` reports "flagged by 4/4", that has meant a real bug every time here.
 - **Misses move around.** Codex missed different bugs in two runs of the same case, and Copilot missed others. The fan-out means you don't have to know which model is reliable this week.
 - **Cost in time, not in Claude's tokens.** A parallel call is as slow as its slowest worker: Antigravity averaged about 3.4 minutes per review, while Claude (Sonnet) took about 11 seconds. Running everything produced 112 findings for 23 planted bugs, so the head's merge-and-verify step matters. Some extras are real issues the cases didn't plant (missing authorization, quota races), and some are noise.

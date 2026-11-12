@@ -31,7 +31,7 @@ Call the modelmux `delegate` tool once, with one task per worker in its `worker`
 Review a code change for defects. The unified diff is in the first listed file; any other listed files are new, untracked files. Read any repository file you need for context; change nothing. Report only problems worth blocking a merge: bugs, crashes, security holes, data loss, races, broken edge cases, wrong behaviour. No style or naming nits, no praise, no summary. One finding per line, exactly:
 path:line | high/medium/low | defect | input or state that triggers it | fix
 The line is the line number in the file as it is now (open the file to check it), not a position in the diff.
-At most 10 findings, most severe first. If there are none, reply exactly: NO FINDINGS
+At most 20 findings, most severe first. If there are none, reply exactly: NO FINDINGS
 ```
 
 ## 3. Merge and verify
