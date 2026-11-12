@@ -191,7 +191,7 @@ FileNotFoundError: /home/me/project/issues.txt
 - **Prompt injection is real.** Workers read whatever files you hand them, and a hostile document can try to instruct them. Read-only mode limits the damage but cannot make injection impossible; for example, a worker could put file contents into a web search. Don't delegate secrets.
 - **Data leaves your head account.** Briefs and files go to each worker's provider. If your head runs on a work account, check your organization's policy before delegating its data to personal accounts.
 - **Where `write: true` can write:** inside `cwd`. For `antigravity`, `claude` and `copilot` it also covers the directories of any listed files outside `cwd`, because those are granted with `--add-dir`. `codex` writes only in `cwd`. With `isolate: true`, in-repo paths are remapped into the worktree, so no writer is ever granted your own tree.
-- **Never give two parallel tasks write access to overlapping files**, unless each has `isolate: true`: then each works in its own git worktree and your tree is untouched until you apply a patch.
+- **Never give two parallel tasks write access to overlapping files**, unless each has `isolate: true`: then each works in its own git worktree and your tree is untouched until you apply a patch. `isolate` is not a filesystem sandbox: a tracked symlink that points outside the repository can be written through, and files a worker creates that match `.gitignore` stay out of its patch.
 
 ## Terms of service
 

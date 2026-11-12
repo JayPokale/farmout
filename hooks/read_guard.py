@@ -7,6 +7,7 @@ through, so "read it yourself" always works. Set MODELMUX_READ_GUARD=0 to turn i
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -15,11 +16,19 @@ PDF_PAGES = 10  # a "big" PDF; Claude Code reads PDFs at roughly 1.5-3k tokens a
 PEEK_PAGES = 5  # reading this many pages or fewer of a big PDF is a cheap look, never stopped
 TEXT_BYTES = 200_000  # a "big" text file, about 50k tokens
 PEEK_LINES = 500
+IMAGES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".tif", ".tiff"}  # read as images, not text
 
 
 def pdf_pages(path):
     with open(path, "rb") as f:
-        return len(re.findall(rb"/Type\s*/Page[^s]", f.read()))
+        pages = len(re.findall(rb"/Type\s*/Page[^s]", f.read()))
+    if pages:
+        return pages
+    try:  # PDF 1.5+ can hide page objects in compressed streams; ask poppler if it's installed
+        out = subprocess.run(["pdfinfo", str(path)], capture_output=True, text=True, timeout=4).stdout
+        return int(re.search(r"^Pages:\s+(\d+)", out, re.M).group(1))
+    except Exception:
+        return 0  # unknown: let the read through
 
 
 def span(pages):
@@ -38,8 +47,8 @@ def main():
     if event.get("tool_name") != "Read":
         return
     args = event.get("tool_input") or {}
-    path = Path(args.get("file_path") or "")
-    if not path.is_file():
+    path = Path(args.get("file_path") or "").resolve()
+    if not path.is_file() or path.suffix.lower() in IMAGES:
         return
     if path.suffix.lower() == ".pdf":
         size = pdf_pages(path)
@@ -49,7 +58,8 @@ def main():
         what = f"a {size}-page PDF; reading {want} pages costs very roughly {want * 2}k tokens"
     else:
         size = path.stat().st_size
-        if size <= TEXT_BYTES or (args.get("limit") or PEEK_LINES + 1) <= PEEK_LINES:
+        limit = args.get("limit")
+        if size <= TEXT_BYTES or (limit is not None and limit <= PEEK_LINES):
             return
         what = f"{size // 1000} KB of text (about {size // 4000}k tokens)"
     seen = Path(tempfile.gettempdir()) / f"modelmux-read-guard-{event.get('session_id', 'none')}"

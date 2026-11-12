@@ -4,6 +4,7 @@
 set -e
 base=""
 if [ "$1" = "--base" ] && [ -n "$2" ]; then base="$2"; fi
+case "$base" in -*) echo "--base needs a git ref, not an option: $base" >&2; exit 1 ;; esac
 dir="$(git rev-parse --absolute-git-dir)/modelmux"
 mkdir -p "$dir"
 if [ -n "$base" ]; then
