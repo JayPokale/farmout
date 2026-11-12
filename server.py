@@ -227,8 +227,7 @@ def worktree(t, i, outdir):
     with git_lock:  # parallel `worktree add`s on one repo race on git's lock files
         if "/.modelmux/" not in (exclude.read_text() if exclude.exists() else ""):  # keep git status clean
             exclude.parent.mkdir(exist_ok=True)
-            with open(exclude, "a") as f:
-                f.write("\n/.modelmux/\n")
+            exclude.write_text((exclude.read_text() if exclude.exists() else "") + "\n/.modelmux/\n")
         git(top, "worktree", "add", "-q", "-b", branch, str(wt), "HEAD")
         base = git(top, "diff", "HEAD", "--binary")
         untracked = [f for f in git(top, "ls-files", "--others", "--exclude-standard", "-z").split("\0") if f]
@@ -257,7 +256,8 @@ def worktree(t, i, outdir):
         for args in (["worktree", "remove", "--force", str(wt)], ["branch", "-D", branch]):
             subprocess.run(["git", "-C", top, *args], capture_output=True)
         raise
-    t = {**t, "cwd": str(wt / os.path.relpath(cwd, top)), "files": files, "write": True}
+    t = {**t, "cwd": str(wt / os.path.relpath(cwd, top)), "files": files, "write": True,
+         "prompt": t["prompt"].replace(top, str(wt))}  # a brief naming the user's repo would send writers there
     return t, wt, branch, git(wt, "rev-parse", "HEAD").strip()
 
 

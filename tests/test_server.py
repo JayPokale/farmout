@@ -421,8 +421,8 @@ class DelegateTest(Base):
         (repo / ".env").write_text("TOKEN=x\n")  # ignored, but listed in files
         (repo / "dangling").symlink_to(repo / "nowhere")  # an untracked, dangling symlink
         s = self.start()
-        _, [(_, ok, _, body)] = s.delegate({"worker": "codex", "prompt": "commit fix.txt by codex", "cwd": str(repo),
-                                            "isolate": True, "files": [".env"]})
+        _, [(_, ok, _, body)] = s.delegate({"worker": "codex", "prompt": f"commit fix.txt by codex\nRepo root: {repo}",
+                                            "cwd": str(repo), "isolate": True, "files": [".env"]})
         self.assertTrue(ok, body)
         wt = Path(re.search(r"worktree (\S+), branch", body).group(1))
         patch = Path(re.search(r"patch (\S+):", body).group(1)).read_text()
@@ -430,7 +430,9 @@ class DelegateTest(Base):
         self.assertNotIn("crème", patch)
         self.assertTrue((wt / "dangling").is_symlink(), "untracked symlinks are copied as links")
         self.assertEqual((wt / ".env").read_text(), "TOKEN=x\n", "listed ignored files are copied in")
-        self.assertIn(f"- {wt / '.env'}", self.calls()["codex"]["brief"])
+        brief = self.calls()["codex"]["brief"]
+        self.assertIn(f"- {wt / '.env'}", brief)
+        self.assertIn(f"Repo root: {wt}", brief, "the brief points at the worktree, not the user's repo")
 
     def test_background_returns_at_once_and_still_stops_on_shutdown(self):
         s = self.start()
