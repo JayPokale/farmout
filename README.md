@@ -73,16 +73,18 @@ Requirements: Python 3.9+, Linux (tested) or macOS (untested), [Claude Code](htt
 | `copilot` | [GitHub Copilot CLI](https://github.com/github/copilot-cli), logged in | code review, focused coding questions, second opinions; models from several vendors |
 | `api` | `MODELMUX_API_BASE` + `MODELMUX_API_MODEL` | bulk or simple work on any OpenAI-compatible model |
 
+Install it as a Claude Code plugin (recommended: it adds the slash commands and the read guard, and `claude plugin update modelmux` keeps it current):
+
+```bash
+claude plugin install modelmux --marketplace JayPokale/modelmux
+```
+
+Or register the server by hand (no slash commands):
+
 ```bash
 git clone https://github.com/JayPokale/modelmux ~/.local/share/modelmux
 claude mcp add -s user modelmux -- python3 ~/.local/share/modelmux/server.py
 claude mcp list        # modelmux: ... ✔ Connected
-```
-
-Or install it as a Claude Code plugin, which `claude plugin update modelmux` keeps current:
-
-```bash
-claude plugin install modelmux --marketplace JayPokale/modelmux
 ```
 
 A plugin's server reads its settings from your environment, so with the plugin, `export` the `MODELMUX_*` variables below in your shell profile instead of passing `-e`. Use one install method, not both.
