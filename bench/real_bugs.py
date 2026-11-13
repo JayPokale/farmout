@@ -2,7 +2,7 @@
 
 For each listed bug, the project is fetched at its fixed commit and the fix is reverse-applied as an
 uncommitted change, so reviewers see a real regression in its real codebase. Every enabled worker gets the
-exact /modelmux:review brief (Antigravity on Flash low, as the skill asks). A bug counts as found when a
+exact /farmout:review brief (Antigravity on Flash low, as the skill asks). A bug counts as found when a
 finding names its file and a line within 3 of the changed lines. Spends one review per worker per bug.
 
 Run:  python3 bench/real_bugs.py [worker ...]      (writes bench/results/<date>-real/)
@@ -42,7 +42,7 @@ def make_repo(bug):
     url = info(fetch(f"{project}/project.info"))["github_url"]
     fixed = info(fetch(f"{project}/bugs/{n}/bug.info"))["fixed_commit_id"]
     patch = fetch(f"{project}/bugs/{n}/bug_patch.txt")
-    repo = Path(tempfile.mkdtemp(prefix=f"modelmux-real-{project}-{n}-"))
+    repo = Path(tempfile.mkdtemp(prefix=f"farmout-real-{project}-{n}-"))
 
     def git(*args, stdin=None):
         return subprocess.run(["git", "-C", str(repo), *args], input=stdin, check=True, capture_output=True,

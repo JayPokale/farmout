@@ -130,7 +130,7 @@ def call_args(*tasks):
 
 class Base(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(os.path.realpath(tempfile.mkdtemp(prefix="modelmux-test-")))
+        self.tmp = Path(os.path.realpath(tempfile.mkdtemp(prefix="farmout-test-")))
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.home, self.log, self.work = (self.tmp / d for d in ("home", "log", "work"))
         self.log.mkdir()
@@ -148,7 +148,7 @@ class Base(unittest.TestCase):
     def start(self, bins=CLIS + ("pdftotext",), **env):
         """Start server.py with only the given fake CLIs on PATH. Env values of None are left unset."""
         env = {"HOME": str(self.home), "PATH": str(self.make_bin(bins)), "FAKE_LOG": str(self.log), "no_proxy": "*",
-               "MODELMUX_CLAUDE_DIR": str(self.tmp / "claude-config"), **env}
+               "FARMOUT_CLAUDE_DIR": str(self.tmp / "claude-config"), **env}
         s = Server({k: v for k, v in env.items() if v is not None})
         self.addCleanup(self.stop, s)
         return s
@@ -185,7 +185,7 @@ class ProtocolTest(Base):
         res = s.call("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
                                     "clientInfo": {"name": "test", "version": "0"}})["result"]
         self.assertEqual(res["protocolVersion"], "2025-06-18")
-        self.assertEqual(res["serverInfo"]["name"], "modelmux")
+        self.assertEqual(res["serverInfo"]["name"], "farmout")
         self.assertIn("tools", res["capabilities"])
         for w in CLI_WORKERS:
             self.assertIn(f"\n- {w}: ", res["instructions"])
@@ -195,12 +195,12 @@ class ProtocolTest(Base):
         self.assertEqual(s.call("tools/call", {"name": "nope"})["error"]["code"], -32601)
 
     def test_tools_list_reflects_environment(self):
-        api = {"MODELMUX_API_BASE": "http://127.0.0.1:9/v1", "MODELMUX_API_MODEL": "some-model"}
+        api = {"FARMOUT_API_BASE": "http://127.0.0.1:9/v1", "FARMOUT_API_MODEL": "some-model"}
         cases = [
             ((), {}, []),
             (("codex",), {}, ["codex"]),
             (("copilot",), {}, ["copilot"]),
-            (("agy", "claude"), {"MODELMUX_CLAUDE_DIR": None}, ["antigravity"]),  # claude needs its config dir
+            (("agy", "claude"), {"FARMOUT_CLAUDE_DIR": None}, ["antigravity"]),  # claude needs its config dir
             ((), api, ["api"]),
             (("agy", "codex", "claude"), api, ["antigravity", "codex", "claude", "api"]),
         ]
@@ -238,7 +238,7 @@ class DelegateTest(Base):
             self.assertEqual(body, "met")
             self.assertEqual(path.name, f"{i}-{worker}.md")
             self.assertEqual(path.read_text(), "met")
-            self.assertEqual(path.parent.parent, self.home / ".cache" / "modelmux")
+            self.assertEqual(path.parent.parent, self.home / ".cache" / "farmout")
 
     def test_read_only_unless_write(self):
         s = self.start()
@@ -287,7 +287,7 @@ class DelegateTest(Base):
 
     def test_claude_worker_gets_a_clean_session(self):
         s = self.start(CLAUDECODE="1", CLAUDE_CODE_ENTRYPOINT="cli", ANTHROPIC_API_KEY="sk-head",
-                       MODELMUX_CLAUDE_DIR="~/second-account")
+                       FARMOUT_CLAUDE_DIR="~/second-account")
         s.delegate({"worker": "claude", "prompt": "say hi"})
         rec = self.calls()["claude"]
         self.assertEqual(rec["env"], {"CLAUDE_CONFIG_DIR": str(self.home / "second-account")})
@@ -344,7 +344,7 @@ class DelegateTest(Base):
         self.assertEqual(path.read_text(), "x" * 70000)
 
     def test_timeout_kills_the_process_group(self):
-        s = self.start(MODELMUX_TIMEOUT="1")
+        s = self.start(FARMOUT_TIMEOUT="1")
         _, [(_, ok, _, body)] = s.delegate({"worker": "codex", "prompt": "sleep t"})
         self.assertFalse(ok)
         self.assertEqual(body, "RuntimeError: timed out after 1s")
@@ -386,7 +386,7 @@ class DelegateTest(Base):
             wt = Path(re.search(r"worktree (\S+), branch", body).group(1))
             patch = Path(re.search(r"patch (\S+):", body).group(1))
             self.assertEqual(c[w]["cwd"], str(wt))
-            self.assertEqual(wt.parent.parent, repo / ".modelmux", "worktrees live in the project, outside .git")
+            self.assertEqual(wt.parent.parent, repo / ".farmout", "worktrees live in the project, outside .git")
             self.assertEqual(patch.parent, wt.parent)
             self.assertEqual((wt / "app.py").read_text(), "v2, not committed\n", "base includes uncommitted work")
             self.assertEqual((wt / "notes.txt").read_text(), "untracked\n", "base includes untracked files")
@@ -396,7 +396,7 @@ class DelegateTest(Base):
             self.assertNotIn("v2", patch.read_text(), "the patch holds only the worker's change")
         self.assertEqual(add_dirs(c["claude"]["argv"]), [], "no worker is granted the user's own tree")
         self.assertFalse((repo / "fix.txt").exists(), "the user's tree is untouched")
-        self.assertNotIn(".modelmux", git("status", "--porcelain"), "worktrees stay out of git status")
+        self.assertNotIn(".farmout", git("status", "--porcelain"), "worktrees stay out of git status")
         git("apply", str(patch))
         self.assertEqual((repo / "fix.txt").read_text(), "by claude")
 
@@ -473,7 +473,7 @@ class DelegateTest(Base):
 class DoctorTest(Base):
     def test_reports_ready_and_missing_workers(self):
         env = {"HOME": str(self.home), "PATH": str(self.make_bin(("agy", "copilot"))),
-               "MODELMUX_API_BASE": "http://127.0.0.1:9/v1", "MODELMUX_API_MODEL": "some-model"}
+               "FARMOUT_API_BASE": "http://127.0.0.1:9/v1", "FARMOUT_API_MODEL": "some-model"}
         out = subprocess.run([sys.executable, str(SERVER), "doctor"], env=env, capture_output=True,
                              text=True, timeout=30).stdout
         self.assertRegex(out, r"ready +antigravity +/\S+/agy agy 9\.9\.9\n")
@@ -512,7 +512,7 @@ class ReadGuardTest(unittest.TestCase):
         first = self.guard({"file_path": str(pdf)})
         self.assertEqual(first["permissionDecision"], "deny")
         self.assertIn("30-page PDF; reading 30 pages", first["permissionDecisionReason"])
-        self.assertIn("modelmux delegate tool", first["permissionDecisionReason"])
+        self.assertIn("farmout delegate tool", first["permissionDecisionReason"])
         self.assertIsNone(self.guard({"file_path": str(pdf)}), "a second attempt goes through")
         self.assertIsNotNone(self.guard({"file_path": str(pdf)}, session="s2"), "a new session is asked again")
         self.assertIsNone(self.guard({"file_path": str(pdf), "pages": "1-3"}, session="s3"), "a short look is fine")
@@ -527,7 +527,7 @@ class ReadGuardTest(unittest.TestCase):
         self.assertIn("250 KB of text", self.guard({"file_path": str(big)})["permissionDecisionReason"])
         self.assertIsNone(self.guard({"file_path": str(big), "limit": 100}, session="s2"))
         self.assertIsNotNone(self.guard({"file_path": str(big), "limit": 2000}, session="s5"))
-        self.assertIsNone(self.guard({"file_path": str(big)}, session="s3", MODELMUX_READ_GUARD="0"))
+        self.assertIsNone(self.guard({"file_path": str(big)}, session="s3", FARMOUT_READ_GUARD="0"))
         self.assertIsNone(self.guard({"file_path": str(big)}, session="s4", tool="Grep"))
         png = self.tmp / "screenshot.png"
         png.write_bytes(b"\x89PNG" + b"\0" * 300_000)
@@ -570,8 +570,8 @@ class ApiTest(Base):
         self.addCleanup(self.api.release.set)
 
     def start_api(self, key=None):
-        return self.start(("pdftotext",), MODELMUX_API_BASE=f"http://127.0.0.1:{self.api.server_port}/v1/",
-                          MODELMUX_API_MODEL="test-model", MODELMUX_API_KEY=key)
+        return self.start(("pdftotext",), FARMOUT_API_BASE=f"http://127.0.0.1:{self.api.server_port}/v1/",
+                          FARMOUT_API_MODEL="test-model", FARMOUT_API_KEY=key)
 
     def test_request_inlines_files(self):
         notes, pdf = self.work / "notes.txt", self.work / "paper.pdf"
@@ -634,7 +634,7 @@ class RepoTest(unittest.TestCase):
             (repo / "a.py").write_text("x = 2\n")
             (repo / "new.py").write_text("y = 1\n")
             out = run("sh", str(SERVER.parent / "skills" / "review" / "save-diff.sh"), "focus", "words")
-            diff = repo / ".git" / "modelmux" / "review.diff"
+            diff = repo / ".git" / "farmout" / "review.diff"
             self.assertIn(f"repository root: {repo}\n", out)
             self.assertIn(f"diff file: {diff} ({diff.stat().st_size} bytes; uncommitted changes)", out)
             self.assertIn("untracked file: new.py", out)

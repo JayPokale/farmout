@@ -3,8 +3,8 @@
 blank_issues_enabled: true
 contact_links:
   - name: Question or setup help
-    url: https://github.com/JayPokale/modelmux/discussions/categories/q-a
+    url: https://github.com/JayPokale/farmout/discussions/categories/q-a
     about: A worker isn't detected, a login fails, or you're unsure how to route a task? Ask here.
   - name: Security vulnerability
-    url: https://github.com/JayPokale/modelmux/security/policy
+    url: https://github.com/JayPokale/farmout/security/policy
     about: Report privately, for example a way to make a read-only worker write. Never open a public issue for it.

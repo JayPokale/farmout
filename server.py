@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""modelmux: MCP server that lets a head model (e.g. Claude Code) hand self-contained subtasks to your other AI
+"""farmout: MCP server that lets a head model (e.g. Claude Code) hand self-contained subtasks to your other AI
 subscriptions in parallel, through their official CLIs (agy, codex, copilot, a second claude account) or any
 OpenAI-compatible endpoint. Stdlib only, Python 3.9+, Linux/macOS, MCP over stdio. Settings: README.md.
 
-Register:  claude mcp add -s user modelmux -- python3 /path/to/modelmux/server.py
+Register:  claude mcp add -s user farmout -- python3 /path/to/farmout/server.py
 Check:     python3 server.py doctor [--live]
 """
 import json
@@ -22,14 +22,14 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 VERSION = "0.1.0"
-TIMEOUT = int(os.environ.get("MODELMUX_TIMEOUT", 1200))
-CLAUDE_DIR = os.path.expanduser(os.environ.get("MODELMUX_CLAUDE_DIR", ""))
-API_BASE, API_MODEL, API_KEY = (os.environ.get(f"MODELMUX_API_{k}") for k in ("BASE", "MODEL", "KEY"))
-OUT_DIR = Path("~/.cache/modelmux").expanduser()
+TIMEOUT = int(os.environ.get("FARMOUT_TIMEOUT", 1200))
+CLAUDE_DIR = os.path.expanduser(os.environ.get("FARMOUT_CLAUDE_DIR", ""))
+API_BASE, API_MODEL, API_KEY = (os.environ.get(f"FARMOUT_API_{k}") for k in ("BASE", "MODEL", "KEY"))
+OUT_DIR = Path("~/.cache/farmout").expanduser()
 BUDGET = 60_000  # chars of worker output returned per call; full text always stays on disk
 
 INTRO = """\
-modelmux: offload self-contained subtasks to other model subscriptions with the `delegate` tool, so this session's quota goes to planning, judgment and integration.
+farmout: offload self-contained subtasks to other model subscriptions with the `delegate` tool, so this session's quota goes to planning, judgment and integration.
 
 Workers:
 """
@@ -182,19 +182,19 @@ ENABLED = {name: w for name, w in WORKERS.items() if w[1]}
 if ENABLED:
     INSTRUCTIONS = INTRO + "".join(f"- {name}: {w[2]}\n" for name, w in ENABLED.items()) + RULES
 else:
-    INSTRUCTIONS = ("modelmux: no workers available. Install `agy`, `codex` or `copilot`, or set MODELMUX_CLAUDE_DIR "
-                    "or MODELMUX_API_BASE + MODELMUX_API_MODEL, then restart. `python3 server.py doctor` explains.")
+    INSTRUCTIONS = ("farmout: no workers available. Install `agy`, `codex` or `copilot`, or set FARMOUT_CLAUDE_DIR "
+                    "or FARMOUT_API_BASE + FARMOUT_API_MODEL, then restart. `python3 server.py doctor` explains.")
 SETUP = {  # name: (executable, how to enable), for `doctor`
     "antigravity": ("agy", "install the Antigravity CLI (`agy`) and log in"),
     "codex": ("codex", "install the Codex CLI and run `codex login`"),
-    "claude": ("claude", "log in a second account once (`CLAUDE_CONFIG_DIR=<dir> claude`), then set MODELMUX_CLAUDE_DIR=<dir>"),
+    "claude": ("claude", "log in a second account once (`CLAUDE_CONFIG_DIR=<dir> claude`), then set FARMOUT_CLAUDE_DIR=<dir>"),
     "copilot": ("copilot", "install the GitHub Copilot CLI and run `copilot login`"),
-    "api": (None, "set MODELMUX_API_BASE and MODELMUX_API_MODEL (and MODELMUX_API_KEY if needed)"),
+    "api": (None, "set FARMOUT_API_BASE and FARMOUT_API_MODEL (and FARMOUT_API_KEY if needed)"),
 }
 
 TOOL = {
     "name": "delegate",
-    "description": "Run self-contained subtasks on other models in parallel (routing guide: modelmux server instructions). "
+    "description": "Run self-contained subtasks on other models in parallel (routing guide: farmout server instructions). "
                    "Returns each result, capped, under a header naming the file with its full output.",
     "inputSchema": {"type": "object", "required": ["tasks"], "properties": {"tasks": {
         "type": "array", "minItems": 1, "items": {"type": "object", "required": ["worker", "prompt"], "properties": {
@@ -222,12 +222,12 @@ def worktree(t, i, outdir):
     cwd = os.path.realpath(os.path.expanduser(t.get("cwd") or os.getcwd()))
     top = git(cwd, "rev-parse", "--show-toplevel").strip()
     # In the project, so the head can read and test it, but not under .git, where Claude Code refuses edits.
-    wt, branch = Path(top, ".modelmux", outdir.name, f"{i}-{t['worker']}"), f"modelmux/{outdir.name}-{i}"
+    wt, branch = Path(top, ".farmout", outdir.name, f"{i}-{t['worker']}"), f"farmout/{outdir.name}-{i}"
     exclude = Path(top, git(top, "rev-parse", "--git-common-dir").strip(), "info", "exclude")
     with git_lock:  # parallel `worktree add`s on one repo race on git's lock files
-        if "/.modelmux/" not in (exclude.read_text() if exclude.exists() else ""):  # keep git status clean
+        if "/.farmout/" not in (exclude.read_text() if exclude.exists() else ""):  # keep git status clean
             exclude.parent.mkdir(exist_ok=True)
-            exclude.write_text((exclude.read_text() if exclude.exists() else "") + "\n/.modelmux/\n")
+            exclude.write_text((exclude.read_text() if exclude.exists() else "") + "\n/.farmout/\n")
         git(top, "worktree", "add", "-q", "-b", branch, str(wt), "HEAD")
         base = git(top, "diff", "HEAD", "--binary")
         untracked = [f for f in git(top, "ls-files", "--others", "--exclude-standard", "-z").split("\0") if f]
@@ -239,7 +239,7 @@ def worktree(t, i, outdir):
             shutil.copy2(Path(top) / f, wt / f, follow_symlinks=False)
         if base or untracked:
             git(wt, "add", "-A")
-            git(wt, "-c", "user.name=modelmux", "-c", "user.email=modelmux@localhost", "commit", "-qm", "your uncommitted changes")
+            git(wt, "-c", "user.name=farmout", "-c", "user.email=farmout@localhost", "commit", "-qm", "your uncommitted changes")
         files = []
         for f in t.get("files") or []:
             src = os.path.realpath(os.path.join(cwd, os.path.expanduser(f)))
@@ -325,7 +325,7 @@ def handle(msg):
         if method == "initialize":
             reply = {"result": {"protocolVersion": params.get("protocolVersion", "2025-06-18"),
                                 "capabilities": {"tools": {}},
-                                "serverInfo": {"name": "modelmux", "version": VERSION},
+                                "serverInfo": {"name": "farmout", "version": VERSION},
                                 "instructions": INSTRUCTIONS}}
         elif method == "tools/list":
             reply = {"result": {"tools": [TOOL] if ENABLED else []}}
@@ -375,7 +375,7 @@ def main():
 
 
 def doctor(live=False):
-    print(f"modelmux {VERSION} on Python {sys.version.split()[0]}; results go to {OUT_DIR}")
+    print(f"farmout {VERSION} on Python {sys.version.split()[0]}; results go to {OUT_DIR}")
     for name, (_, ready, _) in WORKERS.items():
         exe, how = SETUP[name]
         detail = f"{API_MODEL} at {API_BASE}" if ready and not exe else how

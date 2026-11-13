@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest a change to modelmux
+description: Suggest a change to farmout
 labels: ["enhancement"]
 body:
   - type: textarea

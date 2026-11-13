@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 600" width="920" height="600" role="img">
-<title>modelmux /modelmux:review demo: four models review one diff in parallel; Claude merges and verifies the findings</title>
+<title>farmout /farmout:review demo: four models review one diff in parallel; Claude merges and verifies the findings</title>
 <style>
 text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;font-size:14.5px}
 .l{opacity:0}
@@ -9,9 +9,9 @@ text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",m
 <rect width="920" height="600" rx="14" fill="#14161f"/>
 <circle cx="26" cy="24" r="6" fill="#f47c7c"/><circle cx="46" cy="24" r="6" fill="#f2a65a"/><circle cx="66" cy="24" r="6" fill="#7bd88f"/>
 <text x="460" y="29" text-anchor="middle" fill="#8b8fa3" style="font-size:13px">~/project · claude</text>
-<text id="l0" class="l" x="26" y="70" xml:space="preserve"><tspan fill="#a78bfa" font-weight="700">❯ </tspan><tspan fill="#ece8df" font-weight="700">/modelmux:review</tspan></text>
+<text id="l0" class="l" x="26" y="70" xml:space="preserve"><tspan fill="#a78bfa" font-weight="700">❯ </tspan><tspan fill="#ece8df" font-weight="700">/farmout:review</tspan></text>
 <text id="l1" class="l" x="26" y="93" xml:space="preserve"><tspan fill="#7bd88f">⏺ </tspan><tspan fill="#ece8df">Saved the diff of your uncommitted change </tspan><tspan fill="#8b8fa3">(files_api.py, +61 lines)</tspan></text>
-<text id="l2" class="l" x="26" y="116" xml:space="preserve"><tspan fill="#7bd88f">⏺ </tspan><tspan fill="#ece8df" font-weight="700">modelmux · delegate</tspan><tspan fill="#8b8fa3">  4 reviewers in parallel, read-only</tspan></text>
+<text id="l2" class="l" x="26" y="116" xml:space="preserve"><tspan fill="#7bd88f">⏺ </tspan><tspan fill="#ece8df" font-weight="700">farmout · delegate</tspan><tspan fill="#8b8fa3">  4 reviewers in parallel, read-only</tspan></text>
 <text id="l3" class="l run" x="53" y="139" xml:space="preserve"><tspan fill="#5ec4b6">antigravity  </tspan><tspan fill="#8b8fa3">reviewing…</tspan></text>
 <text id="l4" class="l" x="53" y="139" xml:space="preserve"><tspan fill="#5ec4b6">antigravity  </tspan><tspan fill="#7bd88f">✓ </tspan><tspan fill="#ece8df">8 findings</tspan><tspan fill="#8b8fa3">   25s</tspan></text>
 <text id="l5" class="l run" x="53" y="162" xml:space="preserve"><tspan fill="#f2a65a">codex        </tspan><tspan fill="#8b8fa3">reviewing…</tspan></text>

@@ -1,8 +1,8 @@
-"""modelmux read guard: a Claude Code PreToolUse hook for the Read tool.
+"""farmout read guard: a Claude Code PreToolUse hook for the Read tool.
 
 The first time Claude tries to read a big PDF or text file in a session, it is told how much that costs
-and asked to delegate the reading to a modelmux worker instead. A second attempt at the same file goes
-through, so "read it yourself" always works. Set MODELMUX_READ_GUARD=0 to turn it off.
+and asked to delegate the reading to a farmout worker instead. A second attempt at the same file goes
+through, so "read it yourself" always works. Set FARMOUT_READ_GUARD=0 to turn it off.
 """
 import json
 import os
@@ -41,7 +41,7 @@ def span(pages):
 
 
 def main():
-    if os.environ.get("MODELMUX_READ_GUARD") == "0":
+    if os.environ.get("FARMOUT_READ_GUARD") == "0":
         return
     event = json.load(sys.stdin)
     if event.get("tool_name") != "Read":
@@ -62,14 +62,14 @@ def main():
         if size <= TEXT_BYTES or (limit is not None and limit <= PEEK_LINES):
             return
         what = f"{size // 1000} KB of text (about {size // 4000}k tokens)"
-    seen = Path(tempfile.gettempdir()) / f"modelmux-read-guard-{event.get('session_id', 'none')}"
+    seen = Path(tempfile.gettempdir()) / f"farmout-read-guard-{event.get('session_id', 'none')}"
     asked = seen.read_text().splitlines() if seen.exists() else []
     if str(path) in asked:  # second attempt: the user or Claude really wants it read here
         return
     with open(seen, "a") as f:
         f.write(f"{path}\n")
-    reason = (f"modelmux read guard: {path} is {what}. Unless you need its exact text in this context, delegate "
-              f"the reading: call the modelmux delegate tool with a task whose files list this path (antigravity "
+    reason = (f"farmout read guard: {path} is {what}. Unless you need its exact text in this context, delegate "
+              f"the reading: call the farmout delegate tool with a task whose files list this path (antigravity "
               f"reads PDFs natively; its model gemini-3.8-flash-low is several times faster) and whose prompt says "
               f"exactly what to extract. If you do need the full text "
               f"yourself, read it again and the guard will let it through.")

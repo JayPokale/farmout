@@ -15,7 +15,7 @@
     <circle cx="404" cy="372" r="30" fill="#f47c7c"/>
   </g>
   <g font-family="DejaVu Sans, Inter, Helvetica, Arial, sans-serif" fill="#ece8df">
-    <text x="470" y="262" font-size="92" font-weight="700">modelmux</text>
+    <text x="470" y="262" font-size="92" font-weight="700">farmout</text>
     <text x="474" y="330" font-size="34" fill="#c9c5bc">Every AI subscription you have,</text>
     <text x="474" y="374" font-size="34" fill="#c9c5bc">working for Claude Code in parallel.</text>
     <text x="474" y="448" font-size="26" font-family="DejaVu Sans Mono, Menlo, monospace" xml:space="preserve"><tspan fill="#f2a65a">codex</tspan><tspan fill="#6b6f80">  ·  </tspan><tspan fill="#5ec4b6">gemini</tspan><tspan fill="#6b6f80">  ·  </tspan><tspan fill="#a78bfa">copilot</tspan><tspan fill="#6b6f80">  ·  </tspan><tspan fill="#f47c7c">claude</tspan><tspan fill="#6b6f80">  ·  </tspan><tspan fill="#ece8df">local</tspan></text>

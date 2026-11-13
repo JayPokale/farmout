@@ -1,7 +1,7 @@
 """One big change: all planted cases at once, so each reviewer can report only its top 10 findings.
 
 Builds one throwaway repo holding every case's files as a single uncommitted change (23 planted bugs),
-sends every enabled worker the exact /modelmux:review brief once (Antigravity on Flash low, as the skill
+sends every enabled worker the exact /farmout:review brief once (Antigravity on Flash low, as the skill
 asks), and scores with the same rules as review_recall.py. Spends one review per worker.
 
 Run:  python3 bench/big_change.py [worker ...]      (writes bench/results/<date>-big/)
@@ -20,7 +20,7 @@ from review_recall import BRIEF, HEADER, ROOT, Server, credit, findings, load_bu
 
 def main():
     cases = sorted(p for p in (ROOT / "bench" / "cases").iterdir() if p.is_dir())
-    combined = Path(tempfile.mkdtemp(prefix="modelmux-big-")) / "all"
+    combined = Path(tempfile.mkdtemp(prefix="farmout-big-")) / "all"
     (combined / "files").mkdir(parents=True)
     bugs = []
     for case in cases:

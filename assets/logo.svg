@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <title>modelmux</title>
+  <title>farmout</title>
   <rect width="512" height="512" rx="112" fill="#14161f"/>
   <g fill="none" stroke-width="26" stroke-linecap="round">
     <path d="M104 256H196C256 256 262 140 326 140H384" stroke="#f2a65a"/>

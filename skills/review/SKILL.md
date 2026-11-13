@@ -1,12 +1,12 @@
 ---
 name: review
-description: Review the current changes with every modelmux worker in parallel (read-only), then merge their findings with agreement counts
+description: Review the current changes with every farmout worker in parallel (read-only), then merge their findings with agreement counts
 argument-hint: "[--base <ref>] [focus]"
 disable-model-invocation: true
-allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/skills/review/save-diff.sh:*), mcp__plugin_modelmux_modelmux__delegate
+allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/skills/review/save-diff.sh:*), mcp__plugin_farmout_farmout__delegate
 ---
 
-# /modelmux:review
+# /farmout:review
 
 Arguments: $ARGUMENTS
 
@@ -20,7 +20,7 @@ The output above names the repository root, the diff file and any untracked file
 
 ## 2. Fan out
 
-Call the modelmux `delegate` tool once, with one task per worker in its `worker` enum, so every available model reviews in parallel. Never set `write`. Each task gets:
+Call the farmout `delegate` tool once, with one task per worker in its `worker` enum, so every available model reviews in parallel. Never set `write`. Each task gets:
 
 - `cwd`: the repository root shown above
 - `files`: the diff file first, then any untracked files shown above

@@ -1,6 +1,8 @@
 # Review benchmark: one model vs all of them
 
-Does asking every subscription to review a change catch more real bugs than asking the best one? This benchmark plants known bugs in small code changes, sends the exact `/modelmux:review` brief to each worker, and counts what each one finds on its own and what all of them find together.
+Does asking every subscription to review a change catch more real bugs than asking the best one? This benchmark plants known bugs in small code changes, sends the exact `/farmout:review` brief to each worker, and counts what each one finds on its own and what all of them find together.
+
+The runs below were recorded before the project was renamed from modelmux to farmout, so their transcripts and paths show the old name.
 
 ## At a glance (2026-11-17)
 
@@ -9,9 +11,9 @@ Does asking every subscription to review a change catch more real bugs than aski
 | Does delegating save Claude's own quota? | Summarizing three papers: **−59% head tokens, −74% head cost**, same answers, but 62s instead of 13s. |
 | Do the reviewers find real bugs? | 23 planted bugs and 9 real regressions (BugsInPy): **every one flagged by at least 3 of 4 models**; 27 of 32 by all four. |
 | Does running four reviewers beat the best one? | **Not when the best one has room.** Claude (Sonnet) alone found everything when allowed 30 findings. Four reviewers covered more only under a short-list cap (17 vs 10 of 23 on one big change). The value is agreement and not having to pick this week's best model. |
-| Does `/modelmux:review` save Claude's quota? | **No.** On the `files_api` change Claude reviewing alone cost $0.033 in 13s and found the same planted bugs; `/modelmux:review` cost Claude $0.122 in 59s (it merges and verifies four reports), plus one review on each worker. |
-| How long does `/modelmux:review` take? | About a minute end to end with Antigravity on Flash low (220s on its default model). |
-| Does `/modelmux:race` keep your tree safe? | Yes, after a fix: in five runs, a brief naming the repo path once let temp-writable workers edit it. Briefs are now rewritten to the worktree, and the last run left the tree clean while Claude's test re-runs caught a wrong patch. |
+| Does `/farmout:review` save Claude's quota? | **No.** On the `files_api` change Claude reviewing alone cost $0.033 in 13s and found the same planted bugs; `/farmout:review` cost Claude $0.122 in 59s (it merges and verifies four reports), plus one review on each worker. |
+| How long does `/farmout:review` take? | About a minute end to end with Antigravity on Flash low (220s on its default model). |
+| Does `/farmout:race` keep your tree safe? | Yes, after a fix: in five runs, a brief naming the repo path once let temp-writable workers edit it. Briefs are now rewritten to the worktree, and the last run left the tree clean while Claude's test re-runs caught a wrong patch. |
 | Does the read guard pay off? | On a 16-page deep read: **Claude's cost halved**, but 240s instead of 20s. On skims it never fires. |
 
 ## Method
@@ -72,12 +74,12 @@ Scoring is by location, so we read the four subtlest outputs by hand (`tqdm/6`, 
 | copilot | 10 | 19 |
 | **all four, in parallel** | **17** | **23** |
 
-With the cap at 10, every reviewer filled its list, and together they covered 17 of 23: each model listed at least one bug no other did. Allowed 30, Claude (Sonnet) alone found all 23. So on a big change the cap, not the models, limited coverage. Breadth from parallel reviewers helps when each review must stay short, but the best single model given room did as well. `/modelmux:review` now allows 20 findings per reviewer. Raw outputs: `results/2026-11-17-big-cap10/`, `results/2026-11-17-big-cap30/`.
+With the cap at 10, every reviewer filled its list, and together they covered 17 of 23: each model listed at least one bug no other did. Allowed 30, Claude (Sonnet) alone found all 23. So on a big change the cap, not the models, limited coverage. Breadth from parallel reviewers helps when each review must stay short, but the best single model given room did as well. `/farmout:review` now allows 20 findings per reviewer. Raw outputs: `results/2026-11-17-big-cap10/`, `results/2026-11-17-big-cap30/`.
 
 ### What this does and doesn't show
 
 - **No recall gain over the best single model, given room.** Antigravity and Claude (Sonnet) each found all 23 planted bugs, all four models found all 9 real regressions, and on one big change Claude found all 23 when allowed 30 findings. Parallel reviewers covered more only when each was held to a short list (17 vs 10 of 23). Planted, well-known bug classes are within every 2026 frontier model's reach. A harder benchmark (real bug-fix commits) is future work.
-- **Strong agreement.** Across all 32 bugs (23 planted, 9 real), every one was flagged by at least three of the four models, and 27 by all four. When `/modelmux:review` reports "flagged by 4/4", that has meant a real bug every time here.
+- **Strong agreement.** Across all 32 bugs (23 planted, 9 real), every one was flagged by at least three of the four models, and 27 by all four. When `/farmout:review` reports "flagged by 4/4", that has meant a real bug every time here.
 - **Misses move around.** Codex missed different bugs in two runs of the same case, and Copilot missed others. The fan-out means you don't have to know which model is reliable this week.
 - **Cost in time, not in Claude's tokens.** A parallel call is as slow as its slowest worker: Antigravity averaged about 3.4 minutes per review, while Claude (Sonnet) took about 11 seconds. Running everything produced 112 findings for 23 planted bugs, so the head's merge-and-verify step matters. Some extras are real issues the cases didn't plant (missing authorization, quota races), and some are noise.
 
@@ -90,11 +92,11 @@ Antigravity set every review's wall time (about 3.5 minutes per review on its de
 | found | 4/4 | 5/5 | 5/5 | 5/5 | 3/4 | **22/23** |
 | time | 43s | 19s | 20s | 23s | 20s | |
 
-It missed only `retry-count`, which the other three workers all caught, so a parallel review loses nothing on these cases. Its wall time falls to the next-slowest worker (about 45s for Codex). `/modelmux:review` now asks for this model. (`gemini-3.8-flash-medium` took 209s on `billing`, so its speed comes from the low reasoning effort.)
+It missed only `retry-count`, which the other three workers all caught, so a parallel review loses nothing on these cases. Its wall time falls to the next-slowest worker (about 45s for Codex). `/farmout:review` now asks for this model. (`gemini-3.8-flash-medium` took 209s on `billing`, so its speed comes from the low reasoning effort.)
 
 ### End to end
 
-`results/2026-11-17/demo-review.md` is a real `/modelmux:review` run on `files_api`, from the plugin loaded with `--plugin-dir`. It shows each worker's raw findings and Claude's merged, verified table: all five planted bugs confirmed (four at 4/4 agreement), plus four real issues nobody planted. The run took 59s with Antigravity on Flash low (an earlier run on its default model took 220s); Claude's own cost was $0.122. `results/2026-11-17/demo-race.md` is a real `/modelmux:race` run: four fixes in parallel in 66s, the user's tree untouched. Claude re-ran the tests on every patch: three identical fixes passed, and Copilot's failed one test, which Claude flagged instead of applying.
+`results/2026-11-17/demo-review.md` is a real `/farmout:review` run on `files_api`, from the plugin loaded with `--plugin-dir`. It shows each worker's raw findings and Claude's merged, verified table: all five planted bugs confirmed (four at 4/4 agreement), plus four real issues nobody planted. The run took 59s with Antigravity on Flash low (an earlier run on its default model took 220s); Claude's own cost was $0.122. `results/2026-11-17/demo-race.md` is a real `/farmout:race` run: four fixes in parallel in 66s, the user's tree untouched. Claude re-ran the tests on every patch: three identical fixes passed, and Copilot's failed one test, which Claude flagged instead of applying.
 
 ## Head tokens: reading papers alone vs delegating
 
@@ -103,7 +105,7 @@ It missed only `retry-count`, which the other three workers all caught, so a par
 | head | total tokens | cache write | cache read | output | cost | time |
 |---|---|---|---|---|---|---|
 | Claude reads the PDFs | 48,097 | 34,316 | 12,816 | 959 | $0.148 | 13s |
-| Claude + modelmux | 19,747 | 7,082 | 11,683 | 976 | $0.039 | 62s |
+| Claude + farmout | 19,747 | 7,082 | 11,683 | 976 | $0.039 | 62s |
 
 **59% fewer head tokens and 74% less head cost**, with the same correct headline numbers in both answers (28.4/41.8 BLEU, GLUE 80.5, 3.57% top-5 error). The trade is wall time: Antigravity took a minute where the head took 13 seconds. Both runs pay roughly 12k cached tokens of fixed overhead (system prompt, tools); most of the rest of the first run is the PDFs, so the gap grows with every page the head no longer reads. Full answers: `results/2026-11-17/head_tokens.md`.
 
@@ -113,7 +115,7 @@ Task (`claude -p`, Sonnet head, plugin loaded): "Summarize every numbered sectio
 
 | run | what happened | head tokens | head cost | time |
 |---|---|---|---|---|
-| guard off (`MODELMUX_READ_GUARD=0`) | Claude read pages 1-10 and 11-16 itself | 50,457 | $0.139 | 20s |
+| guard off (`FARMOUT_READ_GUARD=0`) | Claude read pages 1-10 and 11-16 itself | 50,457 | $0.139 | 20s |
 | guard on | the 16-page read was stopped once; Claude delegated it to Antigravity and answered from the result | 43,600 | $0.069 | 240s |
 
 Claude's cost halved (writing a PDF into its context is the expensive part) for the same section-by-section answer, but it took four minutes instead of twenty seconds. An earlier guard-on run exposed an Antigravity plan-mode stub ("approve to proceed"); Claude then read the PDF anyway (85,871 tokens, $0.155). That is fixed. On skim tasks (abstracts, first pages) the guard never fires: Claude reads one page per paper and stays cheap.

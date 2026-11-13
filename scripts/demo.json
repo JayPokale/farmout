@@ -1,5 +1,5 @@
 {
- "title": "modelmux /modelmux:review demo: four models review one diff in parallel; Claude merges and verifies the findings",
+ "title": "farmout /farmout:review demo: four models review one diff in parallel; Claude merges and verifies the findings",
  "window": "~/project · claude",
  "cycle": 15,
  "lines": [
@@ -13,7 +13,7 @@
      true
     ],
     [
-     "/modelmux:review",
+     "/farmout:review",
      "fg",
      true
     ]
@@ -46,7 +46,7 @@
      "ok"
     ],
     [
-     "modelmux · delegate",
+     "farmout · delegate",
      "fg",
      true
     ],

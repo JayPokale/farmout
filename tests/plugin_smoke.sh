@@ -7,7 +7,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 repo=$(mktemp -d)
 cd "$repo"
 git init -q && echo x > f && git add f && git -c user.name=t -c user.email=t@localhost commit -qm init
-for cmd in /modelmux:setup /modelmux:review; do
+for cmd in /farmout:setup /farmout:review; do
   out=$(claude -p "$cmd" --plugin-dir "$root" --model haiku --no-session-persistence < /dev/null 2>&1) || true
   case "$out" in
     *"requires approval"*|*"permission check failed"*|*"Unknown skill"*|*"Unknown command"*)

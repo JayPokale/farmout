@@ -1,11 +1,11 @@
 ---
 name: setup
-description: Check which modelmux workers are ready, and how to enable the rest
+description: Check which farmout workers are ready, and how to enable the rest
 disable-model-invocation: true
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/server.py doctor:*)
 ---
 
-# /modelmux:setup
+# /farmout:setup
 
 ```!
 "${CLAUDE_PLUGIN_ROOT}/server.py" doctor

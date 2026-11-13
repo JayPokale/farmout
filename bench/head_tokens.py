@@ -1,7 +1,7 @@
-"""Head-token benchmark: one reading task, Claude Code alone vs Claude Code + modelmux.
+"""Head-token benchmark: one reading task, Claude Code alone vs Claude Code + farmout.
 
 Runs `claude -p` twice on copies of the given PDFs: once with only Read/Glob (the head reads the
-papers itself), once with only Glob plus the modelmux delegate tool (Antigravity reads them).
+papers itself), once with only Glob plus the farmout delegate tool (Antigravity reads them).
 Reports what the head spent, from --output-format json, and saves both answers for a quality check.
 Spends real quota on the head account and on Antigravity.
 
@@ -21,11 +21,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 TASK = ("For each PDF in the current directory, give: title; the core method in one sentence; datasets; the headline "
         "result with its number. At most 60 words per paper. Reply with the list only.")
-MCP = {"mcpServers": {"modelmux": {"command": sys.executable, "args": [str(ROOT / "server.py")]}}}
+MCP = {"mcpServers": {"farmout": {"command": sys.executable, "args": [str(ROOT / "server.py")]}}}
 ARMS = {
     "alone": ([], "Read,Glob", ""),
-    "modelmux": (["--mcp-config", json.dumps(MCP), "--allowedTools", "mcp__modelmux__delegate"], "Glob",
-                 " Don't read the PDFs yourself: use the modelmux delegate tool, one antigravity task per paper."),
+    "farmout": (["--mcp-config", json.dumps(MCP), "--allowedTools", "mcp__farmout__delegate"], "Glob",
+                 " Don't read the PDFs yourself: use the farmout delegate tool, one antigravity task per paper."),
 }
 
 
@@ -54,7 +54,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     rows = []
     for arm in ARMS:
-        cwd = Path(tempfile.mkdtemp(prefix=f"modelmux-head-{arm}-"))
+        cwd = Path(tempfile.mkdtemp(prefix=f"farmout-head-{arm}-"))
         for p in papers:
             shutil.copy(p, cwd)
         print(f"{arm}: running...", flush=True)

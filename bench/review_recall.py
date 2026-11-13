@@ -2,7 +2,7 @@
 
 Each case in bench/cases/<name>/ holds new files (files/) and the bugs planted in them (bugs.json).
 For every case the harness builds a throwaway git repo where those files are an uncommitted change,
-then sends every enabled worker the exact /modelmux:review brief in one parallel delegate call.
+then sends every enabled worker the exact /farmout:review brief in one parallel delegate call.
 A planted bug counts as found when a finding names its file and a line within 3 of it, or within 10
 when the finding's text names the defect (the bug's keywords).
 Spends real quota: one review per worker per case.
@@ -45,7 +45,7 @@ def load_bugs(case):
 
 def make_repo(case):
     """A throwaway repo whose uncommitted change adds the case's files; returns (repo, diff file)."""
-    repo = Path(tempfile.mkdtemp(prefix=f"modelmux-bench-{case.name}-"))
+    repo = Path(tempfile.mkdtemp(prefix=f"farmout-bench-{case.name}-"))
 
     def git(*args):
         return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout

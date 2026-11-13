@@ -1,6 +1,7 @@
-"""Build assets/review-demo.svg: an animated terminal replay of one real /modelmux:review run.
+"""Build assets/review-demo.svg: an animated terminal replay of one real /farmout:review run.
 
-The text comes from a real run (bench/results/<date>/demo-review.*); only the clock is compressed.
+The text comes from a real run (bench/results/<date>/demo-review.*, recorded under the old name,
+modelmux); only the clock is compressed and the plugin name updated.
 Stdlib only. Run:  python3 scripts/build_demo_svg.py
 With --video it also renders launch/review-demo.{mp4,gif} for sites that don't play SVG animation
 (needs rsvg-convert and ffmpeg).

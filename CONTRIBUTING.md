@@ -1,4 +1,4 @@
-# Contributing to modelmux
+# Contributing to farmout
 
 ## Ground rules
 
@@ -20,13 +20,13 @@
 Python 3.9+. Nothing to install. Register a local checkout:
 
 ```bash
-claude mcp add -s user modelmux -- python3 /path/to/modelmux/server.py
+claude mcp add -s user farmout -- python3 /path/to/farmout/server.py
 ```
 
 To try the plugin (slash commands, read guard) from a checkout without installing anything, start Claude Code with it loaded for that session only:
 
 ```bash
-claude --plugin-dir /path/to/modelmux
+claude --plugin-dir /path/to/farmout
 ```
 
 ## Tests
@@ -45,7 +45,7 @@ Release smoke test:
 python3 tests/smoke.py
 ```
 
-It drives the real CLIs on your own logins and spends a little quota. Export the same `MODELMUX_*` variables as your MCP registration first. For every enabled worker it checks that the worker can read a file it is given, cannot write without `write: true`, and can write with it. Run it before every release.
+It drives the real CLIs on your own logins and spends a little quota. Export the same `FARMOUT_*` variables as your MCP registration first. For every enabled worker it checks that the worker can read a file it is given, cannot write without `write: true`, and can write with it. Run it before every release.
 
 ## Adding a worker
 

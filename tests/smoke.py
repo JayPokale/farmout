@@ -1,7 +1,7 @@
 """Release smoke test: drive the real worker CLIs through server.py on your own logins.
 
-Spends a little quota on every enabled worker. Export the same MODELMUX_* variables as your MCP
-registration first, e.g.  MODELMUX_CLAUDE_DIR=~/.claude-2 python3 tests/smoke.py [worker ...]
+Spends a little quota on every enabled worker. Export the same FARMOUT_* variables as your MCP
+registration first, e.g.  FARMOUT_CLAUDE_DIR=~/.claude-2 python3 tests/smoke.py [worker ...]
 Each worker gets these tasks, all in one parallel delegate call:
   read       it can read a file it is given
   read-only  without write:true, told to create a file and run `touch`, it changes nothing
@@ -25,13 +25,13 @@ VERSION = {"antigravity": ["agy", "--version"], "codex": ["codex", "--version"],
 
 def version(worker):
     if worker == "api":
-        return f"{os.environ['MODELMUX_API_MODEL']} at {os.environ['MODELMUX_API_BASE']}"
+        return f"{os.environ['FARMOUT_API_MODEL']} at {os.environ['FARMOUT_API_BASE']}"
     out = subprocess.run(VERSION[worker], capture_output=True, text=True)
     return ((out.stdout or out.stderr).strip().splitlines() or ["?"])[0]
 
 
 def main():
-    tmp = Path(tempfile.mkdtemp(prefix="modelmux-smoke-"))
+    tmp = Path(tempfile.mkdtemp(prefix="farmout-smoke-"))
     s = Server(dict(os.environ))
     try:
         tools = s.call("tools/list")["result"]["tools"]
