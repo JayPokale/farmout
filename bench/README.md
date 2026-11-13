@@ -2,6 +2,17 @@
 
 Does asking every subscription to review a change catch more real bugs than asking the best one? This benchmark plants known bugs in small code changes, sends the exact `/modelmux:review` brief to each worker, and counts what each one finds on its own and what all of them find together.
 
+## At a glance (2026-11-17)
+
+| question | answer |
+|---|---|
+| Does delegating save Claude's own quota? | Summarizing three papers: **−59% head tokens, −74% head cost**, same answers, but 62s instead of 13s. |
+| Do the reviewers find real bugs? | 23 planted bugs and 9 real regressions (BugsInPy): **every one flagged by at least 3 of 4 models**; 27 of 32 by all four. |
+| Does running four reviewers beat the best one? | **Not when the best one has room.** Claude (Sonnet) alone found everything when allowed 30 findings. Four reviewers covered more only under a short-list cap (17 vs 10 of 23 on one big change). The value is agreement and not having to pick this week's best model. |
+| How long does `/modelmux:review` take? | About a minute end to end with Antigravity on Flash low (220s on its default model). |
+| Does `/modelmux:race` keep your tree safe? | Yes, after a fix: in five runs, a brief naming the repo path once let temp-writable workers edit it. Briefs are now rewritten to the worktree, and the last run left the tree clean while Claude's test re-runs caught a wrong patch. |
+| Does the read guard pay off? | On a 16-page deep read: **Claude's cost halved**, but 240s instead of 20s. On skims it never fires. |
+
 ## Method
 
 - **Cases** (`cases/<name>/`): new files that make up a realistic change, plus `bugs.json` listing the planted bugs with the line each lives on and why it's wrong. Five cases, 23 bugs, in two sets. Set 1 holds common classes: SQL injection, path traversal, prototype pollution, a 1-based page offset, a missing commit, an unchecked `None` row, wall-clock rate limiting, a check-then-set race, a retry count off by one, a swallowed exception, TTL units (ms vs s), FIFO masquerading as LRU, an un-awaited write, and a numeric sort that sorts strings. Set 2 holds subtler ones: float cents truncated by `int()`, a timing-unsafe HMAC compare, a ReDoS pattern, a dict mutated while iterated, `indexOf(...) > 0`, a single-occurrence `replace`, 64-bit ids losing precision, 1-based months passed to `Date.UTC`, and `forEach(async …)`. Every planted bug was reproduced in code before the runs.
