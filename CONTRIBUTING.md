@@ -23,6 +23,12 @@ Python 3.9+. Nothing to install. Register a local checkout:
 claude mcp add -s user modelmux -- python3 /path/to/modelmux/server.py
 ```
 
+To try the plugin (slash commands, read guard) from a checkout without installing anything, start Claude Code with it loaded for that session only:
+
+```bash
+claude --plugin-dir /path/to/modelmux
+```
+
 ## Tests
 
 Offline suite:
