@@ -233,6 +233,8 @@ Full outputs are written to `~/.cache/modelmux/` and are safe to delete at any t
 
 **Will it burn my other quotas?** Every task spends the quota of the worker that runs it. `/modelmux:review` and `/modelmux:ask` send one task per worker, so they cost one request on each; plain delegation runs only what Claude decides to hand off. `python3 server.py doctor` shows which workers are enabled.
 
+**Does `/modelmux:review` save Claude's quota?** No. On our small benchmark change, Claude reviewing alone took 13s and $0.033 of its quota; `/modelmux:review` took 59s and $0.122, plus one review on each worker, because Claude merges and verifies four reports. Use it for agreement and second opinions. To save quota, delegate reading and grunt work.
+
 **Is it allowed by the providers' terms?** modelmux runs each vendor's official CLI in its documented headless mode, logged in as you; see [Terms of service](#terms-of-service). It doesn't proxy APIs, extract tokens or share accounts.
 
 **Is it slower?** Often, yes. A parallel call is as slow as its slowest worker. Delegated reading took a minute where Claude alone took 13 seconds in [our benchmark](bench/README.md), but it used 59% fewer of Claude's tokens. A four-model `/modelmux:review` takes about a minute. Use `background: true` to keep Claude working while workers run.

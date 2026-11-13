@@ -9,6 +9,7 @@ Does asking every subscription to review a change catch more real bugs than aski
 | Does delegating save Claude's own quota? | Summarizing three papers: **−59% head tokens, −74% head cost**, same answers, but 62s instead of 13s. |
 | Do the reviewers find real bugs? | 23 planted bugs and 9 real regressions (BugsInPy): **every one flagged by at least 3 of 4 models**; 27 of 32 by all four. |
 | Does running four reviewers beat the best one? | **Not when the best one has room.** Claude (Sonnet) alone found everything when allowed 30 findings. Four reviewers covered more only under a short-list cap (17 vs 10 of 23 on one big change). The value is agreement and not having to pick this week's best model. |
+| Does `/modelmux:review` save Claude's quota? | **No.** On the `files_api` change Claude reviewing alone cost $0.033 in 13s and found the same planted bugs; `/modelmux:review` cost Claude $0.122 in 59s (it merges and verifies four reports), plus one review on each worker. |
 | How long does `/modelmux:review` take? | About a minute end to end with Antigravity on Flash low (220s on its default model). |
 | Does `/modelmux:race` keep your tree safe? | Yes, after a fix: in five runs, a brief naming the repo path once let temp-writable workers edit it. Briefs are now rewritten to the worktree, and the last run left the tree clean while Claude's test re-runs caught a wrong patch. |
 | Does the read guard pay off? | On a 16-page deep read: **Claude's cost halved**, but 240s instead of 20s. On skims it never fires. |
