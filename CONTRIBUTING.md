@@ -2,11 +2,10 @@
 
 ## Ground rules
 
-- One file: `server.py`.
-- Standard library only. No third-party imports.
-- `server.py` stays under 400 lines.
-- stdout carries MCP protocol messages only.
-- Read-only is the default for every worker. Writing needs an explicit `write: true`.
+- Standard library only. No third-party imports, at runtime or in tests.
+- Read-only is the default for every worker. Writing needs an explicit `--write`, `--isolate` or `write: true`.
+- In MCP mode, stdout carries protocol messages only.
+- farmout drives other AI CLIs; it never becomes an agent itself (no model loop or tools of its own).
 - Respect the non-goals:
   - an API proxy or gateway
   - model hosting
@@ -15,15 +14,27 @@
   - a general agent framework
   - Windows support before v1.0
 
+## Layout
+
+| file | what lives there |
+|---|---|
+| `server.py` | the entry point for the Claude Code plugin and MCP clients; runs the CLI (`mcp` with no arguments) |
+| `farmout/workers.py` | one function per worker CLI: flags, session resume, output parsing; `WORKERS`, `SETUP` |
+| `farmout/proc.py` | worker processes in their own process groups: timeouts, cancels, stops |
+| `farmout/engine.py` | one task: settings checks, isolation, the worker call, usage-limit fallback, the usage log |
+| `farmout/isolate.py` | git worktrees, `.farmoutinclude`, patches |
+| `farmout/sessions.py` | sessions: inbox, runner processes, turns, fork, stop |
+| `farmout/flows.py` | fan-out, ask, race, and diff/apply/pull request |
+| `farmout/review.py` | the review brief, finding parser, cross-model merge, citation check |
+| `farmout/pipeline.py` | pipeline files, stages, gates, approvals, runs, resume |
+| `farmout/config.py`, `usage.py` | paths and settings; the usage log and limits |
+| `farmout/mcp.py`, `cli.py` | the two front ends |
+
 ## Setup
 
-Python 3.9+. Nothing to install. Register a local checkout:
+Python 3.9+. Nothing to install: `python3 server.py <command>` runs the CLI from a checkout. To have a `farmout` command, `pip install -e .`.
 
-```bash
-claude mcp add -s user farmout -- python3 /path/to/farmout/server.py
-```
-
-To try the plugin (slash commands, read guard) from a checkout without installing anything, start Claude Code with it loaded for that session only:
+To try the plugin (slash commands, read guard) from a checkout for one session:
 
 ```bash
 claude --plugin-dir /path/to/farmout
@@ -37,7 +48,7 @@ Offline suite:
 python3 -m unittest discover -s tests -v
 ```
 
-It runs real MCP stdio sessions against fake worker CLIs (`tests/fake_cli.py`). No network, no logins, no real CLIs. CI runs it on Ubuntu and macOS with Python 3.9, 3.12 and 3.14.
+It runs real CLI commands and MCP stdio sessions against fake worker CLIs (`tests/fake_cli.py`). No network, no logins, no real CLIs. CI runs it on Ubuntu and macOS with Python 3.9, 3.12 and 3.14.
 
 Release smoke test:
 
@@ -45,16 +56,16 @@ Release smoke test:
 python3 tests/smoke.py
 ```
 
-It drives the real CLIs on your own logins and spends a little quota. Export the same `FARMOUT_*` variables as your MCP registration first. For every enabled worker it checks that the worker can read a file it is given, cannot write without `write: true`, and can write with it. Run it before every release.
+It drives the real CLIs on your own logins and spends a little quota. Export the same `FARMOUT_*` variables as your setup first. For every enabled worker it checks that the worker can read a file it is given, cannot write without write access, can write with it, and remembers an earlier turn of a session. Run it before every release.
 
 ## Adding a worker
 
-- [ ] One function and one `WORKERS` entry (detection plus routing hint).
-- [ ] Start processes only through `run()`.
-- [ ] A README Safety row with the exact read-only and write flags.
-- [ ] The tested CLI version.
+- [ ] One function in `farmout/workers.py` and one `WORKERS` entry (detection, whether its web access can be turned off, routing hint), plus a `SETUP` hint.
+- [ ] Start processes only through `proc.run()`.
+- [ ] Session support: create or report a session id, and resume by id (`resume`), or say why not.
+- [ ] A README Safety row with the exact read-only and write flags, and the tested CLI version.
 - [ ] Smoke-test output proving read-only mode cannot write.
-- [ ] An offline test with a fake CLI asserting the read-only and write flags.
+- [ ] Offline tests with the fake CLI for the read-only and write flags and for resume.
 
 ## Pull requests
 
@@ -66,8 +77,8 @@ It drives the real CLIs on your own logins and spends a little quota. Export the
 ## Releasing
 
 1. Run `python3 tests/smoke.py` (workers) and `sh tests/plugin_smoke.sh` (slash commands run headless without permission errors); if CLI versions changed, update "Tested with" in README.md.
-2. Bump `VERSION` in `server.py` and `version` in `.claude-plugin/plugin.json`. The offline suite fails if they differ.
+2. Bump the version in `farmout/__init__.py`, `pyproject.toml` and `.claude-plugin/plugin.json`. The offline suite fails if they differ.
 3. Move the Unreleased notes in CHANGELOG.md under `## [X.Y.Z] - YYYY-MM-DD`.
-4. Commit, then `git tag vX.Y.Z && git push --follow-tags`. The release workflow re-runs the tests, checks the tag against `server.py` and publishes a GitHub Release with that version's CHANGELOG notes.
+4. Commit, then `git tag vX.Y.Z && git push --follow-tags`. The release workflow re-runs the tests, checks the tag against `farmout/__init__.py` and publishes a GitHub Release with that version's CHANGELOG notes.
 
 Security reports go through [SECURITY.md](SECURITY.md), not public issues.

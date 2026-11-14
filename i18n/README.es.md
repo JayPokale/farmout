@@ -2,7 +2,7 @@
 
 [English](../README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · **Español**
 
-**Deja que Claude Code delegue el trabajo pesado a tus otras suscripciones de IA: en paralelo, de solo lectura por defecto, desde un único archivo Python sin dependencias.**
+**Pon a trabajar todas las suscripciones de IA que pagas: Codex, Gemini, GitHub Copilot, una segunda cuenta de Claude y modelos locales. Conversaciones que recuerdan, revisión en paralelo, carreras que deciden tus pruebas y pipelines, desde tu terminal o dentro de Claude Code. De solo lectura por defecto y sin dependencias.**
 
 [![CI](https://github.com/JayPokale/farmout/actions/workflows/ci.yml/badge.svg)](https://github.com/JayPokale/farmout/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.9%2B-3776ab)
@@ -27,6 +27,28 @@ farmout convierte Claude Code en la **cabeza**. Planifica, divide un trabajo en 
 - clasificar 2.000 líneas va a **cualquier modelo compatible con OpenAI** (Ollama, vLLM, OpenRouter, Qwen, ...)
 
 Todo se ejecuta a la vez desde una única llamada a herramienta. Cada worker es la CLI oficial del proveedor, autenticada con tu propia suscripción, por lo que los workers de CLI no necesitan claves de API.
+
+## La línea de comandos
+
+farmout también es una CLI. Instálala con `pipx install` desde un clon del repositorio (pronto en PyPI) y comprueba tus workers con `farmout doctor --live`:
+
+```bash
+# todos los modelos revisan tu cambio; hallazgos combinados con su nivel de acuerdo
+farmout review
+# cada modelo en su propio worktree; tus pruebas eligen al ganador
+farmout race "Haz determinista el test inestable de tests/test_sync.py" --test "pytest tests/test_sync.py -x"
+# una sesión que recuerda la conversación
+farmout run codex "Añade tests para parse_date() en src/dates.py" --isolate -n fechas
+farmout send fechas "Cubre también los años bisiestos"
+# aplica el parche a tu árbol (o --pr)
+farmout apply fechas
+# revisar → corregir lo que 2+ modelos acuerdan → revisar la corrección
+farmout pipe run fix
+# qué hizo cada suscripción por ti
+farmout stats
+```
+
+Sesiones, pipelines (archivos `.toml` o `.json` con etapas, compuertas y aprobaciones), ajustes por repositorio (`.farmout/settings.toml`: qué proveedores pueden ver el código, sin escritura, sin web), el cambio automático de worker cuando uno agota su cuota y un hook de git que revisa cada commit: los detalles están en el [README en inglés](../README.md).
 
 ## Inicio rápido
 

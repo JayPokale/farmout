@@ -2,7 +2,7 @@
 
 [English](../README.md) · **简体中文** · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md)
 
-**让 Claude Code 将繁重工作转交给你的其他 AI 订阅：并行执行、默认只读，仅靠单个无外部依赖的 Python 文件。**
+**让你付费的每个 AI 订阅都动起来：Codex、Gemini、GitHub Copilot、第二个 Claude 账号和本地模型。会记住上下文的会话、并行代码审查、由你的测试裁决的竞赛和流水线，在终端里或在 Claude Code 内部都能用。默认只读，零依赖。**
 
 [![CI](https://github.com/JayPokale/farmout/actions/workflows/ci.yml/badge.svg)](https://github.com/JayPokale/farmout/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.9%2B-3776ab)
@@ -27,6 +27,28 @@ farmout 让 Claude Code 担任**主控**。它负责规划、将任务拆解为�
 - 2,000 行代码分类交给**任意兼容 OpenAI 的模型**（Ollama、vLLM、OpenRouter、Qwen 等）
 
 这些任务均可通过单次工具调用并行运行。每个 worker 均为各厂商官方的 CLI 工具，使用你自己的订阅直接登录，因此 CLI worker 无需任何 API Key。
+
+## 命令行
+
+farmout 也是一个命令行工具。克隆仓库后用 `pipx install` 安装（即将发布到 PyPI），再用 `farmout doctor --live` 检查各个 worker：
+
+```bash
+# 所有模型审查你的改动，合并发现并标明有几个模型一致
+farmout review
+# 每个模型在各自的 worktree 中尝试，由你的测试选出胜者
+farmout race "让 tests/test_sync.py 里不稳定的测试变得确定" --test "pytest tests/test_sync.py -x"
+# 一个会记住对话的会话
+farmout run codex "为 src/dates.py 中的 parse_date() 添加单元测试" --isolate -n dates
+farmout send dates "再覆盖闰年的情况"
+# 把补丁应用到你的工作区（或 --pr）
+farmout apply dates
+# 审查 → 修复 2 个以上模型一致的问题 → 审查修复
+farmout pipe run fix
+# 每个订阅为你做了什么
+farmout stats
+```
+
+会话、流水线（带阶段、关卡和审批的 `.toml` 或 `.json` 文件）、按仓库的设置（`.farmout/settings.toml`：哪些服务商可以看到代码、禁止写入、禁止联网）、某个订阅用尽额度时自动换用其他 worker，以及审查每次提交的 git hook：详见[英文 README](../README.md)。
 
 ## 快速开始
 

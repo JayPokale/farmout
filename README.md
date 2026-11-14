@@ -2,7 +2,7 @@
 
 **English** · [简体中文](i18n/README.zh-CN.md) · [日本語](i18n/README.ja.md) · [한국어](i18n/README.ko.md) · [Español](i18n/README.es.md)
 
-**Let Claude Code hand its grunt work to your other AI subscriptions: in parallel, read-only by default, from one dependency-free Python file.**
+**Put every AI subscription you pay for to work: Codex, Gemini, GitHub Copilot, a second Claude account, local models. Conversations that remember, parallel review, races judged by your tests, and pipelines, from your terminal or from inside Claude Code. Read-only by default, no dependencies.**
 
 [![CI](https://github.com/JayPokale/farmout/actions/workflows/ci.yml/badge.svg)](https://github.com/JayPokale/farmout/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.9%2B-3776ab)
@@ -10,60 +10,19 @@
 ![MCP](https://img.shields.io/badge/MCP-stdio-6e56cf)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
-<p align="center"><img src="assets/review-demo.svg" width="900" alt="Animated terminal replay of a real run: /farmout:review sends one uncommitted change to antigravity, codex, claude and copilot in parallel, then Claude prints a merged, verified table of nine findings with how many models flagged each"></p>
+<p align="center"><img src="assets/review-demo.svg" width="900" alt="Animated terminal replay of a real run: a review sends one uncommitted change to antigravity, codex, claude and copilot in parallel, then Claude prints a merged, verified table of nine findings with how many models flagged each"></p>
 
-- **`/farmout:review`**: Codex, Gemini (through Antigravity), GitHub Copilot and a second Claude account review your diff at the same time, read-only. Claude merges what they found, counts how many models flagged each problem, and checks every finding against the code. In [our benchmark](bench/README.md), each of 32 bugs (23 planted, 9 real regressions from open-source projects) was flagged by at least three of the four models.
-- **`/farmout:race <task>`**: every model attempts the same fix in its own git worktree; your tests pick the winner, and nothing touches your tree until you say so.
-- **Everyday delegation**: Claude hands long reads and boilerplate to whichever subscription fits. Summarizing three papers this way cost Claude **59% fewer tokens** (74% less cost) for the same answers.
+- **`farmout review`**: Codex, Gemini (through Antigravity), GitHub Copilot and a second Claude account review your change at the same time, read-only. Findings are merged across models with agreement counts, and any finding that cites a file or line that doesn't exist is dropped before you see it. In [our benchmark](bench/README.md), each of 32 bugs (23 planted, 9 real regressions from open-source projects) was flagged by at least three of the four models.
+- **`farmout race "<task>" --test "pytest -x"`**: every model attempts the same change in its own git worktree; your tests pick the winner, and nothing touches your tree until you `farmout apply` it.
+- **`farmout run` / `send` / `fork`**: named sessions with any worker that remember the conversation, queue messages while busy, and hand one session's reply to another.
+- **`farmout pipe run fix`**: review your change, fix what two or more models agree on in a worktree, then review the fix. Write your own pipelines with gates, approvals and parallel stages.
+- **Inside Claude Code**: Claude hands long reads and boilerplate to whichever subscription fits. Summarizing three papers this way cost Claude **59% fewer tokens** (74% less cost) for the same answers.
 
-You pay for Claude. Maybe also ChatGPT, Google AI, a second Claude seat, or you run an open model on a GPU. Yet your best model's quota still goes on reading PDFs and writing boilerplate while the others sit idle.
+You pay for Claude. Maybe also ChatGPT, Google AI, GitHub Copilot, a second Claude seat, or an open model on a GPU. Each one sits in its own terminal, idle most of the day. farmout drives their official CLIs, logged in as you, so they can work in parallel, check each other, and take turns on one job. No API keys, no extra bill, no dependencies: standard-library Python you can read before you trust it with your accounts.
 
-farmout makes Claude Code the **head**. It plans, splits a job into self-contained subtasks, sends each one to a model that is good enough for it, and keeps its own quota for the hard parts:
+## Install
 
-- a 60-page paper goes to **Antigravity** (Gemini), which reads it and returns 150 words
-- "write tests for `parse_date()`" goes to **Codex**, which writes and runs them
-- mid-complexity work goes to your **second Claude account**
-- a second opinion on a tricky change goes to **GitHub Copilot**, which offers models from several vendors
-- classifying 2,000 lines goes to **any OpenAI-compatible model** (Ollama, vLLM, OpenRouter, Qwen, ...)
-
-These all run at once, from a single tool call. Each worker is the vendor's own CLI, logged in with your own subscription, so the CLI workers need no API keys.
-
-## How it works
-
-```mermaid
-flowchart LR
-    you([You]) --> head["Claude Code (head)<br/>plans · routes · integrates"]
-    head -- "delegate(tasks)" --> mux{{farmout}}
-    mux --> ag["antigravity<br/>agy · Google account"]
-    mux --> cx["codex<br/>Codex CLI · ChatGPT account"]
-    mux --> cl["claude<br/>second Claude account"]
-    mux --> cp["copilot<br/>Copilot CLI · GitHub account"]
-    mux --> oa["api<br/>any OpenAI-compatible model"]
-    ag & cx & cl & cp & oa --> disk[("~/.cache/farmout<br/>full outputs")]
-    disk -- "capped results + file paths" --> head
-```
-
-- **The head is the router.** farmout ships its routing policy as MCP server instructions, which stay in Claude Code's system prompt every session, even when the tool itself is deferred behind tool search. No extra router model, no classifier to train.
-- **Workers see only their brief.** Each subtask is a standalone prompt plus file paths, never your conversation.
-- **Results land on disk.** The head gets a capped copy plus the file path. To chain workers, pass that path to the next task; the text never has to pass through the head's context.
-
-## Features
-
-- **Parallel fan-out:** one `delegate` call runs up to 8 subtasks concurrently, across different workers.
-- **Subscription-first:** drives official CLIs in their headless modes with your existing logins.
-- **Read-only by default:** every worker runs in its CLI's no-write mode unless the head sets `write: true` (see [Safety](#safety)).
-- **Quota-safe:** cancelling in Claude Code (Esc) kills the worker's whole process tree. Each task also has a timeout.
-- **Context-cheap:** at most ~60k characters come back per call; full outputs stay on disk.
-- **Auto-detected workers:** only the workers you actually have are offered to the head.
-- **Slash commands** (plugin install): `/farmout:review` has every worker review your diff in parallel; `/farmout:race` has them all attempt the same fix; `/farmout:ask` gets a second opinion from all of them; `/farmout:setup` shows what's ready.
-- **Isolated writers:** `isolate: true` gives each writing task its own git worktree and hands back a patch, so parallel writers never collide.
-- **Background mode:** `background: true` returns at once, so Claude keeps working while workers run.
-- **Read guard** (plugin install): the first time Claude starts a big read in a session (more than 5 pages of a long PDF, or 500+ lines of a 200 KB+ file), it is asked once to delegate instead; reading it again goes through. On a 16-page deep read this [halved Claude's cost but took minutes instead of seconds](bench/README.md#read-guard-a-deep-read-with-and-without-it); `FARMOUT_READ_GUARD=0` turns it off.
-- **Zero dependencies:** about 400 lines of standard-library Python. Read it before you trust it with your accounts.
-
-## Quick start
-
-Requirements: Python 3.9+, Linux (tested) or macOS (untested), [Claude Code](https://github.com/anthropics/claude-code), and at least one worker:
+Requirements: Python 3.9+, Linux (tested) or macOS (untested), git, and at least one worker:
 
 | worker | needs | good for |
 |---|---|---|
@@ -71,116 +30,182 @@ Requirements: Python 3.9+, Linux (tested) or macOS (untested), [Claude Code](htt
 | `codex` | [Codex CLI](https://github.com/openai/codex), logged in | well-specified coding, tests, refactors, reviews |
 | `claude` | a second Claude Code account + `FARMOUT_CLAUDE_DIR` | general work on separate quota |
 | `copilot` | [GitHub Copilot CLI](https://github.com/github/copilot-cli), logged in | code review, focused coding questions, second opinions; models from several vendors |
-| `api` | `FARMOUT_API_BASE` + `FARMOUT_API_MODEL` | bulk or simple work on any OpenAI-compatible model |
+| `api` | `FARMOUT_API_BASE` + `FARMOUT_API_MODEL` | bulk or simple work on any OpenAI-compatible model (Ollama, vLLM, OpenRouter) |
 
-Install it as a Claude Code plugin (recommended: it adds the slash commands and the read guard, and `claude plugin update farmout` keeps it current):
+The command line (a PyPI release, for `uvx farmout`, is coming):
+
+```bash
+git clone https://github.com/JayPokale/farmout ~/.local/share/farmout
+pipx install ~/.local/share/farmout      # or: pip install --user ~/.local/share/farmout
+farmout doctor --live                    # which workers are ready; --live sends each one a tiny prompt
+```
+
+No install at all also works: `python3 ~/.local/share/farmout/server.py <command>` is the same CLI.
+
+As a Claude Code plugin (adds the slash commands, the MCP tools and the read guard; `claude plugin update farmout` keeps it current):
 
 ```bash
 claude plugin install farmout --marketplace JayPokale/farmout
 ```
 
-Or register the server by hand (no slash commands):
+**Second Claude account:** log in once with `CLAUDE_CONFIG_DIR=~/.claude-2 claude`, then `export FARMOUT_CLAUDE_DIR=~/.claude-2` in your shell profile.
+
+**OpenAI-compatible endpoint:** `export FARMOUT_API_BASE=http://localhost:11434/v1 FARMOUT_API_MODEL=qwen3:32b` (and `FARMOUT_API_KEY` if needed). The `api` worker has no tools, so file text goes into the prompt; PDFs need `pdftotext`.
+
+## A quick tour
 
 ```bash
-git clone https://github.com/JayPokale/farmout ~/.local/share/farmout
-claude mcp add -s user farmout -- python3 ~/.local/share/farmout/server.py
-claude mcp list        # farmout: ... ✔ Connected
+# One worker, one conversation. The session remembers; send more later.
+farmout run codex "Add unit tests for parse_date() in src/dates.py and run them" --isolate -n dates
+farmout send dates "Also cover leap years"
+farmout diff dates            # the patch, from its own git worktree
+farmout apply dates           # into your tree (or --pr: branch, push, open a pull request)
+
+# Every model at once
+farmout review                                    # your uncommitted change
+farmout review --base main --min-agree 2          # the branch since main, only what 2+ models agree on
+farmout ask "Is this migration safe to run online?" -f migrations/0042.sql
+git diff | farmout ask "Anything here that could lose data?"
+farmout race "Make the flaky test in tests/test_sync.py deterministic" --test "pytest tests/test_sync.py -x"
+
+# Sessions talk to each other
+farmout send dates --attach review-1-claude "Fix what this review found"
+farmout fork review-1-codex "Why do you think line 42 races?"     # a side question, same context
+
+# Pipelines: each stage starts when the previous one ends
+farmout pipe run fix --set test="pytest -x"      # review → fix what 2+ models agree on → check the fix
+farmout pipe run spec "Add CSV export to the reports page"
+farmout pipe ls --runs
+
+# Housekeeping
+farmout ls                    # sessions: worker, state, turns
+farmout attach dates          # watch a running session (Ctrl-C detaches; it keeps going)
+farmout stats                 # what each subscription did for you this week
+farmout hook install          # review every commit; block it when 2+ models flag a high-severity bug
 ```
 
-A plugin's server reads its settings from your environment, so with the plugin, `export` the `FARMOUT_*` variables below in your shell profile instead of passing `-e`. Use one install method, not both.
-
-**Other heads.** Codex CLI and Copilot CLI can drive farmout too, so they can hand work to Claude, Gemini and each other (both tested with a round trip to the `claude` worker):
-
-```bash
-codex mcp add farmout -- python3 ~/.local/share/farmout/server.py
-copilot mcp add farmout -- python3 ~/.local/share/farmout/server.py
-```
-
-Codex asks before each MCP call. For `codex exec`, add `default_tools_approval_mode = "approve"` under `[mcp_servers.farmout]` in `~/.codex/config.toml`. The slash commands are Claude Code only.
-
-Restart Claude Code. Workers are detected at startup. To see which are ready and how to enable the rest, run `python3 server.py doctor` (or `/farmout:setup` with the plugin); `doctor --live` also sends each one a tiny prompt to prove its login works.
-
-**Second Claude account:**
-
-```bash
-CLAUDE_CONFIG_DIR=~/.claude-2 claude    # log in once with the other account, then exit
-claude mcp remove -s user farmout
-claude mcp add -s user farmout -e FARMOUT_CLAUDE_DIR=$HOME/.claude-2 \
-  -- python3 ~/.local/share/farmout/server.py
-```
-
-Keep `-e` after the server name: it accepts several values and would otherwise swallow the name.
-
-**OpenAI-compatible endpoint.** The server inherits Claude Code's environment, so put these in your shell profile. `claude mcp add -e` would store the key in plain text in `~/.claude.json`.
-
-```bash
-export FARMOUT_API_BASE=http://localhost:11434/v1   # e.g. Ollama
-export FARMOUT_API_MODEL=qwen3:32b
-export FARMOUT_API_KEY=...                          # only if the endpoint needs one
-```
-
-The `api` worker has no tools, so farmout pastes file text into the prompt. PDFs need `pdftotext` (poppler-utils).
-
-## Usage
-
-Work as usual. The head delegates when it pays off, and you can nudge it:
-
-> Read the six papers in `./papers` and draft a related-work section. Delegate the reading.
-
-> Have codex add tests for `src/dates.py` in the background while you review the API design.
-
-> Translate `locales/en.json` into Hindi, Spanish and German via the api worker, one task per language.
-
-### Slash commands (plugin install)
+## Commands
 
 | command | what it does |
 |---|---|
-| `/farmout:review [--base <ref>] [focus]` | every worker reviews your uncommitted changes (or the branch since `<ref>`) in parallel, read-only; Claude merges the findings, counts how many models flagged each, and checks them against the code |
-| `/farmout:ask <question>` | the same question to every worker; you get the consensus, the disagreements and Claude's verdict |
-| `/farmout:race <task>` | every write-capable worker attempts the same change in its own git worktree, in parallel; Claude runs your tests on each attempt, compares the patches and applies the best one when you agree |
-| `/farmout:setup` | which workers are ready, and the exact step to enable each missing one |
+| `run <worker> "<prompt>"` | start a session: `-n name`, `--write` (edit the current directory), `--isolate` (edit a private worktree, make a patch), `--model`, `--effort`, `--fallback w1,w2`, `--bg`, `-f file`. `auto` picks the first allowed worker that isn't at a usage limit |
+| `send <session> "<msg>"` | the next message; a busy session queues it. `--attach <session>` hands over that session's last reply, `-f` adds files, `--bg` returns at once |
+| `fork <session> "<msg>"` | a new session that starts from this one's conversation; `--worker` continues with a different model |
+| `ask "<question>"` | the same question to every worker (`-w` to choose), answers side by side |
+| `review [focus]` | every worker reviews `--staged`, `--base <ref>` or your uncommitted change; `--min-agree N`, `--fail-on high\|medium\|low` for exit codes |
+| `race "<task>"` | every worker attempts the task in its own worktree; `--test <cmd>` picks the winner, `--apply` lands it |
+| `ls`, `log`, `attach`, `wait`, `stop`, `rm` | list, read, watch, wait for, stop and delete sessions (`rm` also removes a session's worktree and branch) |
+| `diff`, `apply [--pr]` | an isolated session's patch: show it, apply it, or open a pull request with `gh` |
+| `pipe run\|ls\|status\|resume\|approve\|stop` | pipelines and their runs |
+| `stats` | runs, failures, usage limits, time and tokens per subscription |
+| `hook install\|uninstall [--pre-push]` | a git hook that reviews each commit or push |
+| `doctor [--live]`, `mcp` | check the workers; serve the MCP tools on stdio |
 
-### The `delegate` tool
+Every command takes `--json` for scripts and `-C <dir>`. Prompts can come from stdin; with a prompt given, piped stdin goes along as a file. Exit codes: 0 ok, 1 failed (or a review gate tripped), 130 stopped.
 
-```json
-{
-  "tasks": [
-    {"worker": "antigravity", "prompt": "Extract method, datasets and headline metric. Max 120 words.",
-     "files": ["papers/attention.pdf"]},
-    {"worker": "codex", "prompt": "Add unit tests for parse_date() in src/dates.py covering time zones. Run them.",
-     "cwd": "/home/me/project", "write": true},
-    {"worker": "api", "prompt": "Label each line bug / feature / question. Output CSV.",
-     "files": ["issues.txt"]}
-  ]
-}
+## Sessions
+
+A session is a named conversation with one worker, saved in `~/.local/state/farmout/sessions/<name>/`. farmout resumes it through the worker CLI's own session id (`claude --resume`, `codex exec resume`, `copilot --session-id`, `agy --conversation`; for `api` it keeps the history itself), so the model really remembers earlier turns rather than rereading a summary.
+
+Messages go through an inbox. The session's runner, a background process that holds the session's lock, answers them in order, which is why `send` to a busy session queues instead of failing, why `farmout attach` works from any terminal, and why `farmout stop` stops exactly one session's worker. Forking a Claude session uses Claude's native fork; other workers get the transcript as a file. Review, ask, race and pipeline stages all create sessions too, so you can follow up with any reviewer: `farmout send review-3-codex "Show me the input that breaks line 42"`.
+
+## Pipelines
+
+A pipeline is a list of stages in a `.toml` (Python 3.11+) or `.json` file in `<repo>/.farmout/pipelines/` or `~/.config/farmout/pipelines/`. Each stage runs a skill (`review`, `ask`, `race`) or sends its prompt to one or more workers, and starts when the previous one ends.
+
+```toml
+description = "Plan with Claude, build with Codex in a worktree, ship after I approve"
+
+[[stage]]
+name = "plan"
+worker = "claude"
+prompt = "Write a short plan for: {args}"
+
+[[stage]]
+name = "build"
+worker = "codex"
+isolate = true
+prompt = "Implement the plan in {plan}. Run the tests."
+test = "pytest -x"
+gate = "tests"            # passes only if the test command passes in the worktree
+
+[[stage]]
+name = "review"
+skill = "review"
+in = "build"              # review the build's worktree
+gate = "high == 0"
+
+[[stage]]
+name = "notes"
+worker = "copilot"
+approve = true            # waits for `farmout pipe approve <run>`
+prompt = "Write release notes for the patch in {build.patch}"
 ```
 
-| field | required | meaning |
-|---|---|---|
-| `worker` | yes | one of the detected workers |
-| `prompt` | yes | standalone brief: goal, context, constraints, exact output format |
-| `files` | no | paths the worker should read: PDFs, code, earlier result files |
-| `cwd` | no | working directory; defaults to where Claude Code was launched |
-| `write` | no | allow edits inside `cwd` (default `false`) |
-| `model` | no | override the worker's default model |
-| `isolate` | no | write in a private git worktree under `<repo>/.farmout/` (HEAD plus your uncommitted and untracked files); the result names a patch holding only the worker's changes. Implies `write` |
+- **Placeholders:** `{stage}` is that stage's output file, `{stage.patch}` its patch, `{args}` the free text after `farmout pipe run <name>`, `{key}` a parameter (`params` table, `--set key=value`), `{item}` a `foreach` item. A stage's output files are handed to the worker, so it can read them.
+- **Gates:** `ok`, `tests`, `agree >= N`, `findings == 0`, `high == 0` (any `<`, `<=`, `==`, `!=`, `>=`, `>`), or `contains "TEXT"`. A gate that fails stops the stages after it.
+- **`on`:** `success` (default), `failure` (only after something failed, e.g. cleanup or a notification), or `always`.
+- **`foreach = "<stage>"`:** one session per `- item` line of that stage's output, spread over `workers`, in parallel (`max_items`, default 8).
+- **`approve = true`:** the run pauses before the stage until `farmout pipe approve <run>` (or `--reject`).
+- **Runs** live in `~/.local/state/farmout/runs/<run>/`. A failed, gated, stopped or interrupted run continues with `farmout pipe resume <run>`; `--bg` runs it in the background.
 
-Top level, next to `tasks`: `"background": true` returns at once with the result paths, so the head keeps working while workers run; each file appears when its task ends, then a `done` file.
+Built in: **`fix`** (review → fix what 2+ models agree on, `--set worker=codex test="pytest -x"` → review the fix) and **`spec`** (requirements → design → independent tasks → every task built in its own worktree in parallel → a check of the patches together). A worker your machine doesn't have is swapped for one it does.
 
-Each task comes back under a header naming its full-output file:
+## Settings
 
-```text
-## [1] antigravity ok 24s -> ~/.cache/farmout/20261117-002241-eb1r2fv1/1-antigravity.md
-...
-## [2] codex ok 11s -> ~/.cache/farmout/20261117-002241-eb1r2fv1/2-codex.md
-...
-## [3] api FAILED 0s -> ~/.cache/farmout/20261117-002241-eb1r2fv1/3-api.md
-FileNotFoundError: /home/me/project/issues.txt
+`~/.config/farmout/settings.toml` (yours) and `<repo>/.farmout/settings.toml` (the project's; `.json` works too, and on Python 3.9–3.10 only `.json` does):
+
+```toml
+workers = ["codex", "claude"]   # which subscriptions may see this repo, e.g. keep work code off personal accounts
+write = false                   # forbid write and isolate here
+web = false                     # forbid web access (agy can't turn its search off, so it's refused)
+fallback = ["codex", "copilot", "claude"]   # who takes over when one hits its usage limit
+timeout = 900                   # seconds per task
 ```
+
+Neither file can loosen the other: worker lists intersect, `write` and `web` are off if either says so, and the shorter timeout wins. Settings are always read from the main working tree, so a worker editing its worktree's copy changes nothing.
+
+**`.farmoutinclude`** at the repo root lists ignored files that isolated worktrees need (glob patterns, one per line, e.g. `.env` or `config/*.local`). They are copied in, and never end up in a patch.
+
+## Usage limits and stats
+
+When a worker fails because its subscription hit a limit, farmout notes how long to leave it alone ("try again in 20 minutes" is honoured, otherwise 15 minutes) and, if you gave `--fallback` (or a stage `fallback`, or the `fallback` setting), runs the task on the next worker instead; until the limit passes, tasks for that worker go straight to the next one, and `farmout run auto` skips it. `farmout stats` shows each subscription's runs, failures, limits, time and tokens from the usage log (`~/.local/state/farmout/usage.jsonl`, which never records prompts or outputs).
+
+## The git hook
+
+`farmout hook install` adds a pre-commit hook (`--pre-push` for a pre-push one) that runs `farmout review --staged --min-agree 2 --fail-on high`: the commit is blocked when two or more models flag a high-severity problem. `FARMOUT_SKIP=1` (or `git commit --no-verify`) skips it once; an existing hook is moved aside with `--force` and restored by `farmout hook uninstall`.
+
+## Inside Claude Code and other MCP clients
+
+```mermaid
+flowchart LR
+    you([You]) --> head["Claude Code (head)<br/>plans · routes · integrates"]
+    you --> cli["farmout CLI"]
+    head -- "MCP: delegate · send · pipeline" --> fo{{farmout}}
+    cli --> fo
+    fo --> ag["antigravity<br/>agy · Google account"]
+    fo --> cx["codex<br/>Codex CLI · ChatGPT account"]
+    fo --> cl["claude<br/>second Claude account"]
+    fo --> cp["copilot<br/>Copilot CLI · GitHub account"]
+    fo --> oa["api<br/>any OpenAI-compatible model"]
+```
+
+farmout is also an MCP server (`farmout mcp`, or `python3 server.py`), so Claude Code, Codex CLI, Copilot CLI or any MCP client can be the **head**: it plans, splits a job into self-contained subtasks, sends each to a model that is good enough for it, and keeps its own quota for the hard parts. farmout ships its routing policy as MCP server instructions, so there is no extra router model.
+
+| tool | what it does |
+|---|---|
+| `delegate` | one-shot subtasks in parallel (up to 8): `worker`, `prompt`, `files`, `cwd`, `write`, `isolate`, `model`, `effort`; `background: true` returns at once. Full outputs land in `~/.cache/farmout/`, the head gets capped copies plus the paths |
+| `send` | a message to a named session (give `worker` to start one); the worker remembers the conversation |
+| `sessions` | list sessions, or one session's turns and output files |
+| `pipeline` | list, run, status, approve, reject, resume or stop pipeline runs (they run in the background) |
+
+Plugin slash commands: `/farmout:review [--base <ref>] [focus]` (every worker reviews; Claude merges and also verifies each finding against the code), `/farmout:race <task>`, `/farmout:ask <question>` and `/farmout:setup`. The plugin's **read guard** asks Claude, once per file, to delegate a big read (more than 5 pages of a long PDF, or 500+ lines of a 200 KB+ file); on a 16-page deep read that [halved Claude's cost but took minutes instead of seconds](bench/README.md#read-guard-a-deep-read-with-and-without-it). `FARMOUT_READ_GUARD=0` turns it off.
+
+Other heads: `codex mcp add farmout -- farmout mcp`, `copilot mcp add farmout -- farmout mcp` (Codex asks before each MCP call; for `codex exec`, set `default_tools_approval_mode = "approve"` under `[mcp_servers.farmout]`). Without the plugin, Claude Code takes `claude mcp add -s user farmout -- farmout mcp`.
 
 ## Safety
 
-| worker | read-only (default) | `write: true` |
+| worker | read-only (default) | write (`--write`, `--isolate`, `write: true`) |
 |---|---|---|
 | `antigravity` | `agy -p … --mode plan` | `--mode accept-edits --sandbox` |
 | `codex` | `codex exec -s read-only` | `-s workspace-write` |
@@ -188,12 +213,11 @@ FileNotFoundError: /home/me/project/issues.txt
 | `copilot` | `copilot -p … --allow-all-tools --available-tools view rg glob web_fetch` | adds `apply_patch edit create`; never a shell |
 | `api` | no tools | n/a |
 
-- **Why plan mode for `agy`:** with `toolPermission: always-proceed` in agy's settings, `agy -p` runs shell commands without asking. In testing, plan mode still answered questions about files but executed nothing, even with that setting on.
+- **Why plan mode for `agy`:** with `toolPermission: always-proceed` in agy's settings, `agy -p` runs shell commands without asking. Plan mode still answers questions about files but executes nothing, even with that setting on.
 - **Why an allowlist for `copilot`:** headless Copilot needs `--allow-all-tools`, which also auto-approves every MCP server in your Copilot config (one of ours could delete cloud databases). `--available-tools` hides everything else from the model, MCP servers included.
-- **Prompt injection is real.** Workers read whatever files you hand them, and a hostile document can try to instruct them. Read-only mode limits the damage but cannot make injection impossible; for example, a worker could put file contents into a web search. Don't delegate secrets.
-- **Data leaves your head account.** Briefs and files go to each worker's provider. If your head runs on a work account, check your organization's policy before delegating its data to personal accounts.
-- **Where `write: true` can write:** inside `cwd`, plus the system temp directory for `codex` and `copilot` (their defaults). For `antigravity`, `claude` and `copilot` it also covers the directories of any listed files outside `cwd`, because those are granted with `--add-dir`. With `isolate: true`, in-repo paths in `files` and in the brief are rewritten to the worktree, so no writer is pointed at your own tree. A repository kept under `/tmp` is still reachable by `codex` and `copilot` through the temp-directory rule.
-- **Never give two parallel tasks write access to overlapping files**, unless each has `isolate: true`: then each works in its own git worktree and your tree is untouched until you apply a patch. `isolate` is not a filesystem sandbox: a tracked symlink that points outside the repository can be written through, and files a worker creates that match `.gitignore` stay out of its patch.
+- **Isolation:** an isolated worker edits its own worktree in `<repo>/.farmout/worktrees/`, and in-repo paths in its files and brief are rewritten to point there. Your tree changes only when you apply a patch. It is not a filesystem sandbox: a tracked symlink that points outside the repository can be written through, and `codex` and `copilot` may also write the system temp directory.
+- **Prompt injection is real.** Workers read whatever you hand them, and a hostile document can try to instruct them. Read-only mode limits the damage but can't make injection impossible. Don't delegate secrets; `web = false` in settings closes the web tools.
+- **Data leaves your machine.** Briefs and files go to each worker's provider. Use the `workers` setting to keep a work repository away from personal accounts.
 
 ## Terms of service
 
@@ -203,18 +227,19 @@ farmout runs each vendor's official CLI in its documented non-interactive mode, 
 
 What we found building this, in case it saves you an afternoon:
 
-- **Gemini CLI with a personal Google login now fails** with `IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals. To continue using Gemini, please migrate to the Antigravity suite of products`. That's why the Google worker drives Antigravity's `agy`, whose print mode works with the same login. On our account, `agy models` also listed Claude and GPT-OSS models.
-- **`agy -p` executes tools without asking under `toolPermission: always-proceed`.** Use `--mode plan` for anything meant to be read-only.
-- **In plan mode, `agy` sometimes returns only a plan** ("Plan generated in [...]. Please review and approve to proceed") and stops. farmout asks read-only Antigravity tasks for the complete answer in the reply.
-- **A nested `claude -p` inherits the parent session's variables** (`CLAUDECODE`, `CLAUDE_CODE_*`, `CLAUDE_EFFORT`, ...). farmout strips them so every worker is a clean session on the other account.
-- **`claude --bare` never reads OAuth credentials**, so it can't use a subscription login. Workers must not use it.
-- **Copilot CLI's `--allow-all-tools` approves your MCP servers too**, and `--deny-tool shell --deny-tool write` doesn't stop them. Allowlist with `--available-tools` instead.
-- **Claude Code refuses edits under `.git`**, even inside a git worktree placed there, so isolated worktrees live in `<repo>/.farmout/` instead.
-- **A plugin's preprocessing command runs only if `allowed-tools` matches it exactly**, and a quoted path argument such as `python3 "…/server.py"` doesn't match. Execute the script directly.
-- **Models cite line numbers inside a `.diff` file** unless told otherwise; the review brief asks for line numbers in the current file.
-- **Claude Code may defer MCP tools**, which hides their descriptions until loaded. Routing policy therefore belongs in server instructions, not tool descriptions.
+- **Gemini CLI with a personal Google login now fails** with `IneligibleTierError`; that's why the Google worker drives Antigravity's `agy`, whose print mode works with the same login.
+- **`agy -p` executes tools without asking under `toolPermission: always-proceed`.** Use `--mode plan` for anything meant to be read-only. In plan mode it sometimes returns only a plan stub, so farmout asks read-only tasks for the complete answer in the reply.
+- **Headless Claude Code denies any tool that would ask for permission.** `--tools ...,WebSearch` alone gives the model a search tool it can never use; `--allowedTools WebSearch` pre-approves it.
+- **`codex exec resume` takes no `-s` or `-C`.** Pass the sandbox as `-c sandbox_mode="read-only"` and run it in the session's directory.
+- **Every worker CLI can resume a headless session by id**, but only Claude and Copilot let you choose the id up front; Codex and Antigravity report theirs (`thread.started` in `--json`, `conversation_id` in agy's JSON).
+- **A nested `claude -p` inherits the parent session's variables** (`CLAUDECODE`, `CLAUDE_CODE_*`, ...). farmout strips them so every worker is a clean session on the other account. `claude --bare` never reads OAuth credentials, so it can't use a subscription login.
+- **Copilot CLI's `--allow-all-tools` approves your MCP servers too**, and `--deny-tool` doesn't stop them. Allowlist with `--available-tools` instead.
+- **Python's `text=True` turns CRLF into LF.** A diff read that way no longer applies to a CRLF file, so farmout moves patches as bytes.
+- **Git hooks fire on internal commits.** A review gate in pre-commit would review every worktree farmout makes; its internal commits use `--no-verify`.
+- **Claude Code refuses edits under `.git`**, even inside a worktree placed there, so worktrees live in `<repo>/.farmout/worktrees/`.
+- **Models cite paths relative to whatever directory they think in** (`cli.py` for `pkg/cli.py`) and line numbers inside a `.diff` file unless told otherwise. farmout's review brief asks for current-file line numbers, and its citation check accepts a unique suffix match.
 
-Tested with agy 1.4.6, codex-cli 0.163.0, Claude Code 2.1.323, GitHub Copilot CLI 1.0.112 and Python 3.14 on Arch Linux (November 2026). CLIs change often, so if a worker breaks, please open an issue with your CLI version.
+Tested with agy 1.4.6, codex-cli 0.163.0, Claude Code 2.1.323, GitHub Copilot CLI 1.0.112 and Python 3.14 on Arch Linux (November 2026); the offline test suite also passes on Python 3.9 and 3.12. CLIs change often, so if a worker breaks, please open an issue with your CLI version.
 
 ## Configuration
 
@@ -224,24 +249,24 @@ Tested with agy 1.4.6, codex-cli 0.163.0, Claude Code 2.1.323, GitHub Copilot CL
 | `FARMOUT_API_BASE` | unset | OpenAI-compatible base URL ending in `/v1`; enables `api` together with `FARMOUT_API_MODEL` |
 | `FARMOUT_API_MODEL` | unset | model name sent to that endpoint |
 | `FARMOUT_API_KEY` | unset | bearer token for that endpoint |
-| `FARMOUT_TIMEOUT` | `1200` | seconds per task |
+| `FARMOUT_TIMEOUT` | `1200` | seconds per task (a `timeout` setting can lower it) |
+| `FARMOUT_STATE` | `~/.local/state/farmout` | sessions, pipeline runs, the usage log |
 | `FARMOUT_READ_GUARD` | on | `0` turns off the plugin's read guard |
+| `FARMOUT_SKIP` | unset | `1` skips the git hook once |
 
-Full outputs are written to `~/.cache/farmout/` and are safe to delete at any time. Isolated worktrees live in `<repo>/.farmout/`, which farmout adds to the repository's local `.git/info/exclude`; remove one with `git worktree remove --force <dir>` and `git branch -D <branch>`. The `api` worker honours `http_proxy`/`no_proxy`.
+One-shot `delegate` outputs go to `~/.cache/farmout/` and are safe to delete. `farmout rm <session>` removes a session with its worktree and branch.
 
 ## FAQ
 
-**How is this different from OpenAI's Codex plugin for Claude Code?** That plugin drives Codex only, one job at a time, with OpenAI's own rescue and session-transfer flows. farmout drives whichever subscriptions you have (Codex, Gemini through Antigravity, Copilot, a second Claude, local models), several at once, from one call.
+**How is this different from OpenAI's Codex plugin for Claude Code?** That plugin drives Codex only, from Claude Code. farmout drives whichever subscriptions you have (Codex, Gemini through Antigravity, Copilot, a second Claude, local models), several at once, from your terminal or any MCP client, with sessions and pipelines.
 
-**Will it burn my other quotas?** Every task spends the quota of the worker that runs it. `/farmout:review` and `/farmout:ask` send one task per worker, so they cost one request on each; plain delegation runs only what Claude decides to hand off. `python3 server.py doctor` shows which workers are enabled.
+**Will it burn my other quotas?** Every task spends the quota of the worker that runs it. `review`, `ask` and `race` send one task per worker; `farmout stats` shows what each did. Use `-w` to pick workers.
 
-**Does `/farmout:review` save Claude's quota?** No. On our small benchmark change, Claude reviewing alone took 13s and $0.033 of its quota; `/farmout:review` took 59s and $0.122, plus one review on each worker, because Claude merges and verifies four reports. Use it for agreement and second opinions. To save quota, delegate reading and grunt work.
+**Does a review save Claude's quota?** The CLI's `farmout review` uses none of Claude's (unless your second Claude account is a worker). Inside Claude Code, `/farmout:review` costs Claude more than reviewing alone, because Claude merges and verifies four reports: on our small benchmark change, 59s and $0.122 versus 13s and $0.033. Use it for agreement; delegate reading and grunt work to save quota.
 
-**Is it allowed by the providers' terms?** farmout runs each vendor's official CLI in its documented headless mode, logged in as you; see [Terms of service](#terms-of-service). It doesn't proxy APIs, extract tokens or share accounts.
+**Is it slower?** A parallel call is as slow as its slowest worker: a four-model review takes about a minute, a race a few. Use `--bg`, `farmout attach` and `farmout wait` to keep working meanwhile.
 
-**Is it slower?** Often, yes. A parallel call is as slow as its slowest worker. Delegated reading took a minute where Claude alone took 13 seconds in [our benchmark](bench/README.md), but it used 59% fewer of Claude's tokens. A four-model `/farmout:review` takes about a minute. Use `background: true` to keep Claude working while workers run.
-
-**Does it need Claude Code?** No. Any MCP client can be the head (see Quick start), but the slash commands are a Claude Code plugin feature.
+**Does it need Claude Code?** No. The CLI needs only the worker CLIs you have; any MCP client can be the head.
 
 ## Alternatives
 
@@ -251,23 +276,21 @@ Good tools exist in this space; choose by what you need:
 |---|---|
 | [Codex plugin for Claude Code](https://github.com/openai/codex-plugin-cc) | you only need Codex, and want OpenAI's official rescue, session-transfer and background-job commands |
 | [Claude Octopus](https://github.com/nyldn/claude-octopus) | you want structured multi-model councils, many providers and workflow gates, and don't mind a large plugin |
-| [claude-delegator](https://github.com/jarrodwatts/claude-delegator) | you want Codex and Gemini as named experts inside Claude Code |
 | [PAL MCP Server](https://github.com/BeehiveInnovations/pal-mcp-server) (formerly Zen) | you want many workflow tools (consensus, code review, planning) and API-key models, plus its `clink` CLI bridge |
-| [llm-cli-gateway](https://github.com/verivus-oss/llm-cli-gateway) | you need sessions, retries and async jobs across Claude, Codex, Gemini, Grok and Mistral CLIs |
-| [ai-cli-mcp](https://github.com/mkXultra/ai-cli-mcp) | you want CLI agents running in the background from any MCP client |
-| [claude-code-router](https://github.com/musistudio/claude-code-router) | you want to swap the model behind Claude Code rather than delegate to other CLIs |
-| **farmout** | you want every subscription you have (Codex, Gemini through Antigravity, Copilot, a second Claude, local models) working in parallel from one call, read-only by default, in a file small enough to audit |
+| [claude-squad](https://github.com/smtg-ai/claude-squad), [Conductor](https://conductor.build), [vibe-kanban](https://github.com/BloopAI/vibe-kanban) | you want a TUI, desktop app or board to run several interactive agents side by side |
+| [claude-code-router](https://github.com/musistudio/claude-code-router) | you want to swap the model behind Claude Code rather than use other CLIs |
+| **farmout** | you want the subscriptions you already have working together, read-only by default, from a terminal or an MCP client, with sessions, cross-model review, races and pipelines, in standard-library Python you can audit |
 
 ## Roadmap
 
-- More workers, each with verified read-only flags: Gemini CLI (API-key users), OpenCode, Qwen Code, Cursor CLI
-- PyPI package for `uvx` installs
-- Usage log and per-worker stats
-- Rate-limit-aware fallback between workers
+- Skills (the `SKILL.md` format Claude Code, Codex and Copilot share) and hooks on farmout's own events
+- A store for hooks and tools, vetted and pinned by hash; skills from anywhere
+- More workers with verified read-only flags: OpenCode, Qwen Code, Cursor CLI, Gemini CLI for API-key users
+- PyPI release for `uvx farmout`; a CI mode that comments only on findings models agree on
 
 ## Contributing
 
-Issues and PRs are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Tests: `python3 -m unittest discover -s tests -v`. Keep it one file and standard-library only. A new worker is one function plus one `WORKERS` entry. Any change to a worker should state the CLI version you tested and show that its read-only mode really can't write. Report security issues privately: see [SECURITY.md](SECURITY.md).
+Issues and PRs are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Tests: `python3 -m unittest discover -s tests -v` (offline, with fake worker CLIs). The package is standard-library only. A new worker is one function in `farmout/workers.py` plus one `WORKERS` entry; state the CLI version you tested and show that its read-only mode really can't write. Report security issues privately: see [SECURITY.md](SECURITY.md).
 
 ## License
 

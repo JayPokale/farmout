@@ -2,7 +2,7 @@
 
 [English](../README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · **한국어** · [Español](README.es.md)
 
-**의존성 없는 단일 Python 파일로 Claude Code의 단순 반복 작업을 다른 AI 구독 서비스에 병렬로 위임하세요. 기본적으로 읽기 전용으로 안전하게 동작합니다.**
+**구독 중인 모든 AI를 일하게 하세요: Codex, Gemini, GitHub Copilot, 두 번째 Claude 계정, 로컬 모델. 대화를 기억하는 세션, 병렬 코드 리뷰, 테스트가 승자를 정하는 레이스, 파이프라인을 터미널에서도 Claude Code 안에서도 쓸 수 있습니다. 기본은 읽기 전용이고 의존성은 0개입니다.**
 
 [![CI](https://github.com/JayPokale/farmout/actions/workflows/ci.yml/badge.svg)](https://github.com/JayPokale/farmout/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.9%2B-3776ab)
@@ -27,6 +27,28 @@ farmout는 Claude Code를 **헤드(head)** 로 만듭니다. 작업을 계획하
 - 2,000줄 분류 작업은 **임의의 OpenAI 호환 모델**(Ollama, vLLM, OpenRouter, Qwen 등)로 전달됩니다
 
 이 모든 작업은 단 한 번의 툴 호출로 동시에 실행됩니다. 각 워커는 사용자의 구독 계정으로 로그인된 각 벤더의 자체 CLI이므로 CLI 워커에는 API 키가 필요 없습니다.
+
+## 명령줄
+
+farmout은 CLI로도 쓸 수 있습니다. 저장소를 클론한 뒤 `pipx install`로 설치하고(PyPI 배포 예정), `farmout doctor --live`로 워커를 확인하세요:
+
+```bash
+# 모든 모델이 변경 사항을 리뷰하고, 몇 개 모델이 동의했는지와 함께 결과를 합칩니다
+farmout review
+# 각 모델이 자기 worktree에서 시도하고, 테스트가 승자를 고릅니다
+farmout race "tests/test_sync.py의 불안정한 테스트를 결정적으로 만들기" --test "pytest tests/test_sync.py -x"
+# 대화를 기억하는 세션
+farmout run codex "src/dates.py의 parse_date()에 단위 테스트 추가" --isolate -n dates
+farmout send dates "윤년도 다뤄 줘"
+# 패치를 작업 트리에 적용(또는 --pr)
+farmout apply dates
+# 리뷰 → 2개 이상 모델이 동의한 문제 수정 → 수정 리뷰
+farmout pipe run fix
+# 각 구독이 해 준 일
+farmout stats
+```
+
+세션, 파이프라인(단계·게이트·승인이 있는 `.toml` 또는 `.json` 파일), 저장소별 설정(`.farmout/settings.toml`: 코드를 볼 수 있는 제공자, 쓰기 금지, 웹 금지), 한 구독이 사용 한도에 도달하면 다른 워커로 자동 전환, 모든 커밋을 리뷰하는 git 훅은 [영문 README](../README.md)를 참고하세요.
 
 ## 빠른 시작
 

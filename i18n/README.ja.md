@@ -2,7 +2,7 @@
 
 [English](../README.md) · [简体中文](README.zh-CN.md) · **日本語** · [한국어](README.ko.md) · [Español](README.es.md)
 
-**Claude Code の単純作業を、お手持ちの他の AI サブスクリプションに任せましょう。並列実行、デフォルトは読み取り専用、依存ゼロの Python ファイル 1 つで動きます。**
+**契約しているすべての AI サブスクリプションを働かせましょう：Codex、Gemini、GitHub Copilot、2 つ目の Claude アカウント、ローカルモデル。会話を覚えるセッション、並列コードレビュー、テストが勝者を決めるレース、パイプラインを、ターミナルからでも Claude Code の中からでも。デフォルトで読み取り専用、依存関係ゼロ。**
 
 [![CI](https://github.com/JayPokale/farmout/actions/workflows/ci.yml/badge.svg)](https://github.com/JayPokale/farmout/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.9%2B-3776ab)
@@ -27,6 +27,28 @@ farmout は Claude Code を**ヘッド**にします。ヘッドは計画を立�
 - 2,000 行の分類は**任意の OpenAI 互換モデル**(Ollama、vLLM、OpenRouter、Qwen など)に任せます
 
 これらは 1 回のツール呼び出しで同時に実行されます。各ワーカーはベンダー純正の CLI で、あなた自身のサブスクリプションでログインして使うため、CLI ワーカーに API キーは不要です。
+
+## コマンドライン
+
+farmout は CLI としても使えます。リポジトリをクローンして `pipx install` でインストールし（PyPI 版は近日公開）、`farmout doctor --live` で各ワーカーを確認します：
+
+```bash
+# 全モデルが変更をレビューし、何モデルが一致したかを付けて指摘をまとめます
+farmout review
+# 各モデルが専用の worktree で挑戦し、あなたのテストが勝者を決めます
+farmout race "tests/test_sync.py の不安定なテストを決定的にする" --test "pytest tests/test_sync.py -x"
+# 会話を覚えるセッション
+farmout run codex "src/dates.py の parse_date() に単体テストを追加" --isolate -n dates
+farmout send dates "うるう年もカバーして"
+# パッチを作業ツリーに適用（または --pr）
+farmout apply dates
+# レビュー → 2 モデル以上が一致した問題を修正 → 修正をレビュー
+farmout pipe run fix
+# 各サブスクリプションがしてくれたこと
+farmout stats
+```
+
+セッション、パイプライン（ステージ・ゲート・承認を持つ `.toml` または `.json` ファイル）、リポジトリごとの設定（`.farmout/settings.toml`：コードを見てよいプロバイダー、書き込み禁止、Web 禁止）、利用上限に達したワーカーの自動切り替え、すべてのコミットをレビューする git フックについては、[英語版 README](../README.md) を参照してください。
 
 ## クイックスタート
 
