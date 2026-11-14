@@ -1,4 +1,4 @@
-"""Offline tests for server.py: real MCP stdio sessions against fake worker CLIs (fake_cli.py).
+"""Offline tests for the MCP server (server.py): real stdio sessions against fake worker CLIs (fake_cli.py).
 
 No network, logins or real CLIs needed.  Run:  python3 -m unittest discover -s tests -v
 """
@@ -333,6 +333,10 @@ class DelegateTest(Base):
             self.assertEqual(path.read_text(), body)
 
         self.assertTrue(s.delegate({"worker": "nope", "prompt": "x"})[0], "every task failed")
+        _, [(_, ok, path, _)] = s.delegate({"worker": "../../escape", "prompt": "x"})
+        self.assertFalse(ok)
+        self.assertEqual((path.name, path.parent.parent), ("1-unknown.md", self.home / ".cache" / "farmout"),
+                         "a worker name never becomes a path")
         self.assertIn("tasks is empty", s.call("tools/call", call_args())["error"]["message"])
 
     def test_output_is_capped_but_kept_in_full_on_disk(self):
@@ -386,7 +390,7 @@ class DelegateTest(Base):
             wt = Path(re.search(r"worktree (\S+), branch", body).group(1))
             patch = Path(re.search(r"patch (\S+):", body).group(1))
             self.assertEqual(c[w]["cwd"], str(wt))
-            self.assertEqual(wt.parent.parent, repo / ".farmout", "worktrees live in the project, outside .git")
+            self.assertEqual(wt.parent.parent, repo / ".farmout" / "worktrees", "worktrees live in the project, outside .git")
             self.assertEqual(patch.parent, wt.parent)
             self.assertEqual((wt / "app.py").read_text(), "v2, not committed\n", "base includes uncommitted work")
             self.assertEqual((wt / "notes.txt").read_text(), "untracked\n", "base includes untracked files")
@@ -611,14 +615,29 @@ class ApiTest(Base):
 
 
 class RepoTest(unittest.TestCase):
-    def test_server_stays_small_and_stdlib_only(self):
-        src = SERVER.read_text()
-        self.assertLess(src.count("\n"), 400)
-        if hasattr(sys, "stdlib_module_names"):  # Python 3.10+
-            nodes = list(ast.walk(ast.parse(src)))
+    PACKAGE = SERVER.parent / "farmout"
+
+    def test_stdlib_only(self):
+        if not hasattr(sys, "stdlib_module_names"):  # Python 3.10+
+            self.skipTest("needs sys.stdlib_module_names")
+        for f in [SERVER, SERVER.parent / "hooks" / "read_guard.py", *sorted(self.PACKAGE.glob("*.py"))]:
+            nodes = list(ast.walk(ast.parse(f.read_text())))
             mods = {a.name for n in nodes if isinstance(n, ast.Import) for a in n.names}
-            mods |= {n.module for n in nodes if isinstance(n, ast.ImportFrom)}
-            self.assertLessEqual({m.split(".")[0] for m in mods}, set(sys.stdlib_module_names))
+            mods |= {n.module for n in nodes if isinstance(n, ast.ImportFrom) and n.level == 0}
+            self.assertLessEqual({m.split(".")[0] for m in mods} - {"farmout"}, set(sys.stdlib_module_names), f)
+
+    def test_server_is_a_thin_entry_point(self):
+        self.assertLess(SERVER.read_text().count("\n"), 30, "server.py only starts the farmout package")
+
+    def test_review_brief_matches_the_plugin_skill(self):
+        skill = (SERVER.parent / "skills" / "review" / "SKILL.md").read_text()
+        brief = re.search(r"```text\n(.*?)\n```", skill, re.S).group(1)
+        sys.path.insert(0, str(SERVER.parent))
+        try:
+            from farmout.review import BRIEF
+        finally:
+            sys.path.remove(str(SERVER.parent))
+        self.assertEqual(brief, BRIEF)
 
     def test_review_saves_the_diff_and_lists_untracked_files(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -656,9 +675,11 @@ class RepoTest(unittest.TestCase):
             self.assertRegex(head, r"\ndescription: \S", p)
             self.assertIn("disable-model-invocation: true", head, f"{p}: fan-out commands must be typed, not auto-run")
 
-    def test_plugin_version_matches_server(self):
+    def test_versions_match(self):
         plugin = json.loads((SERVER.parent / ".claude-plugin" / "plugin.json").read_text())
-        self.assertIn(f'VERSION = "{plugin["version"]}"', SERVER.read_text())
+        self.assertIn(f'VERSION = "{plugin["version"]}"', (self.PACKAGE / "__init__.py").read_text())
+        pyproject = (SERVER.parent / "pyproject.toml").read_text()
+        self.assertIn(f'version = "{plugin["version"]}"', pyproject)
 
 
 if __name__ == "__main__":

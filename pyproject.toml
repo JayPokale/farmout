@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "farmout"
+version = "0.1.0"
+description = "Hand work to the AI subscriptions you already pay for (Codex, Gemini via Antigravity, GitHub Copilot, a second Claude account, local models): sessions, parallel review and races, pipelines. A CLI and an MCP server."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Jay Pokale" }]
+keywords = ["mcp", "mcp-server", "claude-code", "codex", "gemini", "antigravity", "copilot", "multi-agent", "code-review", "cli"]
+classifiers = [
+    "Environment :: Console",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/JayPokale/farmout"
+Issues = "https://github.com/JayPokale/farmout/issues"
+
+[project.scripts]
+farmout = "farmout.cli:main"
+
+[tool.setuptools]
+packages = ["farmout"]

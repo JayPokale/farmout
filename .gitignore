@@ -1,2 +1,6 @@
 __pycache__/
 bench/results/*/demo-*.jsonl
+build/
+dist/
+*.egg-info/
+.claude/scheduled_tasks.lock
