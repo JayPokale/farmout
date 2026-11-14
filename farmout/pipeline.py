@@ -15,7 +15,7 @@ import signal
 import time
 from pathlib import Path
 
-from . import flows, proc, review, sessions
+from . import flows, hooks, proc, review, sessions, skills
 from .config import CONFIG, STATE, find, project_root, read
 from .workers import ENABLED
 
@@ -132,10 +132,10 @@ def validate(defn, name, source):
             raise ValueError(f"{where}: unknown key(s) {', '.join(sorted(bad))}; known: {', '.join(sorted(KEYS))}")
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", n) or n in seen or n in ("args", "item") or n in params:
             raise ValueError(f"{where}: name must be a unique identifier, not a parameter, 'args' or 'item'")
-        if s.get("skill") and s["skill"] not in SKILLS:
-            raise ValueError(f"{where}: skill must be one of {', '.join(SKILLS)}")
-        if s.get("skill") != "review" and not s.get("prompt"):
-            raise ValueError(f"{where}: needs a prompt" + ("" if s.get("skill") else " (or skill = \"review\")"))
+        if s.get("skill") and not (s["skill"] in SKILLS or skills.NAME.fullmatch(str(s["skill"]))):
+            raise ValueError(f"{where}: skill must be review, ask, race or the name of one of your skills")
+        if (not s.get("skill") or s["skill"] in ("ask", "race")) and not s.get("prompt"):
+            raise ValueError(f"{where}: needs a prompt" + ("" if s.get("skill") else " (or a skill)"))
         if s.get("on", "success") not in ("success", "failure", "always"):
             raise ValueError(f"{where}: on must be success, failure or always")
         if s.get("gate") and not GATE.match(s["gate"]):
@@ -276,20 +276,33 @@ def run_stage(state, s, attempt=1):
     """Run one stage; returns {ok, output, patch, sessions, metrics, note}. A resumed stage's sessions get new names."""
     vals, d = context(state), run_dir(state["id"])
     group = f"{state['id']}-{s['name']}" + (f"-{attempt}" if attempt > 1 else "")
-    out = d / f"{s['name']}.md"
+    out, written = d / f"{s['name']}.md", s  # written: the stage as the pipeline file has it
+    sk = None
+    if s.get("skill") and s["skill"] not in SKILLS:  # one of your skills: its instructions, with the prompt as args
+        sk = skills.get(s["skill"], state["cwd"])
+        mode = str(sk["meta"].get("mode") or "ask")
+        text = "" if s.get("foreach") else skills.render(sk, substitute(s.get("prompt") or "", vals))
+        s = {**s, "skill": {"review": "review", "race": "race"}.get(mode), "prompt": text, "focus": text, "raw": True,
+             "files": (s.get("files") or []) + [sk["dir"]]}
+        if not s.get("worker") and not s.get("workers") and sk["meta"].get("workers"):
+            s["workers"] = sk["meta"]["workers"] if isinstance(sk["meta"]["workers"], list) else [sk["meta"]["workers"]]
+        for k in ("test", "model", "effort", "isolate", "write"):
+            if s.get(k) is None and skills.option(sk, k) is not None:  # a project's or a fetched skill can't add test/write
+                s[k] = skills.option(sk, k)
+    sub = (lambda v: v) if s.get("raw") else (lambda v: substitute(v, vals))  # a skill's own text may hold braces
     iso = worktree_of(state, s["in"]) if s.get("in") else None
     cwd = os.path.join(iso["worktree"], iso.get("rel", ".")) if iso else state["cwd"]
     stage_keys = {st["name"] for st in state["stages"]} | {st["name"] + ".patch" for st in state["stages"]}
-    used = [vals[r] for r in refs([s.get("prompt"), s.get("test")], full=True)  # stage outputs only, not params
+    used = [vals[r] for r in refs([written.get("prompt"), written.get("test")], full=True)  # stage outputs, not params
             if r in stage_keys and r in vals and os.path.isfile(vals[r])]
     files = [substitute(f, vals) for f in s.get("files") or []] + sorted(set(used))
     names = (s.get("workers") or [s.get("worker")]) if (s.get("workers") or s.get("worker")) else flows.default_workers()
     workers, notes = pick([substitute(w, vals) for w in names], distinct=not s.get("foreach"))
-    model, effort, test = substitute(s.get("model"), vals), s.get("effort"), substitute(s.get("test") or "", vals)
+    model, effort, test = sub(s.get("model")), s.get("effort"), sub(s.get("test") or "")
     skill = s.get("skill")
 
     if skill == "review":
-        r = review.review(cwd, workers=workers, focus=substitute(s.get("focus"), vals) or None,
+        r = review.review(cwd, workers=workers, focus=sub(s.get("focus")) or None,
                           since=iso["base"] if iso else None, root=iso["worktree"] if iso else None, group=group)
         out.write_text(review.render(r))
         sessions.write_json(d / f"{s['name']}.json", r)
@@ -297,7 +310,7 @@ def run_stage(state, s, attempt=1):
                 "metrics": review.counts(r), "note": "; ".join(notes + [f"{w} failed" for w in r["failed"]]) or None}
 
     if skill == "race":
-        prompt = substitute(s["prompt"], vals)
+        prompt = sub(s["prompt"])
         _, rows, winner = flows.race(cwd, prompt, workers, test=test or None, group=group, files=files)
         lines = [f"{r['session']}: {'ok' if r['ok'] else 'failed'}, {r['files']} files +{r['added']}/-{r['removed']}"
                  + ("" if r["tests"] is None else f", tests {'passed' if r['tests'] else 'failed'}")
@@ -314,10 +327,11 @@ def run_stage(state, s, attempt=1):
         if not todo:
             return {"ok": False, "output": None, "note": f"no '- item' lines in the output of {s['foreach']}"}
         workers = [workers[i % len(workers)] for i in range(len(todo))]
-        prompts = [substitute(s["prompt"], vals, item) for item in todo]
+        prompts = [skills.render(sk, substitute(written.get("prompt") or "", vals, item)) if sk
+                   else substitute(s["prompt"], vals, item) for item in todo]
         names = {i: f"{group}-{i + 1}" for i in range(len(todo))}
     else:
-        prompts, names = substitute(s["prompt"], vals), None
+        prompts, names = sub(s["prompt"]), None
     results = flows.fan(group, workers, cwd, prompts, files, isolate=bool(s.get("isolate")),
                         write=bool(s.get("write")) and not s.get("isolate"), models={w: model for w in workers} if model else None,
                         effort=effort, fallback=s.get("fallback"), names=names)
@@ -421,6 +435,8 @@ def _execute(run_id, progress):
             if gate_note:
                 st["gate"] = gate_note
             current = None
+            notify(state, "StageEnd", {"stage": st["name"], "status": st["status"], "output": st.get("output"),
+                                       "patch": st.get("patch"), "gate": st.get("gate")}, st)
             save(state)
             progress(st)
     except KeyboardInterrupt:
@@ -435,8 +451,22 @@ def _execute(run_id, progress):
     final = [x["status"] for x in state["stages"]]
     state["status"] = "failed" if "failed" in final else "gated" if "gated" in final else "ok"
     state.pop("pid", None)
+    notify(state, "PipelineEnd", {"status": state["status"],
+                                  "stages": [{k: x.get(k) for k in ("name", "status", "output", "patch")} for x in state["stages"]]})
     save(state)
     return state
+
+
+def notify(state, kind, payload, st=None):
+    """Fire a pipeline event's hooks; failures are noted on the stage (or the run)."""
+    try:
+        _, notes = hooks.fire(kind, {"run": state["id"], "pipeline": state["pipeline"], **payload}, state["cwd"],
+                              subject=state["pipeline"])
+    except Exception as e:
+        notes = [f"{kind} hooks: {type(e).__name__}: {e}"]
+    if notes:
+        target = st if st is not None else state
+        target["note"] = "; ".join(filter(None, [target.get("note")] + notes))
 
 
 def reset(state):

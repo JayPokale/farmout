@@ -11,8 +11,9 @@ import tempfile
 import time
 from pathlib import Path
 
-from . import VERSION, flows, pipeline, proc, review, sessions, usage
-from .config import OUT_DIR, STATE, repo_root
+from . import VERSION, bench, flows, pipeline, proc, review, sessions, skills, store, usage
+from . import hooks as farmout_hooks
+from .config import OUT_DIR, STATE, digest, find, project_root, read, repo_root, settings, trust_file
 from .workers import API_BASE, API_MODEL, ENABLED, SETUP, WORKERS
 
 HOOK_MARK = "# farmout review gate"
@@ -48,10 +49,15 @@ def table(rows):
     return "\n".join("  ".join(str(c).ljust(w) for c, w in zip(r, widths)).rstrip() for r in rows)
 
 
-def read_prompt(words, required=True):
-    """(prompt, extra files). Piped stdin is the prompt when no words are given; otherwise it goes along as a file."""
+def read_prompt(words, required=True, cwd=None):
+    """(prompt, extra files). Piped stdin is the prompt when no words are given; otherwise it goes along as a file.
+    With `redact = true` in the settings, credentials in piped text are replaced before anything is saved."""
     text = " ".join(words).strip()
     piped = sys.stdin.read() if not sys.stdin.isatty() else ""
+    if piped.strip() and redacting(cwd):
+        piped, n = farmout_hooks.redact(piped)
+        if n:
+            err(f"farmout: redacted {n} secret{'s' * (n != 1)} from stdin")
     if piped.strip() and not text:
         return piped, []
     if piped.strip():
@@ -59,6 +65,13 @@ def read_prompt(words, required=True):
     if required and not text:
         raise ValueError("give a prompt, or pipe one in")
     return text, []
+
+
+def redacting(cwd):
+    try:
+        return bool(settings(cwd or os.getcwd()).get("redact"))
+    except Exception:
+        return False
 
 
 def check_workers(names):
@@ -70,7 +83,6 @@ def check_workers(names):
 
 def auto_worker(cwd):
     """The first allowed worker that isn't at a usage limit: your fallback order first, then the rest."""
-    from .config import settings
     s, limited = settings(cwd), usage.limits()
     allowed = [w for w in (s.get("fallback") or []) + list(ENABLED) if w in ENABLED and w in s.get("workers", ENABLED)]
     pick = next((w for w in allowed if w != "api" and w not in limited), None) or next(iter(allowed), None)
@@ -104,7 +116,7 @@ def send_and_show(a, name, prompt, files, attach=()):
 
 
 def cmd_run(a):
-    prompt, extra = read_prompt(a.prompt)
+    prompt, extra = read_prompt(a.prompt, cwd=a.cwd)
     worker = auto_worker(a.cwd) if a.worker == "auto" else check_workers([a.worker])[0]
     meta = sessions.create(worker, a.cwd, name=a.name, write=a.write, isolate=a.isolate, model=a.model,
                            effort=a.effort, fallback=split(a.fallback) or None)
@@ -114,13 +126,13 @@ def cmd_run(a):
 
 
 def cmd_send(a):
-    prompt, extra = read_prompt(a.message)
+    prompt, extra = read_prompt(a.message, cwd=a.cwd)
     sessions.load(a.session)
     return send_and_show(a, a.session, prompt, a.file + extra, a.attach)
 
 
 def cmd_fork(a):
-    prompt, extra = read_prompt(a.message)
+    prompt, extra = read_prompt(a.message, cwd=a.cwd)
     if a.worker:
         check_workers([a.worker])
     meta, prompt, files = sessions.fork(a.session, prompt, a.name, a.worker)
@@ -129,40 +141,69 @@ def cmd_fork(a):
     return send_and_show(a, meta["name"], prompt, files + a.file + extra)
 
 
-def cmd_ask(a):
-    prompt, extra = read_prompt(a.prompt)
-    workers = check_workers(split(a.workers)) or flows.default_workers()
-    group, results = flows.ask(a.cwd, prompt, workers, a.file + extra)
+def answers(rounds):
+    return [[{"session": n, "worker": r.get("worker"), "status": r["status"], "secs": r.get("secs"),
+              "text": flows.text(r)} for n, r in results] for results in rounds]
+
+
+def show_answers(a, group, rounds):
     if a.json:
-        emit(a, {"group": group, "answers": [{"session": n, "worker": r.get("worker"), "status": r["status"],
-                                              "secs": r.get("secs"), "text": flows.text(r)} for n, r in results]})
+        emit(a, {"group": group, "answers": answers(rounds)[-1], "rounds": answers(rounds)})
     else:
-        for name, rec in results:
-            print(f"── {rec.get('worker')} · {rec['status']} · {rec.get('secs', '?')}s · {name} " + "─" * 20)
-            print(flows.text(rec).rstrip() + "\n")
+        for i, results in enumerate(rounds, 1):
+            if len(rounds) > 1:
+                print(f"═══ round {i}{' (final)' if i == len(rounds) else ''} " + "═" * 30)
+            for name, rec in results:
+                print(f"── {rec.get('worker')} · {rec['status']} · {rec.get('secs', '?')}s · {name} " + "─" * 20)
+                print(flows.text(rec).rstrip() + "\n")
         err(f"Follow up with one of them: farmout send {group}-<worker> \"...\"")
-    return 0 if any(r["status"] == "ok" for _, r in results) else 1
+    return 0 if any(r["status"] == "ok" for _, r in rounds[-1]) else 1
 
 
-def cmd_review(a):
-    workers = check_workers(split(a.workers)) or None
-    r = review.review(a.cwd, workers=workers, base=a.base, staged=a.staged, focus=" ".join(a.focus) or None)
-    bad = review.failing(r, a.min_agree, a.fail_on)
+def cmd_ask(a):
+    prompt, extra = read_prompt(a.prompt, cwd=a.cwd)
+    workers = check_workers(split(a.workers)) or flows.default_workers()
+    if a.debate:
+        group, rounds = flows.debate(a.cwd, prompt, workers, a.file + extra, rounds=max(2, a.rounds))
+    else:
+        group, results = flows.ask(a.cwd, prompt, workers, a.file + extra)
+        rounds = [results]
+    return show_answers(a, group, rounds)
+
+
+def show_review(a, r, min_agree=1, fail_on="never"):
+    bad = review.failing(r, min_agree, fail_on)
     if a.json:
         emit(a, {**r, "failing": len(bad)})
     else:
-        print(review.render(r, a.min_agree, shutil.get_terminal_size((120, 20)).columns))
+        print(review.render(r, min_agree, shutil.get_terminal_size((120, 20)).columns))
         if bad:
-            err(f"farmout review: {len(bad)} finding(s) at {a.fail_on} or worse, flagged by {a.min_agree}+ models")
+            err(f"farmout review: {len(bad)} finding(s) at {fail_on} or worse, flagged by {min_agree}+ models")
     if not r["empty"] and not r["workers"]:
         return 1
     return 1 if bad else 0
 
 
+def cmd_review(a):
+    workers = check_workers(split(a.workers)) or None
+    r = review.review(a.cwd, workers=workers, base=a.base, staged=a.staged, focus=" ".join(a.focus) or None)
+    return show_review(a, r, a.min_agree, a.fail_on)
+
+
 def cmd_race(a):
-    task, extra = read_prompt(a.task)
+    task, extra = read_prompt(a.task, cwd=a.cwd)
     workers = check_workers(split(a.workers)) or flows.default_workers()
     group, rows, winner = flows.race(a.cwd, task, workers, test=a.test, files=a.file + extra)
+    return show_race(a, group, rows, winner)
+
+
+def cmd_fix_pr(a):
+    workers = check_workers(split(a.workers)) or flows.default_workers()
+    group, rows, winner = flows.fix_pr(a.cwd, a.number, workers, test=a.test)
+    return show_race(a, group, rows, winner)
+
+
+def show_race(a, group, rows, winner):
     applied = None
     if a.apply and winner:
         try:
@@ -189,17 +230,33 @@ def cmd_race(a):
     return 0 if winner else 1
 
 
-def cmd_ls(a):
+def ls_rows(a):
     rows = [sessions.summary(sessions.load(n)) for n in sessions.names()]
-    rows = rows if a.all else rows[-a.limit:]
-    if a.json:
-        return emit(a, rows)
+    return rows if a.all else rows[-a.limit:]
+
+
+def ls_text(rows):
     if not rows:
-        return print("No sessions yet. Start one: farmout run <worker> \"<prompt>\"")
-    print(table([("NAME", "WORKER", "STATE", "TURNS", "AGE", "WHERE")] +
-                [(r["name"], r["worker"], r["state"] + (f" (+{r['queued']})" if r["queued"] and r["state"] == "running" else ""),
-                  r["turns"], ago(r["created"]), short(r["cwd"]) + (f" [{r['branch']}]" if r["branch"] else ""))
-                 for r in rows]))
+        return "No sessions yet. Start one: farmout run <worker> \"<prompt>\""
+    return table([("NAME", "WORKER", "STATE", "TURNS", "AGE", "WHERE")] +
+                 [(r["name"], r["worker"], r["state"] + (f" (+{r['queued']})" if r["queued"] and r["state"] == "running" else ""),
+                   r["turns"], ago(r["created"]), short(r["cwd"]) + (f" [{r['branch']}]" if r["branch"] else ""))
+                  for r in rows])
+
+
+def cmd_ls(a):
+    if a.json:
+        return emit(a, ls_rows(a))
+    if not a.watch:
+        return print(ls_text(ls_rows(a)))
+    try:  # a dashboard: redraw until Ctrl-C
+        while True:
+            sys.stdout.write("\033[H\033[2J" + status_line() + f"   ({time.strftime('%H:%M:%S')}, Ctrl-C to quit)\n\n"
+                             + ls_text(ls_rows(a)) + "\n")
+            sys.stdout.flush()
+            time.sleep(a.interval)
+    except KeyboardInterrupt:
+        return 0
 
 
 def print_turn(r):
@@ -297,10 +354,212 @@ def cmd_diff(a):
 
 def cmd_apply(a):
     if a.pr:
-        url = flows.pull_request(a.session)
-        return emit(a, {"session": a.session, "pull_request": url}, url)
-    msg = flows.apply(a.session)
+        if len(a.sessions) != 1:
+            raise ValueError("--pr opens one pull request: give one session")
+        url = flows.pull_request(a.sessions[0])
+        return emit(a, {"session": a.sessions[0], "pull_request": url}, url)
+    done = []  # several patches land in order, and the first that doesn't apply stops the rest
+    for name in a.sessions:
+        try:
+            msg = flows.apply(name)
+        except (RuntimeError, ValueError) as e:
+            raise RuntimeError(f"{name}: {e}" + (f"\n(already applied: {', '.join(done)}; `farmout undo` takes them back)"
+                                                 if done else "")) from None
+        done.append(name)
+        if not a.json:
+            print(msg)
+    if a.json:
+        emit(a, {"applied": done})
+
+
+def cmd_undo(a):
+    msg = flows.undo(a.session)
     emit(a, {"session": a.session, "result": msg}, msg)
+
+
+def export_html(name, meta, recs):
+    import html
+    style = ("body{font:15px/1.55 system-ui,sans-serif;max-width:62rem;margin:2rem auto;padding:0 1rem;color:#1f2328}"
+             "pre{white-space:pre-wrap;background:#f6f8fa;padding:.8rem 1rem;border-radius:6px}h2{margin-top:2.2rem}"
+             "@media(prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}pre{background:#161b22}}")
+    parts = ["<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>",
+             f"<title>farmout {html.escape(name)}</title><style>{style}</style>",
+             f"<h1>farmout session {html.escape(name)}</h1><p>{html.escape(meta['worker'])} · {html.escape(meta['cwd'])}</p>"]
+    for r in recs:
+        head = f"Turn {r['n']} · {r.get('worker')} · {r['status']}" + (f" · {r['secs']}s" if r.get("secs") is not None else "")
+        parts.append(f"<section><h2>{html.escape(head)}</h2><h3>Prompt</h3><pre>{html.escape(r['prompt'])}</pre>"
+                     f"<h3>Reply</h3><pre>{html.escape(flows.text(r))}</pre></section>")
+    return "".join(parts) + "\n"
+
+
+def cmd_export(a):
+    meta = sessions.load(a.session)
+    recs = sessions.turns(a.session)
+    text = export_html(a.session, meta, recs) if a.html else f"# farmout session {a.session} ({meta['worker']})\n\n" + sessions.transcript(a.session)
+    if a.output:
+        Path(a.output).write_text(text)
+        return print(f"wrote {a.output}")
+    sys.stdout.write(text)
+
+
+def status_line():
+    names = sessions.names()
+    running = [n for n in names if sessions.busy(n)]
+    queued = sum(len(sessions.pending(n)) for n in names)
+    bits = [f"{len(running)} running"] if running else []
+    bits += [f"{queued} queued"] if queued else []
+    bits += [f"{st['id']} {pipeline.status(st)}" for st in pipeline.runs() if pipeline.status(st) in ("running", "waiting")]
+    bits += [f"{w} limited till {time.strftime('%H:%M', time.localtime(u))}" for w, u in usage.limits().items()]
+    return "farmout: " + (" · ".join(bits) if bits else "idle")
+
+
+def cmd_status(a):
+    if a.json:
+        names = sessions.names()
+        return emit(a, {"running": [n for n in names if sessions.busy(n)],
+                        "queued": sum(len(sessions.pending(n)) for n in names), "limited": usage.limits(),
+                        "pipelines": [{"run": st["id"], "status": pipeline.status(st)} for st in pipeline.runs()
+                                      if pipeline.status(st) in ("running", "waiting")]})
+    print(status_line())
+    if not a.line:
+        for n in sessions.names():
+            if sessions.busy(n):
+                print(f"  {n} ({sessions.load(n)['worker']}) running")
+
+
+def cmd_trust(a):
+    data = sessions.read_json(trust_file(), {}) or {}
+    if a.list:
+        return print("\n".join(data) or "You haven't trusted any project's settings.")
+    root = project_root(a.cwd)
+    if a.revoke:
+        data.pop(str(root), None)
+        trust_file().parent.mkdir(parents=True, exist_ok=True)
+        trust_file().write_text(json.dumps(data, indent=1))
+        return print(f"{root}'s hooks won't run any more.")
+    f = find(root / ".farmout", "settings")
+    if not f:
+        raise ValueError(f"{root} has no .farmout/settings to trust")
+    hooks = read(f).get("hooks") or []
+    print(f"Trusting {f}." + ("" if hooks else " It defines no hooks."))
+    for h in hooks:
+        print(f"  {h.get('event')}: {h.get('command')}" + (f"   (matching {h['matcher']})" if h.get("matcher") else ""))
+    data[str(root)] = digest(f)
+    trust_file().parent.mkdir(parents=True, exist_ok=True)
+    trust_file().write_text(json.dumps(data, indent=1))
+    print("These run on farmout's events in this project. If the file changes, you'll be asked to trust it again.")
+
+
+def cmd_hooks(a):
+    s = settings(a.cwd)
+    hs = farmout_hooks.configured(a.cwd, s)
+    if a.json:
+        return emit(a, {"hooks": hs, "untrusted": s.get("untrusted")})
+    print(table([("EVENT", "COMMAND", "MATCHER", "FROM")] +
+                [(h["event"], h["command"], h.get("matcher") or "", short(h["origin"])) for h in hs]) if hs
+          else "No hooks. Add [[hooks]] to ~/.config/farmout/settings.toml, or `farmout store ls` for ready-made ones.")
+    if s.get("untrusted"):
+        print(f"{s['untrusted']} defines hooks you haven't trusted; they don't run until you `farmout trust`")
+
+
+def cmd_skill(a):
+    if a.scmd == "ls":
+        found = skills.available(a.cwd)
+        if a.json:
+            return emit(a, [{k: v for k, v in sk.items() if k != "body"} for sk in found.values()])
+        return print(table([("SKILL", "MODE", "FROM", "DESCRIPTION")] +
+                           [(n, sk["meta"].get("mode") or "ask", sk["origin"], sk["description"][:70]) for n, sk in sorted(found.items())])
+                     if found else "No skills yet. `farmout store ls`, or `farmout skill add <git-url|path|url>`.")
+    if a.scmd == "show":
+        sk = skills.get(a.skill, a.cwd)
+        return print(f"{sk['path']}\n\n" + Path(sk["path"]).read_text(errors="replace"))
+    if a.scmd == "add":
+        name, dest, notes = skills.add(a.source, a.name, a.path, a.ref, a.force)
+        print(f"Installed skill {name} in {dest}. Run it: farmout {name} [args]" + "".join(f"\nNote: {n}" for n in notes))
+        return 0
+    if a.scmd == "rm":
+        skills.remove(a.skill)
+        return print(f"removed {a.skill}")
+    if a.scmd == "run":
+        text, extra = read_prompt(a.args, required=False, cwd=a.cwd)
+        sk = skills.get(a.skill, a.cwd)
+        mode, result = skills.run(sk, a.cwd, text, workers=check_workers(split(a.workers)) or None, files=a.file + extra,
+                                  write=a.write or None, isolate=a.isolate or None, test=a.test, model=a.model)
+        if mode == "review":
+            return show_review(a, result, a.min_agree, a.fail_on)
+        if mode == "race":
+            return show_race(a, *result)
+        group, results = result
+        if len(results) == 1 and not a.json:
+            return show_turn(a, results[0][0], results[0][1])
+        return show_answers(a, group, [results])
+    raise ValueError("skill needs an action: ls, show, run, add or rm")
+
+
+def cmd_store(a):
+    where = store.url(a.cwd)
+    if a.tcmd == "ls":
+        where, entries = store.index(where)
+        have = store.installed()
+        if a.json:
+            return emit(a, {"store": where, "entries": entries})
+        print(f"{where}\n" + table([("NAME", "KIND", "VERSION", "INSTALLED", "DESCRIPTION")] +
+                                   [(e["name"], e["kind"], e.get("version", ""), (have.get(e["name"]) or (0, {}))[1].get("version", ""),
+                                     e.get("description", "")[:70]) for e in entries]))
+        return 0
+    if a.tcmd == "show":
+        where, e = store.entry(a.name, where)
+        print(json.dumps({k: v for k, v in e.items() if k != "files"}, indent=1))
+        for rel, data in store.download(where, e):
+            print(f"\n── {rel} (sha256 verified) " + "─" * 20 + "\n" + data.decode(errors="replace").rstrip())
+        return 0
+    if a.tcmd == "add":
+        e, dest = store.add(a.name, where, force=a.force)
+        how = {"skill": f"farmout {e['name']} [args]", "hook": "it runs on " + ", ".join(e.get("hook", {}).get("events", [])),
+               "tool": f"farmout tool run {e['name']}"}[e["kind"]]
+        return print(f"Installed {e['kind']} {e['name']} {e.get('version', '')} in {dest} (every file's SHA-256 checked); {how}.")
+    if a.tcmd == "rm":
+        return print(f"removed {store.remove(a.name)} {a.name}")
+    if a.tcmd == "update":
+        updated = []
+        for name, (kind, meta, _) in store.installed().items():
+            try:
+                _, e = store.entry(name, where)
+            except KeyError:
+                continue
+            if e.get("version") != meta.get("version"):
+                store.add(name, where)
+                updated.append(f"{name} {meta.get('version')} -> {e.get('version')}")
+        return print("\n".join(updated) or "Everything installed from the store is up to date.")
+    raise ValueError("store needs an action: ls, show, add, rm or update")
+
+
+def cmd_tool(a):
+    if a.tcmd == "ls":
+        found = store.tools()
+        return print("\n".join(f"{n:<16} {cmd}" for n, cmd in found.items()) or "No tools. `farmout store ls` lists some.")
+    if a.tcmd == "run":
+        return store.run_tool(a.tool, a.args, a.cwd)
+    raise ValueError("tool needs an action: ls or run")
+
+
+def cmd_bench(a):
+    workers = check_workers(split(a.workers)) or None
+    n = len(workers or flows.default_workers())
+    if not a.json:
+        err(f"farmout bench: up to {a.commits} commits x {n} workers = up to {a.commits * n} reviews on your subscriptions")
+    rows, report = bench.run(a.cwd, a.commits, workers, a.scan, progress=(lambda m: None) if a.json else err)
+    board = bench.scoreboard(rows)
+    if a.json:
+        return emit(a, {"commits": rows, "scoreboard": [{"worker": w, "found": f, "of": o, "failed": x} for w, f, o, x in board],
+                        "report": str(report)})
+    print(table([("WORKER", "FOUND", "FAILED")] + [(w, f"{f}/{o}", x) for w, f, o, x in board]))
+    print()
+    ws = [w for w, *_ in board]
+    print(table([("COMMIT", "SUBJECT", *ws)] + [(r["commit"][:9], r["subject"][:48],
+                                                 *("✓" if r["found"].get(w) else "x" if w in r["failed"] else "·" for w in ws))
+                                                for r in rows]))
+    print(f"\n✓ found the bug   · missed it   x failed.  Report: {report}")
 
 
 def progress(st):
@@ -497,6 +756,8 @@ def parser():
     k = add("ask", "ask every worker the same question in parallel", cmd_ask, (common, files))
     k.add_argument("prompt", nargs="*", help="the question; or pipe it in")
     k.add_argument("-w", "--workers", metavar="W1,W2", help="only these workers")
+    k.add_argument("--debate", action="store_true", help="then each reads the others' answers and revises or defends its own")
+    k.add_argument("--rounds", type=int, default=2, help="debate rounds, counting the first answer (default 2)")
 
     v = add("review", "every worker reviews your change; findings merged with agreement counts", cmd_review)
     v.add_argument("focus", nargs="*", help="optional focus, e.g. security")
@@ -514,9 +775,17 @@ def parser():
     c.add_argument("--test", metavar="CMD", help="command that must pass, run in each worktree, e.g. 'pytest -x'")
     c.add_argument("--apply", action="store_true", help="apply the winner's patch to your tree")
 
+    fp = add("fix-pr", "a pull request's review comments and failing checks become a race (check it out first)", cmd_fix_pr)
+    fp.add_argument("number", type=int)
+    fp.add_argument("-w", "--workers", metavar="W1,W2", help="only these workers")
+    fp.add_argument("--test", metavar="CMD", help="command that must pass in each worktree")
+    fp.add_argument("--apply", action="store_true", help="apply the winner's patch to your tree")
+
     ls = add("ls", "list sessions", cmd_ls)
     ls.add_argument("--all", action="store_true", help="every session, not just the newest")
     ls.add_argument("-n", dest="limit", type=int, default=30, help="how many to show (default 30)")
+    ls.add_argument("--watch", action="store_true", help="keep redrawing, as a dashboard (Ctrl-C to quit)")
+    ls.add_argument("--interval", type=float, default=2, help="seconds between redraws (default 2)")
     lg = add("log", "show a session's conversation", cmd_log)
     lg.add_argument("session")
     lg.add_argument("--last", action="store_true", help="only the last turn")
@@ -532,9 +801,16 @@ def parser():
     rm.add_argument("sessions", nargs="*")
     rm.add_argument("--idle", action="store_true", help="every session that isn't running")
     add("diff", "show an isolated session's patch", cmd_diff).add_argument("session")
-    ap = add("apply", "apply an isolated session's patch to your tree, or open a pull request", cmd_apply)
-    ap.add_argument("session")
+    ap = add("apply", "apply isolated sessions' patches to your tree in order, or open a pull request", cmd_apply)
+    ap.add_argument("sessions", nargs="+")
     ap.add_argument("--pr", action="store_true", help="instead: commit it on a new branch, push, and open a PR with gh")
+    add("undo", "take back a patch `farmout apply` applied", cmd_undo).add_argument("session")
+    ex = add("export", "a session's conversation as Markdown (or --html), to share", cmd_export)
+    ex.add_argument("session")
+    ex.add_argument("--html", action="store_true")
+    ex.add_argument("-o", "--output", metavar="FILE")
+    stt = add("status", "what's running, queued, waiting or at a usage limit", cmd_status)
+    stt.add_argument("--line", action="store_true", help="one line, for a shell prompt or a tmux status bar")
 
     pp = add("pipe", "pipelines: stages that start when the previous one ends", cmd_pipe, ())
     psub = pp.add_subparsers(dest="pcmd", metavar="<action>")
@@ -557,6 +833,55 @@ def parser():
 
     sa = add("stats", "what each subscription did for you", cmd_stats)
     sa.add_argument("--days", type=int, default=7)
+    bn = add("bench", "which of your subscriptions reviews best on your own code (replays past bug fixes)", cmd_bench)
+    bn.add_argument("-n", "--commits", type=int, default=3, help="how many bug-fix commits to replay (default 3)")
+    bn.add_argument("-w", "--workers", metavar="W1,W2", help="only these workers")
+    bn.add_argument("--scan", type=int, default=400, help="how far back to look for them (default 400 commits)")
+
+    sk = add("skill", "skills: SKILL.md folders run on your workers (`farmout <skill>` for short)", cmd_skill, ())
+    ssub = sk.add_subparsers(dest="scmd", metavar="<action>")
+    ssub.add_parser("ls", parents=[common], help="list skills")
+    ssub.add_parser("show", parents=[common], help="print a skill").add_argument("skill")
+    sr = ssub.add_parser("run", parents=[common, files], help="run a skill")
+    sr.add_argument("skill")
+    sr.add_argument("args", nargs="*", help="arguments ($ARGUMENTS); or pipe them in")
+    sr.add_argument("-w", "--workers", metavar="W1,W2", help="override the skill's workers")
+    sr.add_argument("--write", action="store_true")
+    sr.add_argument("--isolate", action="store_true")
+    sr.add_argument("--test", metavar="CMD", help="race mode: the command that picks the winner")
+    sr.add_argument("--model")
+    sr.add_argument("--min-agree", type=int, default=1, help="review mode")
+    sr.add_argument("--fail-on", choices=["high", "medium", "low", "never"], default="never", help="review mode")
+    sr.add_argument("--apply", action="store_true", help="race mode: apply the winner")
+    sad = ssub.add_parser("add", parents=[common], help="install a skill from a git repo, a folder or a SKILL.md URL")
+    sad.add_argument("source")
+    sad.add_argument("--name", help="install under this name")
+    sad.add_argument("--path", help="the skill's folder inside the source, if it holds several")
+    sad.add_argument("--ref", help="git branch or tag")
+    sad.add_argument("--force", action="store_true", help="replace an installed skill of that name")
+    ssub.add_parser("rm", parents=[common], help="remove an installed skill").add_argument("skill")
+
+    so = add("store", "reviewed skills, hooks and tools, every file pinned by SHA-256", cmd_store, ())
+    tsub = so.add_subparsers(dest="tcmd", metavar="<action>")
+    tsub.add_parser("ls", parents=[common], help="list the store")
+    for name, help in (("show", "print an entry and its files"), ("add", "install an entry"), ("rm", "remove an installed entry")):
+        x = tsub.add_parser(name, parents=[common], help=help)
+        x.add_argument("name")
+        if name == "add":
+            x.add_argument("--force", action="store_true", help="replace a skill, hook or tool of yours with that name")
+    tsub.add_parser("update", parents=[common], help="reinstall entries that have a new version")
+    to = add("tool", "tools from the store: `farmout tool run <name> [args]`", cmd_tool, ())
+    tosub = to.add_subparsers(dest="tcmd", metavar="<action>")
+    tosub.add_parser("ls", parents=[common], help="list installed tools")
+    trn = tosub.add_parser("run", parents=[common], help="run a tool")
+    trn.add_argument("tool")
+    trn.add_argument("args", nargs=argparse.REMAINDER, help="passed to the tool")
+
+    tr = add("trust", "let this project's .farmout/settings hooks run (pinned to the file as it is now)", cmd_trust)
+    tg = tr.add_mutually_exclusive_group()
+    tg.add_argument("--revoke", action="store_true")
+    tg.add_argument("--list", action="store_true", help="every project you trust")
+    add("hooks", "the hooks that run here, and where they come from", cmd_hooks)
     hk = add("hook", "install a git hook that reviews every commit (or push)", cmd_hook, ())
     hsub = hk.add_subparsers(dest="hcmd", metavar="<action>")
     for name in ("install", "uninstall"):
@@ -575,6 +900,13 @@ def parser():
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     p = parser()
+    commands = next(x for x in p._actions if isinstance(x, argparse._SubParsersAction)).choices
+    if argv and argv[0] not in commands and not argv[0].startswith("-"):  # `farmout <skill> [args]`
+        try:
+            if argv[0] in skills.available(os.getcwd()):
+                argv = ["skill", "run", *argv]
+        except Exception:
+            pass
     a, extra = p.parse_known_args(argv)
     if extra:  # older argparse won't take free text after an option (`send s --attach x "msg"`): give it back
         field = next((f for f in ("prompt", "message", "task", "focus", "args") if hasattr(a, f)), None)
@@ -591,7 +923,8 @@ def main(argv=None):
         return sessions.runner_main(a.target)
     if a.cmd == "_pipe":
         return pipeline.runner_main(a.target)
-    if a.cmd == "pipe" and not a.pcmd or a.cmd == "hook" and not a.hcmd:
+    action = {"pipe": "pcmd", "hook": "hcmd", "skill": "scmd", "store": "tcmd", "tool": "tcmd"}.get(a.cmd)
+    if action and not getattr(a, action, None):
         p.parse_args([a.cmd, "--help"])
     a.cwd = os.path.realpath(os.path.expanduser(a.cwd)) if getattr(a, "cwd", None) else os.getcwd()
     a.json = getattr(a, "json", False)

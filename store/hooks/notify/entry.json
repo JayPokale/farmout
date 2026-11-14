@@ -1,0 +1,3 @@
+{"kind": "hook", "version": "1.0.0",
+ "description": "Tells you when a session's turn or a pipeline ends: a desktop notification, and a push to your phone through ntfy if NTFY_TOPIC is set.",
+ "hook": {"events": ["TaskEnd", "PipelineEnd"], "command": "{python} {dir}/notify.py", "timeout": 15}}

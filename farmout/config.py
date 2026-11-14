@@ -3,8 +3,10 @@
 State (sessions, pipeline runs, the usage log) lives in ~/.local/state/farmout, one-shot `delegate` results in
 ~/.cache/farmout, and your own settings and pipelines in ~/.config/farmout (XDG variables are respected).
 """
+import hashlib
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -16,7 +18,10 @@ def _dir(var, default):
 STATE = Path(os.environ["FARMOUT_STATE"]).expanduser() if os.environ.get("FARMOUT_STATE") else _dir("XDG_STATE_HOME", "~/.local/state")
 OUT_DIR = _dir("XDG_CACHE_HOME", "~/.cache")
 CONFIG = _dir("XDG_CONFIG_HOME", "~/.config")
-SETTINGS = {"workers": list, "write": bool, "web": bool, "fallback": list, "timeout": int}
+SETTINGS = {"workers": list, "write": bool, "web": bool, "fallback": list, "timeout": int, "hooks": list,
+            "redact": bool, "store": str}
+EVENTS = ("SessionStart", "MessageReceived", "TaskStart", "TaskEnd", "StageEnd", "PipelineEnd")
+HOOK_KEYS = {"event", "command", "matcher", "timeout"}
 
 
 def read(path):
@@ -62,12 +67,46 @@ def project_root(cwd):
     return common.parent if common.name == ".git" else Path(top)
 
 
+def check_hooks(p, hooks):
+    for i, h in enumerate(hooks, 1):
+        if not isinstance(h, dict) or h.get("event") not in EVENTS or not isinstance(h.get("command"), str):
+            raise ValueError(f"{p}: hooks entry {i} needs an event ({', '.join(EVENTS)}) and a command")
+        if set(h) - HOOK_KEYS:
+            raise ValueError(f"{p}: hooks entry {i}: unknown key(s) {', '.join(sorted(set(h) - HOOK_KEYS))}")
+        if "timeout" in h and (not isinstance(h["timeout"], int) or isinstance(h["timeout"], bool) or h["timeout"] <= 0):
+            raise ValueError(f"{p}: hooks entry {i}: timeout must be a positive number of seconds")
+        if h.get("matcher") is not None:
+            try:
+                re.compile(h["matcher"])
+            except (re.error, TypeError) as e:
+                raise ValueError(f"{p}: hooks entry {i}: matcher isn't a valid regex: {e}") from None
+
+
+def digest(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def trust_file():
+    return CONFIG / "trusted.json"
+
+
+def trusted(root, path):
+    """Whether you trusted this repository's settings file as it is now (`farmout trust`)."""
+    try:
+        data = json.loads(trust_file().read_text())
+    except (OSError, ValueError):
+        return False
+    return isinstance(data, dict) and data.get(str(root)) == digest(path)
+
+
 def settings(cwd):
     """~/.config/farmout/settings, then the repo's .farmout/settings (.toml or .json). Neither can widen what the
-    other allows: worker lists intersect, write or web access is off if either turns it off, and the shorter
-    timeout wins. The repo's fallback order replaces yours, but only allowed workers are ever used."""
-    out = {}
-    for directory in (CONFIG, project_root(cwd) / ".farmout"):
+    other allows: worker lists intersect, write or web access is off if either turns it off, redaction is on if
+    either turns it on, and the shorter timeout wins. The repo's fallback order replaces yours, but only allowed
+    workers are ever used. A repo's hooks run only once you trust its settings file (`farmout trust`), and only
+    your own settings can name a store."""
+    out, root = {"hooks": []}, project_root(cwd)
+    for directory, mine in ((CONFIG, True), (root / ".farmout", False)):
         p = find(directory, "settings")
         if not p:
             continue
@@ -87,4 +126,14 @@ def settings(cwd):
             out["timeout"] = min(out.get("timeout", data["timeout"]), data["timeout"])
         if "fallback" in data:
             out["fallback"] = data["fallback"]
+        if "redact" in data:
+            out["redact"] = out.get("redact", False) or data["redact"]
+        if "store" in data and mine:
+            out["store"] = data["store"]
+        if "hooks" in data:
+            check_hooks(p, data["hooks"])
+            if mine or trusted(root, p):
+                out["hooks"] += [{**h, "origin": str(p)} for h in data["hooks"]]
+            else:
+                out["untrusted"] = str(p)
     return out

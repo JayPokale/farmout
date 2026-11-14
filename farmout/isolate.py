@@ -13,6 +13,7 @@ from pathlib import Path
 CACHES = ("__pycache__", ".pyc", ".pytest_cache", "node_modules")
 EXCLUDE = "/.farmout/worktrees/"
 QUIET = {**os.environ, "FARMOUT_SKIP": "1"}  # farmout's own git hook must not review farmout's internal commits
+NO_HOOKS = ("-c", "core.hooksPath=/dev/null")  # nor may any other hook (post-checkout, post-commit) run for them
 
 
 def git(cwd, *args, stdin=None, binary=False, env=None):
@@ -73,7 +74,7 @@ def make(cwd, label, branch):
         if EXCLUDE not in text:  # keep git status clean; .farmout/settings and pipelines stay committable
             exclude.parent.mkdir(exist_ok=True)
             exclude.write_text(text + f"\n{EXCLUDE}\n")
-        git(top, "worktree", "add", "-q", "-b", branch, str(wt), "HEAD")
+        git(top, *NO_HOOKS, "worktree", "add", "-q", "-b", branch, str(wt), "HEAD")
         base = git(top, "diff", "HEAD", "--binary", binary=True)
         untracked = [f for f in git(top, "ls-files", "--others", "--exclude-standard", "-z").split("\0") if f]
         extra = included(top)
@@ -84,8 +85,8 @@ def make(cwd, label, branch):
             copy(Path(top) / f, wt / f)
         if base or untracked:
             git(wt, "add", "-A")
-            git(wt, "-c", "user.name=farmout", "-c", "user.email=farmout@localhost", "commit", "-q", "--no-verify",
-                "-m", "your uncommitted changes", env=QUIET)
+            git(wt, *NO_HOOKS, "-c", "user.name=farmout", "-c", "user.email=farmout@localhost", "commit", "-q",
+                "--no-verify", "-m", "your uncommitted changes", env=QUIET)
         for f in extra:  # ignored, so they stay out of the base commit and of the patch
             copy(Path(top) / f, wt / f)
     except Exception:  # don't leave a half-made worktree and branch behind

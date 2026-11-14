@@ -1,0 +1,3 @@
+{"kind": "tool", "version": "1.0.1",
+ "description": "Deletes sessions with no turn in more than N days (default 14), with their worktrees and branches. --dry-run lists them first.",
+ "tool": {"command": "{python} {dir}/prune.py"}}

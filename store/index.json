@@ -1,0 +1,88 @@
+{
+ "version": 1,
+ "entries": [
+  {
+   "name": "security-review",
+   "kind": "skill",
+   "version": "1.0.0",
+   "description": "Every worker reviews your change for security problems only; findings merged with agreement counts, like farmout review.",
+   "dir": "skills/security-review",
+   "files": [
+    {
+     "path": "SKILL.md",
+     "sha256": "b2f91d35a16fd2158cc365dbd75e482c74f28df0625740ff4d7ea042af2a54ce"
+    }
+   ]
+  },
+  {
+   "name": "test-gaps",
+   "kind": "skill",
+   "version": "1.0.0",
+   "description": "Lists the behaviours in your uncommitted change that no test covers, with the test to add for each.",
+   "dir": "skills/test-gaps",
+   "files": [
+    {
+     "path": "SKILL.md",
+     "sha256": "dbdf1495d472c1752c7d1889a614ed9c6f478b9afc16c0b0888fbfc92d37acee"
+    }
+   ]
+  },
+  {
+   "name": "guard-secrets",
+   "kind": "hook",
+   "version": "1.0.1",
+   "description": "Stops a task before it starts if it would hand a worker a secrets file (.env, private keys, credentials, also inside listed folders) or a brief that holds a private key.",
+   "hook": {
+    "events": [
+     "TaskStart"
+    ],
+    "command": "{python} {dir}/guard.py",
+    "timeout": 10
+   },
+   "dir": "hooks/guard-secrets",
+   "files": [
+    {
+     "path": "guard.py",
+     "sha256": "84ddcc831d18bd9da9c92f217d761691f5fdf90bf8a6ded3607a28002bea16ea"
+    }
+   ]
+  },
+  {
+   "name": "notify",
+   "kind": "hook",
+   "version": "1.0.0",
+   "description": "Tells you when a session's turn or a pipeline ends: a desktop notification, and a push to your phone through ntfy if NTFY_TOPIC is set.",
+   "hook": {
+    "events": [
+     "TaskEnd",
+     "PipelineEnd"
+    ],
+    "command": "{python} {dir}/notify.py",
+    "timeout": 15
+   },
+   "dir": "hooks/notify",
+   "files": [
+    {
+     "path": "notify.py",
+     "sha256": "5abb30984eff30a3d8cecb8daeda74bf7e727d1371b6e256b17cd6250b6e6809"
+    }
+   ]
+  },
+  {
+   "name": "prune",
+   "kind": "tool",
+   "version": "1.0.1",
+   "description": "Deletes sessions with no turn in more than N days (default 14), with their worktrees and branches. --dry-run lists them first.",
+   "tool": {
+    "command": "{python} {dir}/prune.py"
+   },
+   "dir": "tools/prune",
+   "files": [
+    {
+     "path": "prune.py",
+     "sha256": "0b302e50758b70755df6132ba73d87a5986423874582ae65ab0bbedc46fb70df"
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,3 @@
+{"kind": "hook", "version": "1.0.1",
+ "description": "Stops a task before it starts if it would hand a worker a secrets file (.env, private keys, credentials, also inside listed folders) or a brief that holds a private key.",
+ "hook": {"events": ["TaskStart"], "command": "{python} {dir}/guard.py", "timeout": 10}}

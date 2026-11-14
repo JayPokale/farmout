@@ -1,16 +1,17 @@
-"""Running one task: the repo's settings, isolation, the worker call, fallback when a subscription hits its limit,
-and the usage log. The MCP server, the CLI, sessions and pipelines all go through execute()."""
+"""Running one task: the repo's settings, redaction and hooks, isolation, the worker call, fallback when a
+subscription hits its limit, and the usage log. The MCP server, the CLI, sessions and pipelines all go through
+execute()."""
 import os
 import time
 import uuid
 
-from . import isolate, usage
+from . import hooks, isolate, usage
 from .config import settings
 from .workers import ENABLED, limited_for
 
 
 def check(t):
-    """The task with this repo's settings applied (web access, timeout); raises if they forbid it."""
+    """(the task with this repo's settings applied, the settings); raises if they forbid it."""
     s = settings(os.path.expanduser(t.get("cwd") or os.getcwd()))
     w = t["worker"]
     if "workers" in s and w not in s["workers"]:
@@ -19,7 +20,22 @@ def check(t):
         raise PermissionError("this repo's farmout settings forbid write access")
     if s.get("web") is False and not ENABLED[w].web_off:
         raise PermissionError(f"this repo's farmout settings forbid web access, and {w} can't turn its web search off")
-    return {**t, "web": s.get("web", True), "timeout": t.get("timeout") or s.get("timeout")}
+    return {**t, "web": s.get("web", True), "timeout": t.get("timeout") or s.get("timeout")}, s
+
+
+def prepare(t, s, notes):
+    """Redaction (if the settings ask for it), then the TaskStart hooks, which may rewrite or block the brief."""
+    if s.get("redact"):
+        t["prompt"], n = hooks.redact(t["prompt"])
+        if n:
+            notes.append(f"redacted {n} secret{'s' * (n != 1)} from the brief")
+    if s.get("untrusted") and not any("haven't trusted" in n for n in notes):
+        notes.append(f"{s['untrusted']} defines hooks you haven't trusted; they didn't run (`farmout trust`)")
+    payload = {k: t.get(k) for k in ("worker", "prompt", "files", "cwd", "write", "isolate", "model", "effort", "session")}
+    payload, more = hooks.fire("TaskStart", payload, t.get("cwd") or os.getcwd(), subject=t["worker"], s=s)
+    notes += more
+    t["prompt"] = payload["prompt"]
+    return t
 
 
 def fallbacks(t):
@@ -55,7 +71,8 @@ def execute(t, key, where=None, on_iso=None):
         try:
             if w not in ENABLED:
                 raise ValueError(f"unknown or unavailable worker {w!r}; available: {', '.join(ENABLED) or 'none'}")
-            run_t = check(t)
+            run_t, s = check(t)
+            run_t = prepare(run_t, s, notes)
             if t.get("isolate") or (where or {}).get("worktree"):
                 if not iso:
                     if (where or {}).get("worktree"):
@@ -96,4 +113,11 @@ def execute(t, key, where=None, on_iso=None):
         if "[isolated]" not in res["text"]:
             res["text"] += f"\n\n[isolated] worktree {iso['worktree']}, branch {iso['branch']} (kept for inspection)"
     res.update(secs=round(time.time() - t0, 1), notes=notes, iso=iso)
+    end = {"worker": res["worker"], "ok": res["ok"], "secs": res["secs"], "session": t.get("session"),
+           "cwd": t.get("cwd"), "text": res["text"][:20000], "patch": (iso or {}).get("patch") if res["ok"] else None}
+    try:
+        _, more = hooks.fire("TaskEnd", end, t.get("cwd") or os.getcwd(), subject=res["worker"])
+    except hooks.Blocked:
+        more = []
+    notes += more
     return res

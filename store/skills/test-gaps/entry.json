@@ -1,0 +1,2 @@
+{"kind": "skill", "version": "1.0.0",
+ "description": "Lists the behaviours in your uncommitted change that no test covers, with the test to add for each."}

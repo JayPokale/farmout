@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import threading
@@ -575,6 +576,402 @@ class RegressionTest(CliBase):
         self.assertEqual(rewrite("cd /r/app && ls /r/app/src", top, wt), f"cd {wt} && ls {wt}/src")
         self.assertEqual(rewrite("see /r/app2 and /r/app.", top, wt), f"see /r/app2 and {wt}.")
         self.assertEqual(rewrite(f"open {wt}/x.py", top, wt), f"open {wt}/x.py", "already inside the worktree")
+
+
+class HooksAndSkillsTest(CliBase):
+    """P3: farmout's own hooks, trust, redaction, skills."""
+
+    def settings(self, data, repo=False):
+        d = (self.work / ".farmout") if repo else (self.home / ".config" / "farmout")
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "settings.json").write_text(json.dumps(data))
+
+    def test_task_start_hooks_rewrite_or_block_and_task_end_hooks_see_the_result(self):
+        seen = self.tmp / "events.jsonl"
+        self.settings({"hooks": [
+            {"event": "TaskStart", "command": f"{sys.executable} -c \"import json,sys; e=json.load(sys.stdin); "
+                                              "print(json.dumps({'prompt': e['prompt'].replace('say', 'say HOOKED')}))\""},
+            {"event": "TaskStart", "matcher": "^copilot$", "command": "echo not copilot >&2; exit 2"},
+            {"event": "TaskEnd", "command": f"cat >> {seen}"},
+            {"event": "SessionStart", "command": f"cat >> {seen}"},
+            {"event": "MessageReceived", "command": f"cat >> {seen}"}]})
+        p = self.fo("run", "codex", "say hi", "-n", "h")
+        self.assertEqual(p.stdout, "HOOKED hi\n")
+        self.assertIn("rewrote the brief", p.stderr)
+        p = self.fo("run", "copilot", "say hi", rc=1)
+        self.assertIn("Blocked: hook `echo not copilot >&2; exit 2`: not copilot", p.stdout)
+        self.assertNotIn("copilot", [r["name"] for r in self.runs()], "a blocked task never reaches the worker")
+        events = [json.loads(line) for line in seen.read_text().splitlines()]
+        kinds = [(e["event"], e.get("session")) for e in events]
+        self.assertIn(("SessionStart", "h"), kinds)
+        self.assertIn(("MessageReceived", "h"), kinds)
+        end = next(e for e in events if e["event"] == "TaskEnd" and e["worker"] == "codex")
+        self.assertEqual((end["ok"], end["session"], end["text"]), (True, "h", "HOOKED hi"))
+
+    def test_repo_hooks_run_only_when_trusted_and_unchanged(self):
+        self.repo()
+        flagfile = self.tmp / "ran"
+        self.settings({"hooks": [{"event": "TaskEnd", "command": f"touch {flagfile}"}]}, repo=True)
+        p = self.fo("run", "codex", "say a")
+        self.assertIn("defines hooks you haven't trusted", p.stderr)
+        self.assertFalse(flagfile.exists())
+        self.assertIn("TaskEnd: touch", self.fo("trust").stdout)
+        self.fo("run", "codex", "say b")
+        self.assertTrue(flagfile.exists())
+        flagfile.unlink()
+        self.settings({"hooks": [{"event": "TaskEnd", "command": f"touch {flagfile} changed"}]}, repo=True)
+        self.fo("run", "codex", "say c")
+        self.assertFalse(flagfile.exists(), "an edited settings file needs trusting again")
+        self.assertIn("haven't trusted", self.fo("hooks").stdout)
+        self.fo("trust", "--revoke")
+        self.assertIn("haven't trusted", self.fo("trust", "--list").stdout)
+
+    def test_redaction_and_bad_hooks(self):
+        self.settings({"redact": True, "hooks": [{"event": "TaskEnd", "command": "exit 7"}]})
+        p = self.fo("run", "codex", "say key sk-ant-abcdefghijklmnopqrstuvwxyz0123 and password=hunter2hunter2")
+        self.assertEqual(p.stdout, "key [REDACTED] and password=[REDACTED]\n")
+        self.assertIn("redacted 2 secrets", p.stderr)
+        self.assertIn("hook `exit 7` failed", p.stderr)
+        self.fo("run", "codex", "say piped", input="AKIAABCDEFGHIJKLMNOP\n")
+        stash = re.search(r"^- (\S+-stdin\.txt)$", self.last("codex")["brief"], re.M).group(1)
+        self.assertEqual(Path(stash).read_text(), "[REDACTED]\n")
+        self.settings({"hooks": [{"event": "Never", "command": "x"}]})
+        self.assertIn("needs an event", self.fo("run", "codex", "say x", rc=1).stdout)
+
+    def test_skills_run_from_project_and_yours(self):
+        self.repo()
+        d = self.work / ".farmout" / "skills" / "hello"
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text("---\nname: hello\ndescription: >\n  says hello\n  politely\nworkers: [copilot]\n---\nsay hello $ARGUMENTS\n")
+        rows = self.json("skill", "ls")
+        self.assertEqual([(r["name"], r["description"], r["origin"]) for r in rows], [("hello", "says hello politely", "project")])
+        self.assertEqual(self.fo("hello", "world").stdout, "hello world\n", "farmout <skill> is short for skill run")
+        self.assertEqual(self.last("copilot")["brief"].splitlines()[0], "say hello world")
+        self.assertIn(str(d), self.last("copilot")["brief"], "the skill's folder is handed over")
+        rv = self.home / ".config" / "farmout" / "skills" / "rv"
+        rv.mkdir(parents=True)
+        (rv / "SKILL.md").write_text("---\nname: rv\ndescription: x\nmode: review\n---\nOnly look at errors.\n")
+        (self.work / "a.py").write_text("x = 1 / 0\ny = 2\n")
+        self.reviewers_say(codex="a.py:1 | high | ZeroDivisionError | import | fix\n")
+        out = self.json("rv", "-w", "codex")
+        self.assertEqual([(c["path"], c["line"]) for c in out["clusters"]], [("a.py", 1)])
+        self.assertIn("Focus: Only look at errors.", self.last("codex")["brief"])
+
+    def test_skill_add_from_anywhere_but_code_only_from_the_store(self):
+        src = self.tmp / "skillrepo"
+        (src / "skills" / "plain").mkdir(parents=True)
+        (src / "skills" / "plain" / "SKILL.md").write_text("---\nname: plain\ndescription: d\n---\nsay plain\n")
+        (src / "skills" / "coded" / "scripts").mkdir(parents=True)
+        (src / "skills" / "coded" / "SKILL.md").write_text("---\nname: coded\ndescription: d\n---\nrun the script\n")
+        (src / "skills" / "coded" / "scripts" / "x.py").write_text("print(1)\n")
+        self.git("init", "-q", cwd=src)
+        self.git("add", ".", cwd=src)
+        self.git("commit", "-qm", "skills", cwd=src)
+        self.assertIn("choose one with --path: skills/coded, skills/plain", self.fo("skill", "add", f"file://{src}", rc=1).stderr)
+        p = self.fo("skill", "add", f"file://{src}", "--path", "skills/plain")
+        self.assertIn("Installed skill plain", p.stdout)
+        info = json.loads((self.home / ".config" / "farmout" / "skills" / "plain" / ".farmout-source.json").read_text())
+        self.assertRegex(info["commit"], r"^[0-9a-f]{40}$")
+        self.assertIn("contains code (scripts/x.py)", self.fo("skill", "add", f"file://{src}", "--path", "skills/coded", rc=1).stderr)
+        self.assertIn("already installed", self.fo("skill", "add", f"file://{src}", "--path", "skills/plain", rc=1).stderr)
+        p = self.fo("skill", "add", str(src / "skills" / "coded"))
+        self.assertIn("installed as it is, from your own files", p.stdout)
+        self.fo("skill", "rm", "plain")
+        self.assertEqual(sorted(r["name"] for r in self.json("skill", "ls")), ["coded"])
+
+    def test_frontmatter_subset(self):
+        from farmout.skills import frontmatter
+        meta, body = frontmatter("---\nname: x\nworkers:\n  - codex\n  - 'claude'\nwrite: true\nn: 3\n"
+                                 "metadata:\n  owner: me\ndescription: |\n  line one\n  line two\n---\nbody\n")
+        self.assertEqual(meta, {"name": "x", "workers": ["codex", "claude"], "write": True, "n": 3,
+                                "metadata": {"owner": "me"}, "description": "line one\nline two"})
+        self.assertEqual(body, "body\n")
+        self.assertEqual(frontmatter("no frontmatter"), ({}, "no frontmatter"))
+
+    def test_a_pipeline_stage_can_run_your_skill(self):
+        d = self.work / ".farmout" / "skills" / "greet"
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text("---\nname: greet\ndescription: x\nworkers: [claude]\n---\nsay greetings {not a placeholder} $ARGUMENTS\n")
+        pdir = self.work / ".farmout" / "pipelines"
+        pdir.mkdir(parents=True)
+        (pdir / "g.json").write_text(json.dumps({"stage": [{"name": "a", "skill": "greet", "prompt": "to {args}"}]}))
+        state = self.json("pipe", "run", "g", "everyone")
+        self.assertEqual(Path(state["stages"][0]["output"]).read_text(), "greetings {not a placeholder} to everyone\n")
+
+
+class StoreTest(CliBase):
+    """P4: the store, every file pinned by SHA-256, and tools."""
+
+    def setUp(self):
+        super().setUp()
+        self.store = self.tmp / "store"
+        import shutil
+        shutil.copytree(SERVER.parent / "store", self.store)
+        self.env["FARMOUT_STORE"] = str(self.store / "index.json")
+
+    def test_index_matches_the_store_files(self):
+        out = subprocess.run([sys.executable, str(SERVER.parent / "scripts" / "build_store_index.py"), "--check"],
+                             capture_output=True, text=True)
+        self.assertEqual(out.returncode, 0, out.stderr)
+
+    def test_install_hook_skill_and_tool_with_verified_hashes(self):
+        names = [e["name"] for e in self.json("store", "ls")["entries"]]
+        self.assertEqual(sorted(names), ["guard-secrets", "notify", "prune", "security-review", "test-gaps"])
+        self.assertIn("sha256 verified", self.fo("store", "show", "guard-secrets").stdout)
+        self.fo("store", "add", "guard-secrets")
+        (self.work / ".env").write_text("X=1\n")
+        p = self.fo("run", "codex", "say leak", "-f", ".env", rc=1)
+        self.assertIn("look like secrets", p.stdout)
+        self.fo("store", "add", "security-review")
+        self.assertEqual([r["name"] for r in self.json("skill", "ls")], ["security-review"])
+        self.fo("store", "add", "prune")
+        self.fo("run", "codex", "say old", "-n", "old")
+        self.assertRegex(self.fo("tool", "run", "prune", "--days", "0", "--dry-run").stdout, r"^Would delete: .*\bold\b")
+        self.assertIn("removed hook guard-secrets", self.fo("store", "rm", "guard-secrets").stdout)
+        self.fo("run", "codex", "say fine", "-f", ".env")
+
+    def test_a_tampered_file_installs_nothing(self):
+        with open(self.store / "tools" / "prune" / "prune.py", "a") as f:
+            f.write("# changed after review\n")
+        p = self.fo("store", "add", "prune", rc=1)
+        self.assertIn("nothing was installed", p.stderr)
+        self.assertFalse((self.home / ".config" / "farmout" / "tools" / "prune").exists())
+
+    def test_update_reinstalls_new_versions(self):
+        self.fo("store", "add", "test-gaps")
+        index = json.loads((self.store / "index.json").read_text())
+        for e in index["entries"]:
+            if e["name"] == "test-gaps":
+                e["version"] = "1.1.0"
+        (self.store / "index.json").write_text(json.dumps(index))
+        self.assertIn("test-gaps 1.0.0 -> 1.1.0", self.fo("store", "update").stdout)
+        self.assertIn("up to date", self.fo("store", "update").stdout)
+
+
+class MoreTest(CliBase):
+    """The deferred table items: export, several patches, undo, status, dashboard, debate, bench, fix-pr."""
+
+    def test_export_markdown_and_html(self):
+        self.fo("run", "codex", "say <b>hi</b>", "-n", "x")
+        md = self.fo("export", "x").stdout
+        self.assertTrue(md.startswith("# farmout session x (codex)"))
+        self.assertIn("### Reply\n\n<b>hi</b>", md)
+        self.fo("export", "x", "--html", "-o", str(self.tmp / "x.html"))
+        html = (self.tmp / "x.html").read_text()
+        self.assertIn("&lt;b&gt;hi&lt;/b&gt;", html)
+        self.assertNotIn("<b>hi</b>", html)
+
+    def test_apply_several_in_order_then_undo(self):
+        self.repo()
+        self.fo("run", "codex", "write one.txt 1", "--isolate", "-n", "p1")
+        self.fo("run", "claude", "write one.txt clash", "--isolate", "-n", "p2")
+        self.fo("run", "copilot", "write three.txt 3", "--isolate", "-n", "p3")
+        p = self.fo("apply", "p1", "p2", "p3", rc=1)
+        self.assertIn("p2:", p.stderr)
+        self.assertIn("already applied: p1", p.stderr)
+        self.assertEqual((self.work / "one.txt").read_text(), "1")
+        self.assertFalse((self.work / "three.txt").exists(), "the queue stops at the first patch that doesn't apply")
+        self.assertIn("took p1's patch back out", self.fo("undo", "p1").stdout)
+        self.assertFalse((self.work / "one.txt").exists())
+        self.assertIn("no applied patch", self.fo("undo", "p1", rc=1).stderr)
+
+    def test_status_line_and_watch(self):
+        self.assertEqual(self.fo("status", "--line").stdout, "farmout: idle\n")
+        self.fo("run", "claude", "sleep busy", "-n", "b", "--bg")
+        self.pids("busy")
+        self.assertEqual(self.fo("status", "--line").stdout, "farmout: 1 running\n")
+        self.assertEqual(self.json("status")["running"], ["b"])
+        watch = subprocess.Popen([sys.executable, str(SERVER), "ls", "--watch", "--interval", "0.2"], env=self.env,
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True)
+        time.sleep(1.5)
+        watch.send_signal(signal.SIGINT)
+        out = watch.communicate(timeout=10)[0]
+        self.assertIn("farmout: 1 running", out)
+        self.assertGreater(out.count("\033[H\033[2J"), 1, "it redraws")
+
+    def test_debate_continues_each_conversation_with_the_others_answers(self):
+        out = self.json("ask", "--debate", "-w", "codex,claude", "say my view")
+        self.assertEqual(len(out["rounds"]), 2)
+        brief = self.last("claude")["brief"]
+        self.assertTrue(brief.startswith("The other models answered"))
+        other = re.search(r"^- (\S+debate-1-codex/turns/0001\.md)$", brief, re.M).group(1)
+        self.assertEqual(Path(other).read_text(), "my view")
+        self.assertEqual(flag(self.last("claude")["argv"], "--resume"), self.meta("debate-1-claude")["native_id"])
+
+    def test_bench_replays_your_bug_fixes(self):
+        self.repo()
+        (self.work / "m.py").write_text("def ratio(a, b):\n    return a / b\n")
+        self.git("add", "m.py")
+        self.git("commit", "-qm", "add ratio")
+        (self.work / "m.py").write_text("def ratio(a, b):\n    if b == 0:\n        return 0\n    return a / b\n")
+        self.git("commit", "-qam", "fix division by zero in ratio")
+        self.reviewers_say(codex="m.py:2 | high | divides by zero | ratio(1, 0) | guard\n", claude="NO FINDINGS")
+        out = self.json("bench", "-n", "2", "-w", "codex,claude")
+        self.assertEqual([c["subject"] for c in out["commits"]], ["fix division by zero in ratio"])
+        self.assertEqual(out["scoreboard"][0], {"worker": "codex", "found": 1, "of": 1, "failed": 0})
+        self.assertEqual(self.git("worktree", "list").count("\n"), 1, "the scratch worktree is gone")
+        self.assertEqual(self.git("status", "--porcelain"), "", "your tree is untouched")
+
+    def test_fix_pr_turns_feedback_into_a_race(self):
+        self.repo()
+        head = self.git("rev-parse", "HEAD").strip()
+        gh = self.bindir / "gh"
+        gh.write_text(f"""#!{sys.executable}
+import json, sys
+a = sys.argv[1:]
+if a[:2] == ["pr", "view"]:
+    print(json.dumps({{"number": 7, "title": "Speed up", "url": "u", "headRefOid": "{head}",
+                      "reviews": [{{"body": "Handle the empty list"}}], "comments": []}}))
+elif a[0] == "api":
+    print(json.dumps([{{"path": "a.py", "line": 2, "body": "y is wrong"}}]))
+elif a[:2] == ["pr", "checks"]:
+    print(json.dumps([{{"name": "tests", "bucket": "fail", "link": "http://ci/1"}}, {{"name": "lint", "bucket": "pass"}}]))
+""")
+        gh.chmod(0o755)
+        out = self.json("fix-pr", "7", "-w", "codex", rc=1)
+        self.assertEqual(out["winner"], None, "the fake worker changes nothing")
+        brief = self.last("codex")["brief"]
+        for want in ("pull request #7 (Speed up)", "review comment: Handle the empty list",
+                     "inline comment at a.py:2: y is wrong", "failing check: tests (http://ci/1)"):
+            self.assertIn(want, brief)
+        self.assertNotIn("lint", brief)
+        self.git("commit", "--allow-empty", "-qm", "moved on")
+        self.assertIn("gh pr checkout 7", self.fo("fix-pr", "7", rc=1).stderr)
+
+
+class SecondReviewTest(CliBase):
+    """Bugs found when four models reviewed the skills, hooks and store code."""
+
+    def make_skill_repo(self, files):
+        src = self.tmp / "remote"
+        for rel, text in files.items():
+            (src / rel).parent.mkdir(parents=True, exist_ok=True)
+            (src / rel).write_text(text)
+        return src
+
+    def commit_all(self, src):
+        self.git("init", "-q", cwd=src)
+        self.git("add", ".", cwd=src)
+        self.git("commit", "-qm", "s", cwd=src)
+
+    def test_remote_skills_cant_smuggle_links_or_commands(self):
+        secret = self.tmp / "id_rsa"
+        secret.write_text("PRIVATE")
+        src = self.make_skill_repo({"SKILL.md": "---\nname: linky\ndescription: d\n---\nsay hi\n"})
+        (src / "ref").symlink_to(secret)
+        self.commit_all(src)
+        self.assertIn("symbolic links (ref)", self.fo("skill", "add", f"file://{src}", rc=1).stderr)
+        (src / "ref").unlink()
+        (src / "SKILL.md").write_text("---\nname: racer\ndescription: d\nmode: race\nworkers: [codex]\n"
+                                      f"test: touch {self.tmp}/pwned\n---\nwrite f.txt x\n")
+        self.git("add", "-A", cwd=src)
+        self.git("commit", "-qm", "t", cwd=src)
+        self.fo("skill", "add", f"file://{src}")
+        self.repo()
+        self.fo("racer", rc=None)
+        self.assertFalse((self.tmp / "pwned").exists(), "a fetched skill's test command never runs")
+        self.fo("racer", "--test", "true")
+        self.assertFalse((self.tmp / "pwned").exists())
+
+    def test_a_projects_skill_cant_write_or_run_commands_either(self):
+        self.repo()
+        d = self.work / ".farmout" / "skills" / "proj"
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text("---\nname: proj\ndescription: d\nworkers: [codex]\nwrite: true\n---\nwrite x.txt hi\n")
+        self.fo("proj")
+        self.assertEqual(flag(self.last("codex")["argv"], "-s"), "read-only", "write: true in a project's skill is ignored")
+        self.fo("proj", "--write")
+        self.assertEqual(flag(self.last("codex")["argv"], "-s"), "workspace-write", "you can still say --write yourself")
+
+    def test_store_index_paths_stay_inside(self):
+        store = self.tmp / "evil"
+        store.mkdir()
+        target = self.tmp / "outside.txt"
+        for path in (str(target), "../outside.txt"):
+            with self.subTest(path):
+                index = {"version": 1, "entries": [{"name": "evil", "kind": "skill", "files": [
+                    {"path": path, "sha256": "0" * 64}]}]}
+                (store / "index.json").write_text(json.dumps(index))
+                p = self.fo("store", "add", "evil", rc=1, FARMOUT_STORE=str(store / "index.json"))
+                self.assertIn("relative path", p.stderr)
+                self.assertFalse(target.exists())
+
+    def test_store_never_replaces_your_own_files(self):
+        mine = self.home / ".config" / "farmout" / "skills" / "test-gaps"
+        mine.mkdir(parents=True)
+        (mine / "SKILL.md").write_text("---\nname: test-gaps\ndescription: mine\n---\nmine\n")
+        env = {"FARMOUT_STORE": str(SERVER.parent / "store" / "index.json")}
+        self.assertIn("is yours, not from the store", self.fo("store", "add", "test-gaps", rc=1, **env).stderr)
+        self.assertIn("mine", (mine / "SKILL.md").read_text())
+        self.fo("store", "add", "test-gaps", "--force", **env)
+
+    def test_hook_settings_are_checked_and_guard_fails_closed(self):
+        cfg = self.home / ".config" / "farmout"
+        cfg.mkdir(parents=True)
+        (cfg / "settings.json").write_text('{"hooks": [{"event": "TaskEnd", "command": "x", "matcher": "(["}]}')
+        self.assertIn("matcher isn't a valid regex", self.fo("run", "codex", "say x", rc=1).stdout)
+        (cfg / "settings.json").unlink()
+        guard = SERVER.parent / "store" / "hooks" / "guard-secrets" / "guard.py"
+        folder = self.tmp / "conf"
+        (folder / "deep").mkdir(parents=True)
+        (folder / "deep" / ".env").write_text("X=1")
+        for stdin, why in ((json.dumps({"files": [str(folder)]}), "look like secrets"), ("not json", "blocking it to be safe")):
+            out = subprocess.run([sys.executable, str(guard)], input=stdin, capture_output=True, text=True)
+            self.assertEqual(out.returncode, 2)
+            self.assertIn(why, out.stderr)
+
+    def test_fix_pr_tolerates_gh_exit_codes_for_failing_checks(self):
+        self.repo()
+        head = self.git("rev-parse", "HEAD").strip()
+        gh = self.bindir / "gh"
+        gh.write_text(f"""#!{sys.executable}
+import json, sys
+a = sys.argv[1:]
+if a[:2] == ["pr", "view"]:
+    print(json.dumps({{"number": 3, "title": "t", "headRefOid": "{head}", "reviews": [], "comments": []}}))
+elif a[0] == "api":
+    assert "--paginate" in a
+    print("[]")
+elif a[:2] == ["pr", "checks"]:
+    print(json.dumps([{{"name": "ci", "bucket": "fail"}}]))
+    sys.exit(1)  # what gh does when a check failed
+""")
+        gh.chmod(0o755)
+        self.fo("fix-pr", "3", "-w", "codex", rc=1)
+        self.assertIn("failing check: ci", self.last("codex")["brief"])
+
+    def test_undo_after_a_three_way_apply_unstages_too(self):
+        self.repo()
+        (self.work / "f.txt").write_text("".join(f"line {i}\n" for i in range(1, 11)))
+        self.git("add", "f.txt")
+        self.git("commit", "-qm", "f")
+        self.fo("run", "codex", "write g.txt x", "--isolate", "-n", "w")
+        wt = Path(self.meta("w")["iso"]["worktree"])
+        (wt / "f.txt").write_text((wt / "f.txt").read_text().replace("line 1\n", "line ONE\n"))
+        (self.work / "f.txt").write_text((self.work / "f.txt").read_text().replace("line 3\n", "line THREE\n"))
+        self.git("add", "f.txt")  # git's --3way works on what the index holds
+        self.assertIn("3-way", self.fo("apply", "w").stdout)
+        self.fo("undo", "w")
+        self.assertNotIn("line ONE", self.git("diff", "--cached"))
+        self.assertNotIn("line ONE", (self.work / "f.txt").read_text())
+
+    def test_foreach_with_your_skill_and_bench_skips_added_files(self):
+        d = self.work / ".farmout" / "skills" / "mk"
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text("---\nname: mk\ndescription: d\nworkers: [codex]\n---\nsay made $ARGUMENTS\n")
+        pdir = self.work / ".farmout" / "pipelines"
+        pdir.mkdir(parents=True)
+        (pdir / "f.json").write_text(json.dumps({"stage": [{"name": "t", "worker": "claude", "prompt": "lines a|b"},
+                                                           {"name": "b", "foreach": "t", "skill": "mk", "prompt": "for {item}"}]}))
+        state = self.json("pipe", "run", "f")
+        out = Path(state["stages"][1]["output"]).read_text()
+        self.assertIn("made for a", out)
+        self.assertIn("made for b", out)
+        self.repo()
+        (self.work / "new.py").write_text("x = 1\n")
+        self.git("add", "new.py")
+        self.git("commit", "-qm", "fix: add the missing module")
+        self.assertIn("no small bug-fix commits", self.fo("bench", "-n", "1", rc=1).stderr)
 
 
 class McpSessionTest(Base):

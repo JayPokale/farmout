@@ -19,7 +19,7 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
-from . import engine, isolate, proc
+from . import engine, hooks, isolate, proc
 from .config import STATE
 from .workers import ENABLED
 
@@ -105,7 +105,19 @@ def create(worker, cwd, name=None, write=False, isolate=False, model=None, effor
             "group": group, "parent": parent, "fork_of": fork_of, "fallback": fallback, "native_id": None,
             "iso": None, "turns": 0, "created": time.time(), "last": None}
     save(meta)
+    event(name, "SessionStart", {k: meta[k] for k in ("worker", "cwd", "write", "isolate", "group", "parent")})
     return meta
+
+
+def event(name, kind, payload):
+    """Fire a session event's hooks; what they report goes to the session's hooks.log."""
+    try:
+        _, notes = hooks.fire(kind, {"session": name, **payload}, load(name)["cwd"], subject=name)
+    except Exception as e:
+        notes = [f"{kind} hooks: {type(e).__name__}: {e}"]
+    if notes:
+        with open(path(name) / "hooks.log", "a") as f:
+            f.write("".join(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {kind}: {n}\n" for n in notes))
 
 
 def pending(name):
@@ -151,6 +163,7 @@ def post(name, prompt, files=(), attach=(), cwd=None):
     files += [last_output(a) for a in attach]
     msg = {"id": uuid.uuid4().hex[:12], "prompt": prompt, "files": files, "posted": time.time()}
     write_json(d / "inbox" / f"{time.time_ns()}-{msg['id']}.json", msg)
+    event(name, "MessageReceived", {"message": msg["id"], "prompt": prompt, "files": files})
     return msg
 
 
@@ -299,7 +312,7 @@ def turn(name, msg, key, inbox_file=None):
         save(m)
     t = {"worker": meta["worker"], "prompt": msg["prompt"], "files": rec["files"], "cwd": meta["cwd"],
          "write": meta["write"], "isolate": meta["isolate"], "model": meta["model"], "effort": meta["effort"],
-         "persist": True, "fallback": meta.get("fallback") if n == 1 else []}
+         "persist": True, "fallback": meta.get("fallback") if n == 1 else [], "session": name}
     if meta["native_id"]:
         t["resume"] = meta["native_id"]
     elif meta.get("fork_of") and meta["worker"] == "claude":
@@ -405,5 +418,6 @@ def summary(meta):
     name, q = meta["name"], len(pending(meta["name"]))
     state = "running" if busy(name) else "queued" if q else (meta.get("last") or {}).get("status") or "new"
     return {"name": name, "worker": meta["worker"], "state": state, "queued": q, "turns": meta["turns"],
-            "created": meta.get("created"), "cwd": meta["cwd"], "group": meta.get("group"),
+            "created": meta.get("created"), "updated": (meta.get("last") or {}).get("ended") or meta.get("created"),
+            "cwd": meta["cwd"], "group": meta.get("group"),
             "isolate": meta.get("isolate"), "branch": (meta.get("iso") or {}).get("branch")}
