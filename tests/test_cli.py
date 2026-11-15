@@ -431,6 +431,69 @@ class ReviewTest(CliBase):
             (55, ["antigravity"], "Missing database trans"),
         ])
 
+    def test_a_race_cited_one_line_off_joins_the_race(self):
+        # A fourth real run (2026-11-17): copilot puts the racy quota update on line 48, beside the missing-row
+        # crash, while the others put it on 49. What it says (concurrent, quota) must outweigh where it says it.
+        said = {
+            "antigravity": [
+                (36, "high", "Path traversal vulnerability allows arbitrary filesystem read"),
+                (17, "high", "SQL injection vulnerability via untrusted string interpolation"),
+                (43, "high", "NoneType subscript crash when file does not exist"),
+                (48, "high", "NoneType subscript crash if owner missing from quota table"),
+                (49, "medium", "Race condition / quota desync via non-atomic read-modify-write without transaction/commit"),
+                (52, "medium", "Database changes are never committed"),
+                (27, "medium", "Off-by-one error in 1-based pagination skips the first page"),
+                (24, "low", "Empty file list with page=1 incorrectly rejected / returns empty files with pages=1")],
+            "codex": [
+                (18, "high", "SQL injection exposes other owners’ file metadata"),
+                (36, "high", "path traversal permits arbitrary file reads"),
+                (47, "high", "stored malicious filename can delete arbitrary host files"),
+                (27, "medium", "first page skips the first 20 files"),
+                (44, "medium", "deleting a nonexistent file crashes with TypeError"),
+                (49, "medium", "concurrent deletions can leave quota usage too high, permitting quota bypass")],
+            "claude": [
+                (18, "high", "SQL injection via f-string owner"),
+                (36, "high", "Path traversal in download: no containment check, and absolute name replaces STORAGE in os.path.join"),
+                (31, "high", "download has no authentication or authorization; any requester can read any owner's files"),
+                (27, "high", "Pagination off-by-one: the docstring says pages start at 1, but start = page * PAGE_SIZE skips the first page"),
+                (25, "medium", "No lower-bound check on page"),
+                (43, "medium", "fetchone() returns None for an unknown file_id, so row[\"owner\"] raises TypeError (500 instead of 404)"),
+                (47, "high", "Path traversal on delete: row[\"name\"] joins unsanitized into the path, and an absolute or .. name removes arbitrary files. Names from upload are likely user-controlled"),
+                (48, "medium", "Quota lookup fetchone()[\"used\"] crashes on None if the owner has no quota row; this happens after the permission check but before any deletion, so the file can never be deleted"),
+                (49, "medium", "Quota is read, then written as an absolute value (read-modify-write) → lost update under concurrent deletes or uploads; quota drifts"),
+                (49, "high", "No atomicity or commit, and the order is wrong: the quota is updated and the file removed from disk before the row is deleted. If os.remove raises (permissions, I/O) or the DELETE fails, the quota is already decremented (never committed or rolled back). The DB and disk go out of sync, and a double delete decrements the quota twice"),
+                (52, "medium", "Nothing calls db.commit(), so (sqlite3 default) the UPDATE and DELETE are never persisted if the caller doesn't commit. The file is gone from disk but the row remains, so later downloads or lists show a ghost entry"),
+                (50, "low", "TOCTOU between os.path.exists and os.remove → FileNotFoundError under concurrent delete"),
+                (23, "low", "f[\"url\"] interpolates raw owner and name without URL-encoding, so names containing /, ?, # or % produce broken or ambiguous links"),
+                (22, "low", "f[\"size\"] can be NULL, and None / 1024 raises TypeError, so the whole listing fails")],
+            "copilot": [
+                (19, "high", "SQL injection in the owner filter exposes other users' files"),
+                (36, "high", "downloads allow unauthenticated access and path traversal"),
+                (27, "medium", "page 1 skips the first 20 files"),
+                (44, "medium", "nonexistent file IDs crash with a TypeError"),
+                (48, "medium", "concurrent deletions can lose quota updates")],
+        }
+        found = [{"worker": w, "path": "files_api.py", "rel": "files_api.py", "line": n, "severity": s, "defect": d}
+                 for w, rows in said.items() for n, s, d in rows]
+        got = sorted((c["line"], c["workers"], c["defect"][:22]) for c in review_mod.merge(found))
+        self.assertEqual(got, [
+            (18, ["antigravity", "codex", "claude", "copilot"], "SQL injection exposes "),
+            (22, ["claude"], "f[\"size\"] can be NULL,"),
+            (23, ["claude"], "f[\"url\"] interpolates "),
+            (24, ["antigravity"], "Empty file list with p"),
+            (25, ["claude"], "No lower-bound check o"),
+            (27, ["antigravity", "codex", "claude", "copilot"], "Pagination off-by-one:"),
+            (31, ["claude"], "download has no authen"),
+            (36, ["antigravity", "codex", "claude", "copilot"], "Path traversal vulnera"),
+            (43, ["antigravity", "codex", "claude", "copilot"], "NoneType subscript cra"),
+            (47, ["codex", "claude"], "stored malicious filen"),
+            (48, ["antigravity", "claude"], "NoneType subscript cra"),
+            (49, ["antigravity", "codex", "claude", "copilot"], "Race condition / quota"),
+            (49, ["claude"], "No atomicity or commit"),
+            (50, ["claude"], "TOCTOU between os.path"),
+            (52, ["antigravity", "claude"], "Database changes are n"),
+        ])
+
 
 class RaceAndPatchTest(CliBase):
     def test_tests_pick_the_winner_and_apply_lands_it(self):

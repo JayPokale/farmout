@@ -82,7 +82,7 @@ STOP = {"this", "that", "with", "when", "from", "which", "will", "into", "than",
         "would", "should", "does", "doesn", "isn", "missing", "line", "code", "value", "values", "input", "error",
         "about", "after", "allows", "also", "because", "before", "causes", "causing", "instead", "other", "using",
         "where", "while", "without", "raise", "raises", "raised"}
-SAME_LINE, MIN_LINK = 0.15, 0.125  # see link() and group()
+SAME_LINE = MIN_LINK = 0.1  # see link() and group(); equal, so a shared line alone can link two findings
 # Models name one bug class in different words; these fold to one token before matching.
 SYNONYMS = {**dict.fromkeys(("race", "races", "racy", "racing", "concurrent", "concurrency", "concurrently", "toctou"),
                             "race"),
@@ -127,7 +127,7 @@ def link(a, b, bag_a, bag_b, weight, near=NEAR):
     score is the weighted overlap of their words (Dice: shared weight against both findings' weight, so a short
     finding sharing one common word doesn't look identical), plus a little for citing the same line. On one
     line, models describe one bug in very different words, so the line alone can link two findings of the same
-    severity. The constants come from three real four-model runs, each grouped by hand (see the tests)."""
+    severity. The constants come from four real four-model runs, each grouped by hand (see the tests)."""
     gap = abs(a["line"] - b["line"])
     if a["worker"] == b["worker"] or gap > near:
         return None
