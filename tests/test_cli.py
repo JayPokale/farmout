@@ -245,6 +245,182 @@ class ReviewTest(CliBase):
         self.assertEqual(got, [("src/a.py", 10, "high", "sql injection"), ("src/b.py", 7, "medium", "race"),
                                ("src/c.py", 3, "low", "leak")])
 
+    def test_a_line_with_several_defects_keeps_them_apart(self):
+        # A real four-model review of bench/cases/files_api (2026-11-17). Lines 36 and 48-49 each hold several
+        # defects, models word them differently and cite neighbouring lines; the first-come merge this replaced
+        # mixed them up (and credited codex with a missing quota row it never mentioned).
+        said = {
+            "antigravity": [
+                (36, "high", "Path traversal vulnerability allows arbitrary filesystem read"),
+                (18, "high", "SQL injection vulnerability via unsanitized format string"),
+                (43, "high", "Unhandled None on nonexistent file causes TypeError: 'NoneType' object is not subscriptable crash"),
+                (48, "high", "Unhandled None on missing quota row causes TypeError: 'NoneType' object is not subscriptable crash"),
+                (49, "medium", "Missing transaction management / commit causes database mutations to be uncommitted or lost"),
+                (27, "medium", "1-based pagination calculation uses incorrect offset formula causing page 1 to skip first 20 records and page 0/last page bugs"),
+                (48, "medium", "Race condition in read-modify-write quota update causes quota corruption under concurrent deletions"),
+                (37, "medium", "Unbounded file read into memory risks memory exhaustion / crash on large files")],
+            "codex": [
+                (18, "high", "SQL injection exposes arbitrary database data"),
+                (27, "medium", "page 1 skips first 20 files; every page skips a full page"),
+                (36, "high", "path traversal permits arbitrary file reads"),
+                (36, "high", "unauthenticated cross-owner file download"),
+                (49, "medium", "concurrent deletes can lose quota decrements")],
+            "claude": [
+                (18, "high", "SQL injection: owner interpolated into query"),
+                (36, "high", "Path traversal in download: name unsanitised; absolute name makes os.path.join discard STORAGE; owner also unchecked"),
+                (36, "high", "No authorization in download: any caller can read any owner's file"),
+                (27, "high", "Off-by-one pagination: pages start at 1 but start = page * PAGE_SIZE"),
+                (25, "medium", "page < 1 not handled: negative start slices from the end, page=0 returns the wrong rows"),
+                (43, "medium", 'fetchone() returns None for an unknown id → TypeError on row["owner"] (500, not 404)'),
+                (48, "medium", "Quota row missing → fetchone() None → TypeError after the permission check, before any delete"),
+                (48, "medium", "Read-modify-write on quota is racy: lost update under concurrent deletes"),
+                (49, "high", "No commit and no atomicity: the quota UPDATE, file removal and row DELETE are not in a transaction; if os.remove raises, the quota is already decremented, and the file is gone before the DB row is deleted"),
+                (53, "medium", 'Path traversal on delete: row["name"] joined unsanitised, so a stored name like ../../x or an absolute path deletes arbitrary files'),
+                (29, "low", "URL built from unescaped owner/name: /, ? or # in a name gives a broken or wrong link")],
+            "copilot": [
+                (19, "high", "SQL injection exposes other users' files or database data"),
+                (36, "high", "arbitrary file reads via absolute paths and .. traversal, without ownership validation"),
+                (27, "medium", "pagination skips the first page because page 1 starts at offset 20"),
+                (44, "medium", "nonexistent file IDs crash with a TypeError instead of returning a controlled not-found result")],
+        }
+        found = [{"worker": w, "path": "files_api.py", "rel": "files_api.py", "line": n, "severity": s, "defect": d}
+                 for w, rows in said.items() for n, s, d in rows]
+        got = sorted((c["line"], c["workers"], c["defect"][:22]) for c in review_mod.merge(found))
+        everyone = ["antigravity", "codex", "claude", "copilot"]
+        self.assertEqual(got, [
+            (18, everyone, "SQL injection vulnerab"),
+            (25, ["claude"], "page < 1 not handled: "),
+            (27, everyone, "Off-by-one pagination:"),
+            (29, ["claude"], "URL built from unescap"),
+            (36, everyone, "Path traversal vulnera"),
+            (36, ["codex", "claude"], "unauthenticated cross-"),
+            (37, ["antigravity"], "Unbounded file read in"),  # shares only "file" and "read" with line 36
+            (43, ["antigravity", "claude", "copilot"], "Unhandled None on none"),
+            (48, ["antigravity", "claude"], "Unhandled None on miss"),
+            (48, ["antigravity", "codex", "claude"], "Race condition in read"),
+            (49, ["antigravity", "claude"], "No commit and no atomi"),
+            (53, ["claude"], "Path traversal on dele"),
+        ])
+
+    def test_a_second_real_run_groups_the_same_defects(self):
+        # Another real four-model review of the same change (2026-11-17), worded differently: copilot cites line 44
+        # for the missing-row crash the others put on 43, and claude's line 44 is a different defect; copilot's
+        # "concurrent deletions" is the race the others call a race, not the missing quota row beside it.
+        said = {
+            "antigravity": [
+                (36, "high", "Path traversal vulnerability allows arbitrary file read"),
+                (18, "high", "SQL injection vulnerability via unescaped owner parameter"),
+                (43, "high", "Unhandled None when file_id does not exist raises TypeError: 'NoneType' object is not subscriptable"),
+                (33, "medium", "Off-by-one error in pagination calculation causes page 1 to return page 2's slice and skips first 20 items"),
+                (48, "medium", "Unhandled None when quota row does not exist raises TypeError"),
+                (48, "medium", "Lost updates / race condition on quota recalculation due to read-modify-write"),
+                (49, "medium", "Changes are never committed to the database session, leaving operations unpersisted")],
+            "codex": [
+                (36, "high", "Path traversal permits arbitrary readable-file download"),
+                (18, "high", "SQL injection exposes other owners’ file metadata"),
+                (27, "medium", "Pagination skips first page"),
+                (43, "medium", "Missing file ID crashes handler")],
+            "claude": [
+                (18, "high", "SQL injection: owner interpolated into query"),
+                (36, "high", "Path traversal on download: name is joined unsanitized, and an absolute name replaces STORAGE entirely. owner is also unchecked."),
+                (31, "high", "Missing authorization on download: no caller identity is checked, so anyone can read any owner's files"),
+                (27, "high", "Off-by-one pagination: pages start at 1 but start = page * PAGE_SIZE skips the first page"),
+                (25, "medium", "page < 1 is not handled: a negative or zero page gives a wrong slice, and a negative start slices from the end"),
+                (43, "medium", "fetchone() returns None for an unknown id, so row[\"owner\"] raises TypeError"),
+                (48, "medium", "The quota lookup can also return None and crash after the permission check. The quota update uses a read-modify-write, which is a race."),
+                (49, "high", "Ordering and atomicity: quota is decremented and the file removed from disk before the DB row delete, and there is no commit or transaction"),
+                (47, "high", "Path traversal on delete: row[\"name\"] from the DB is joined unsanitized and is then removed"),
+                (44, "low", "user[\"admin\"] raises KeyError if the key is absent"),
+                (23, "low", "The URL is built from the raw name and owner with no encoding")],
+            "copilot": [
+                (19, "high", "SQL injection in the owner filter"),
+                (28, "medium", "Every normal first page is empty because slicing starts at offset 20"),
+                (36, "high", "Arbitrary file read via path traversal or absolute names"),
+                (44, "medium", "Missing file IDs crash with a TypeError instead of returning a controlled not-found result"),
+                (48, "medium", "Concurrent deletions can corrupt quota accounting and raise during the second filesystem removal")],
+        }
+        found = [{"worker": w, "path": "files_api.py", "rel": "files_api.py", "line": n, "severity": s, "defect": d}
+                 for w, rows in said.items() for n, s, d in rows]
+        got = sorted((c["line"], c["workers"], c["defect"][:22]) for c in review_mod.merge(found))
+        self.assertEqual(got, [
+            (18, ["antigravity", "codex", "claude", "copilot"], "SQL injection vulnerab"),
+            (23, ["claude"], "The URL is built from "),
+            (25, ["claude"], "page < 1 is not handle"),
+            (27, ["codex", "claude", "copilot"], "Off-by-one pagination:"),
+            (31, ["claude"], "Missing authorization "),
+            (33, ["antigravity"], "Off-by-one error in pa"),
+            (36, ["antigravity", "codex", "claude", "copilot"], "Path traversal vulnera"),
+            (43, ["antigravity", "codex", "claude", "copilot"], "Unhandled None when fi"),
+            (44, ["claude"], "user[\"admin\"] raises K"),
+            (47, ["claude"], "Path traversal on dele"),
+            (48, ["antigravity"], "Unhandled None when qu"),
+            (48, ["antigravity", "claude", "copilot"], "Lost updates / race co"),
+            (49, ["antigravity", "claude"], "Ordering and atomicity"),
+        ])
+
+    def test_a_third_real_run_with_misplaced_citations(self):
+        # A third real run (2026-11-17), unseen while the scoring was tuned. Copilot cites lines 29, 36 and 40 for
+        # bugs on 36, 43 and 48: too far to join, so they stay single. Claude reports two pagination problems and
+        # only the off-by-one joins the others; antigravity's missing-row crash on 43 joins codex's on 44.
+        said = {
+            "antigravity": [
+                (18, "high", "SQL injection vulnerability via unsanitized f-string formatting"),
+                (36, "high", "Path traversal vulnerability allows arbitrary filesystem read"),
+                (43, "high", "Unhandled NoneType dereference crash when file does not exist"),
+                (48, "high", "Unhandled NoneType dereference crash when quota record missing"),
+                (27, "medium", "Off-by-one pagination logic skips first page entirely"),
+                (55, "medium", "Missing database transaction commit leaves deletions and quota updates unpersisted")],
+            "codex": [
+                (18, "high", "SQL injection exposes other owners’ file metadata"),
+                (27, "medium", "first requested page skips first 20 files"),
+                (36, "high", "path traversal reads arbitrary server files"),
+                (44, "medium", "nonexistent file ID crashes with TypeError instead of returning a handled not-found result")],
+            "claude": [
+                (18, "high", "SQL injection: owner interpolated into query"),
+                (36, "high", "Path traversal on download: name/owner unvalidated in os.path.join"),
+                (31, "high", "No authorization on download: caller identity never checked"),
+                (27, "high", "Off-by-one pagination: pages documented 1-based but start = page * PAGE_SIZE"),
+                (25, "medium", "page < 1 not handled"),
+                (43, "medium", "fetchone() returns None for a nonexistent id → TypeError on row[\"owner\"] (500, not 404)"),
+                (47, "high", "Path traversal on delete: row[\"name\"] from the DB joined unsanitised, and os.remove follows it"),
+                (48, "medium", "Quota row may be missing → fetchone() is None → TypeError after the auth check, before any change; the file is then undeletable"),
+                (49, "medium", "Non-atomic read-modify-write on quota: used read, then written"),
+                (49, "high", "No commit and ordering unsafe: the quota is updated, then the file removed, then the row deleted, with no db.commit()/transaction handling"),
+                (44, "medium", "user[\"admin\"] KeyError if the key is absent; the permission check also leaks existence of file ids (PermissionError vs. TypeError)"),
+                (23, "low", "URL built from unescaped owner/name"),
+                (22, "low", "f[\"size\"] may be NULL → TypeError in list"),
+                (17, "low", "Whole result set fetched and paginated in Python")],
+            "copilot": [
+                (16, "high", "SQL injection in the owner filter can expose other users' files"),
+                (29, "high", "path traversal allows arbitrary file reads outside STORAGE"),
+                (25, "medium", "page 1 skips the first 20 files and returns the second page"),
+                (40, "medium", "concurrent deletions can lose quota decrements and leave quota usage too high"),
+                (36, "medium", "invalid file IDs cause an uncaught TypeError instead of a controlled not-found result")],
+        }
+        found = [{"worker": w, "path": "files_api.py", "rel": "files_api.py", "line": n, "severity": s, "defect": d}
+                 for w, rows in said.items() for n, s, d in rows]
+        got = sorted((c["line"], c["workers"], c["defect"][:22]) for c in review_mod.merge(found))
+        self.assertEqual(got, [
+            (17, ["claude"], "Whole result set fetch"),
+            (18, ["antigravity", "codex", "claude", "copilot"], "SQL injection vulnerab"),
+            (22, ["claude"], "f[\"size\"] may be NULL "),
+            (23, ["claude"], "URL built from unescap"),
+            (25, ["claude"], "page < 1 not handled"),
+            (27, ["antigravity", "codex", "claude", "copilot"], "Off-by-one pagination:"),
+            (29, ["copilot"], "path traversal allows "),
+            (31, ["claude"], "No authorization on do"),
+            (36, ["antigravity", "codex", "claude"], "Path traversal vulnera"),
+            (36, ["copilot"], "invalid file IDs cause"),
+            (40, ["copilot"], "concurrent deletions c"),
+            (43, ["antigravity", "codex", "claude"], "Unhandled NoneType der"),
+            (44, ["claude"], "user[\"admin\"] KeyError"),
+            (47, ["claude"], "Path traversal on dele"),
+            (48, ["antigravity", "claude"], "Unhandled NoneType der"),
+            (49, ["claude"], "No commit and ordering"),
+            (49, ["claude"], "Non-atomic read-modify"),
+            (55, ["antigravity"], "Missing database trans"),
+        ])
+
 
 class RaceAndPatchTest(CliBase):
     def test_tests_pick_the_winner_and_apply_lands_it(self):

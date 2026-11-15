@@ -18,7 +18,7 @@ MODELS = {"antigravity": "gemini-3.8-flash-low"}  # 22 of 23 planted bugs in ~20
 SEVERITY = {"low": 1, "medium": 2, "high": 3}
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 ROW = re.compile(r"^(?P<path>[^\s|:]+):(?P<line>\d+)(?:[-–]\d+)?\s*\|\s*(?P<sev>high|medium|low)\b\s*\|?\s*(?P<rest>.*)$", re.I)
-NEAR = 3  # findings within this many lines of each other, in one file, count as the same defect
+NEAR = 3  # findings further apart than this, in one file, are never the same defect
 
 
 def capture(top, group, base=None, staged=False, since=None):
@@ -79,37 +79,122 @@ def resolve(root, p, changed=(), known=()):
 
 
 STOP = {"this", "that", "with", "when", "from", "which", "will", "into", "than", "then", "there", "their", "could",
-        "would", "should", "does", "doesn", "isn", "missing", "line", "code", "value", "values", "input", "error"}
+        "would", "should", "does", "doesn", "isn", "missing", "line", "code", "value", "values", "input", "error",
+        "about", "after", "allows", "also", "because", "before", "causes", "causing", "instead", "other", "using",
+        "where", "while", "without", "raise", "raises", "raised"}
+SAME_LINE, MIN_LINK = 0.15, 0.125  # see link() and group()
+# Models name one bug class in different words; these fold to one token before matching.
+SYNONYMS = {**dict.fromkeys(("race", "races", "racy", "racing", "concurrent", "concurrency", "concurrently", "toctou"),
+                            "race"),
+            **dict.fromkeys(("none", "null", "nil", "nonetype", "nullptr"), "none")}
+SUFFIXES = ("ations", "ation", "ions", "ion", "ings", "ing", "ies", "ied", "es", "ed", "ly", "s", "e")
+
+
+def stem(w):
+    """A crude stem, enough for `crashes`/`crash`, `deletions`/`deleted` and `committed`/`commit` to match."""
+    for suf in SUFFIXES:
+        if w.endswith(suf) and len(w) - len(suf) >= 3:
+            w = w[: -len(suf)]
+            if suf in ("ed", "ing", "ings") and len(w) > 3 and w[-1] == w[-2] and w[-1] not in "aeiou":
+                w = w[:-1]  # committ -> commit
+            return w
+    return w
 
 
 def words(text):
-    return {w for w in re.findall(r"[a-z][a-z0-9_]{3,}", text.lower()) if w not in STOP}
+    """The distinctive words of a finding: lowercased, identifiers split at underscores, stopwords dropped,
+    synonyms folded and the rest stemmed."""
+    return {SYNONYMS.get(w) or stem(w) for w in re.findall(r"[a-z][a-z0-9]{3,}", text.lower()) if w not in STOP}
 
 
-def same_defect(f, c, near):
-    """Two models describe the same defect when they cite the same line, or nearby lines (within `near`) with the
-    same severity or a shared distinctive word; that keeps a style note from inflating a real bug's agreement."""
-    gap = abs(c["line"] - f["line"])
-    return gap == 0 or (gap <= near and (f["severity"] == c["severity"] or bool(words(f["defect"]) & c["words"])))
+def weights(fs, bags):
+    """How much sharing a word says about two findings being one defect. Each model reports a defect once, so a
+    word one model uses in several of its findings (file, owner, quota) describes the code, not a defect. The
+    weight is the share of the word's uses that come from different models, squared, so such words count for
+    little: 1 when every model that uses it does so once, 0.36 for three models across five findings."""
+    uses = {}
+    for f, bag in zip(fs, bags):
+        for w in bag:
+            per = uses.setdefault(w, {})
+            per[f["worker"]] = per.get(f["worker"], 0) + 1
+    return {w: (len(per) / sum(per.values())) ** 2 for w, per in uses.items()}
+
+
+def link(a, b, bag_a, bag_b, weight, near=NEAR):
+    """How alike two findings from different models are, or None when they can't be the same defect: more than
+    `near` lines apart, on different lines without sharing half a word's worth of weight (words that name this
+    defect rather than the code around it), or on one line with nothing in common, not even the severity. The
+    score is the weighted overlap of their words (Dice: shared weight against both findings' weight, so a short
+    finding sharing one common word doesn't look identical), plus a little for citing the same line. On one
+    line, models describe one bug in very different words, so the line alone can link two findings of the same
+    severity. The constants come from three real four-model runs, each grouped by hand (see the tests)."""
+    gap = abs(a["line"] - b["line"])
+    if a["worker"] == b["worker"] or gap > near:
+        return None
+    shared = sum(weight[w] for w in bag_a & bag_b)
+    if gap and shared < 0.5:
+        return None
+    if not gap and not shared and a["severity"] != b["severity"]:
+        return None  # one line, nothing in common, not even the severity: two defects that happen to share a line
+    size = sum(weight[w] for w in bag_a) + sum(weight[w] for w in bag_b)
+    return (2 * shared / size if size else 0) + SAME_LINE * (gap == 0)
+
+
+def group(fs, near=NEAR):
+    """Cluster one file's findings: lists of indices into fs. Average linkage, best pair first, so on a line with
+    several defects each finding goes with its closest match rather than with whichever came first. Two groups
+    join only if no model would count twice, they stay within `near` lines, and their findings are alike on
+    average (pairs that can't be one defect count as 0) by at least MIN_LINK."""
+    bags = [words(f["defect"]) for f in fs]
+    weight = weights(fs, bags)
+    scores = {}
+    for i in range(len(fs)):
+        for j in range(i + 1, len(fs)):
+            s = link(fs[i], fs[j], bags[i], bags[j], weight, near)
+            if s is not None:
+                scores[i, j] = s
+    of, members = list(range(len(fs))), {i: [i] for i in range(len(fs))}
+    while True:
+        sums = {}
+        for (i, j), s in scores.items():
+            pair = (min(of[i], of[j]), max(of[i], of[j]))
+            if pair[0] != pair[1]:
+                sums[pair] = sums.get(pair, 0) + s
+        best = None
+        for (a, b), s in sorted(sums.items()):
+            ma, mb = members[a], members[b]
+            lines = [fs[k]["line"] for k in ma + mb]
+            avg = s / (len(ma) * len(mb))
+            if ({fs[k]["worker"] for k in ma} & {fs[k]["worker"] for k in mb} or max(lines) - min(lines) > near
+                    or avg < MIN_LINK):
+                continue
+            if best is None or avg > best[0]:
+                best = (avg, a, b)
+        if best is None:
+            return list(members.values())
+        _, a, b = best
+        for k in members[b]:
+            of[k] = a
+        members[a] += members.pop(b)
 
 
 def merge(found, near=NEAR):
-    """Group findings that point at the same defect in one file; each model counts once per group."""
-    clusters = []
-    for f in sorted(found, key=lambda f: (f["rel"] or f["path"], -SEVERITY[f["severity"]], f["line"])):
-        where = f["rel"] or f["path"]
-        near_ones = [c for c in clusters if c["path"] == where and f["worker"] not in c["workers"]
-                     and same_defect(f, c, near)]
-        c = min(near_ones, key=lambda c: abs(c["line"] - f["line"]), default=None)
-        if c is None:
-            c = {"path": where, "line": f["line"], "severity": f["severity"], "defect": f["defect"], "workers": [],
-                 "findings": [], "valid": f["rel"] is not None, "words": set()}
-            clusters.append(c)
-        c["workers"].append(f["worker"])
-        c["findings"].append(f)
-        c["words"] |= words(f["defect"])
-        if SEVERITY[f["severity"]] > SEVERITY[c["severity"]]:
-            c["severity"], c["defect"] = f["severity"], f["defect"]
+    """Group findings that point at the same defect in one file; each model counts once per group. A group shows
+    its most severe finding, at the line most of its most severe findings cite."""
+    order, files, clusters = {}, {}, []
+    for f in found:
+        order.setdefault(f["worker"], len(order))
+        files.setdefault((f["rel"] or f["path"], f["rel"] is not None), []).append(f)
+    for (where, valid), fs in files.items():
+        for idx in group(fs, near):
+            ms = sorted((fs[k] for k in idx), key=lambda f: (order[f["worker"]], f["line"]))
+            top = max(SEVERITY[f["severity"]] for f in ms)
+            lines = [f["line"] for f in ms if SEVERITY[f["severity"]] == top]
+            line = min(set(lines), key=lambda x: (-lines.count(x), x))
+            lead = next(f for f in ms if SEVERITY[f["severity"]] == top and f["line"] == line)
+            clusters.append({"path": where, "line": line, "severity": lead["severity"], "defect": lead["defect"],
+                             "workers": [f["worker"] for f in ms], "findings": ms, "valid": valid,
+                             "words": set().union(*(words(f["defect"]) for f in ms))})
     return clusters
 
 
