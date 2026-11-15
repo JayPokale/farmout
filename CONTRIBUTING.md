@@ -27,7 +27,12 @@
 | `farmout/flows.py` | fan-out, ask, race, and diff/apply/pull request |
 | `farmout/review.py` | the review brief, finding parser, cross-model merge, citation check |
 | `farmout/pipeline.py` | pipeline files, stages, gates, approvals, runs, resume |
-| `farmout/config.py`, `usage.py` | paths and settings; the usage log and limits |
+| `farmout/hooks.py` | farmout's own hooks, redaction |
+| `farmout/skills.py` | `SKILL.md` parsing, discovery, running, `skill add` |
+| `farmout/store.py` | the store index, hash-checked installs, tools |
+| `farmout/bench.py` | `farmout bench` |
+| `farmout/config.py`, `usage.py` | paths, settings and trust; the usage log and limits |
+| `store/` | the store's entries and `index.json` (rebuilt by `scripts/build_store_index.py`) |
 | `farmout/mcp.py`, `cli.py` | the two front ends |
 
 ## Setup
@@ -66,6 +71,10 @@ It drives the real CLIs on your own logins and spends a little quota. Export the
 - [ ] A README Safety row with the exact read-only and write flags, and the tested CLI version.
 - [ ] Smoke-test output proving read-only mode cannot write.
 - [ ] Offline tests with the fake CLI for the read-only and write flags and for resume.
+
+## Store entries
+
+See [store/README.md](store/README.md): one folder per entry with an `entry.json`, standard library only, then `python3 scripts/build_store_index.py`. Every entry is read line by line before it's merged, and its `version` goes up on every change.
 
 ## Pull requests
 

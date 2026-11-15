@@ -17,6 +17,11 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 - **`.farmoutinclude`**: ignored files (such as `.env`) copied into isolated worktrees, never into patches.
 - **MCP tools** `send`, `sessions` and `pipeline`, next to `delegate` (which gains `effort`).
 - `--effort` for every worker (`--effort`, `--reasoning-effort`, `model_reasoning_effort`).
+- **Skills:** `SKILL.md` folders (the format Claude Code, Codex and Copilot share) run on your workers with `farmout <skill>`, in ask, review or race mode, also as pipeline stages. `farmout skill add` installs from a folder, a git repository or a URL; remote skills that contain code are refused.
+- **Hooks** on farmout's events (SessionStart, MessageReceived, TaskStart, TaskEnd, StageEnd, PipelineEnd): JSON on stdin; a TaskStart hook can rewrite or block the brief. A project's own hooks run only after `farmout trust`, pinned to the settings file's SHA-256. `redact = true` strips credentials from briefs and piped input.
+- **The store** (`store/` in this repository): reviewed skills, hooks and tools, every file pinned by SHA-256 and checked on install; `farmout store ls|show|add|rm|update`, `farmout tool run`. First entries: security-review, test-gaps, notify, guard-secrets, prune.
+- **`farmout bench`**: replays recent small bug fixes from your history in a scratch worktree and scores each worker on finding them.
+- **`farmout ask --debate`**, **`farmout fix-pr`** (a pull request's review comments and failing checks become a race), **`farmout undo`**, **`farmout apply`** for several patches in order, **`farmout export`** (Markdown or HTML), **`farmout status --line`** and **`farmout ls --watch`**.
 - **Plugin slash commands:** `/farmout:review` (every worker reviews your diff in parallel; Claude merges the findings with agreement counts and verifies each), `/farmout:race` (every worker attempts the same fix in its own git worktree; your tests pick the winner), `/farmout:ask` (one question to every worker, compared), `/farmout:setup` (which workers are ready).
 - **`copilot` worker:** GitHub Copilot CLI, read-only through a tool allowlist (`--available-tools`), because `--allow-all-tools` would also auto-approve the user's MCP servers.
 - **`isolate: true`** on a task: the worker writes in a private git worktree under `<repo>/.farmout/` (HEAD plus your uncommitted and untracked files, committed as a base), and the result names a patch with only its changes. In-repo paths in `files` and in the brief are rewritten to the worktree, patches are taken against the base commit (so a worker's own commits count), caches stay out of patches, and the directory is kept out of `git status` through the repository's local exclude file.
@@ -39,7 +44,7 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 
 - The `claude` worker could never search the web: headless Claude Code denies any tool that would ask for permission, so WebSearch is now pre-approved (`--allowedTools`).
 - Isolated tasks corrupted files with CRLF line endings: diffs were read as text, which turned CRLF into LF; patches now move as bytes.
-- farmout's own git hook ran a full review on every worktree farmout made; internal commits now skip hooks.
+- farmout's own git hook ran a full review on every worktree farmout made; farmout's internal git calls now run no hooks at all (`--no-verify` alone still ran post-commit and post-checkout hooks).
 - A worker name in `delegate` could become a path outside the results directory.
 - Read-only Antigravity tasks could end with only a plan stub ("please approve to proceed"); the brief now asks for the complete answer.
 - The server now stops running workers when it receives SIGTERM, not only on EOF.

@@ -16,6 +16,8 @@
 - **`farmout race "<task>" --test "pytest -x"`**: every model attempts the same change in its own git worktree; your tests pick the winner, and nothing touches your tree until you `farmout apply` it.
 - **`farmout run` / `send` / `fork`**: named sessions with any worker that remember the conversation, queue messages while busy, and hand one session's reply to another.
 - **`farmout pipe run fix`**: review your change, fix what two or more models agree on in a worktree, then review the fix. Write your own pipelines with gates, approvals and parallel stages.
+- **`farmout bench`**: which of your subscriptions reviews best on *your* code: recent bug fixes from your git history are undone in a scratch worktree, and each model is scored on finding them.
+- **Skills, hooks and a store**: run `SKILL.md` skills (the format Claude Code, Codex and Copilot share) on any worker, hook into farmout's events, and install reviewed hooks, skills and tools with every file pinned by SHA-256.
 - **Inside Claude Code**: Claude hands long reads and boilerplate to whichever subscription fits. Summarizing three papers this way cost Claude **59% fewer tokens** (74% less cost) for the same answers.
 
 You pay for Claude. Maybe also ChatGPT, Google AI, GitHub Copilot, a second Claude seat, or an open model on a GPU. Each one sits in its own terminal, idle most of the day. farmout drives their official CLIs, logged in as you, so they can work in parallel, check each other, and take turns on one job. No API keys, no extra bill, no dependencies: standard-library Python you can read before you trust it with your accounts.
@@ -77,10 +79,23 @@ farmout pipe run fix --set test="pytest -x"      # review → fix what 2+ models
 farmout pipe run spec "Add CSV export to the reports page"
 farmout pipe ls --runs
 
+# Models argue, your history judges
+farmout ask --debate "Should this cache be per-request or global?"   # each reads the others, then answers again
+farmout bench -n 3                                                    # replay 3 of your past bug fixes as a test
+farmout fix-pr 128 --test "pytest -x"            # PR review comments and failing checks become a race
+
+# Skills, hooks, the store
+farmout store ls && farmout store add security-review && farmout security-review
+farmout skill add https://github.com/you/skills --path skills/changelog
+farmout store add notify      # a desktop or phone notification when a long turn or a pipeline ends
+
 # Housekeeping
 farmout ls                    # sessions: worker, state, turns
 farmout attach dates          # watch a running session (Ctrl-C detaches; it keeps going)
 farmout stats                 # what each subscription did for you this week
+farmout status --line         # "farmout: 2 running · fix-3 waiting · codex limited till 15:00", for tmux or a prompt
+farmout ls --watch            # a live dashboard
+farmout export dates --html -o dates.html   # share a conversation
 farmout hook install          # review every commit; block it when 2+ models flag a high-severity bug
 ```
 
@@ -91,11 +106,18 @@ farmout hook install          # review every commit; block it when 2+ models fla
 | `run <worker> "<prompt>"` | start a session: `-n name`, `--write` (edit the current directory), `--isolate` (edit a private worktree, make a patch), `--model`, `--effort`, `--fallback w1,w2`, `--bg`, `-f file`. `auto` picks the first allowed worker that isn't at a usage limit |
 | `send <session> "<msg>"` | the next message; a busy session queues it. `--attach <session>` hands over that session's last reply, `-f` adds files, `--bg` returns at once |
 | `fork <session> "<msg>"` | a new session that starts from this one's conversation; `--worker` continues with a different model |
-| `ask "<question>"` | the same question to every worker (`-w` to choose), answers side by side |
+| `ask "<question>"` | the same question to every worker (`-w` to choose), answers side by side; `--debate` lets each read the others and answer again |
 | `review [focus]` | every worker reviews `--staged`, `--base <ref>` or your uncommitted change; `--min-agree N`, `--fail-on high\|medium\|low` for exit codes |
 | `race "<task>"` | every worker attempts the task in its own worktree; `--test <cmd>` picks the winner, `--apply` lands it |
-| `ls`, `log`, `attach`, `wait`, `stop`, `rm` | list, read, watch, wait for, stop and delete sessions (`rm` also removes a session's worktree and branch) |
-| `diff`, `apply [--pr]` | an isolated session's patch: show it, apply it, or open a pull request with `gh` |
+| `fix-pr <number>` | a pull request's review comments and failing checks (via `gh`) become a race; check the PR out first |
+| `bench [-n N]` | replay N recent small bug fixes from your history; each worker is scored on finding the bug |
+| `ls [--watch]`, `log`, `attach`, `wait`, `stop`, `rm` | list (or watch, as a dashboard), read, watch, wait for, stop and delete sessions (`rm` also removes a session's worktree and branch) |
+| `diff`, `apply [--pr]`, `undo` | an isolated session's patch: show it, apply it (several in order, stopping at the first that doesn't apply), open a pull request with `gh`, or take an applied one back out |
+| `export <session> [--html]` | a conversation as Markdown or a standalone HTML page |
+| `status [--line]` | what's running, queued, waiting for approval or at a usage limit |
+| `skill ls\|show\|run\|add\|rm`, `<skill>` | skills; `farmout <skill> [args]` runs one |
+| `store ls\|show\|add\|rm\|update`, `tool ls\|run` | the store, and the tools you installed from it |
+| `trust [--revoke\|--list]`, `hooks` | let a project's own hooks run; list the hooks in effect here |
 | `pipe run\|ls\|status\|resume\|approve\|stop` | pipelines and their runs |
 | `stats` | runs, failures, usage limits, time and tokens per subscription |
 | `hook install\|uninstall [--pre-push]` | a git hook that reviews each commit or push |
@@ -151,6 +173,62 @@ prompt = "Write release notes for the patch in {build.patch}"
 
 Built in: **`fix`** (review → fix what 2+ models agree on, `--set worker=codex test="pytest -x"` → review the fix) and **`spec`** (requirements → design → independent tasks → every task built in its own worktree in parallel → a check of the patches together). A worker your machine doesn't have is swapped for one it does.
 
+## Skills
+
+A skill is a folder with a `SKILL.md`: YAML frontmatter (`name`, `description`) and instructions, the format Claude Code, Codex and Copilot share. farmout runs it on your workers: `farmout <skill> [args]` (or `farmout skill run <skill>`). `$ARGUMENTS` in the instructions is replaced by the arguments, and the skill's folder is handed over so workers can read its references.
+
+```markdown
+---
+name: security-review
+description: Every worker reviews your change for security problems only.
+mode: review          # ask (default) | review (farmout review, with these instructions as the focus) | race
+workers: [codex, claude, copilot]   # default: one worker for ask, all of them for review and race
+diff: true            # hand the workers your uncommitted change as a diff file
+---
+Look only for security problems that an attacker could trigger: ...
+$ARGUMENTS
+```
+
+farmout also reads `write`, `isolate`, `test` (race mode), `model` and `effort`; other agents ignore these keys. Skills live in `<repo>/.farmout/skills/<name>/` (the project's, which win) and `~/.config/farmout/skills/<name>/` (yours). A pipeline stage can run one: `skill = "security-review"`, with the stage's `prompt` as its arguments.
+
+`farmout skill add <source>` installs from anywhere: a local folder, a git repository (`--path` picks a skill in a repository of several, `--ref` a branch or tag; the commit is recorded), or a raw `SKILL.md` URL. A skill from a git repository or URL that contains code (a `scripts/` folder, executables, scripts) or symbolic links is refused: code comes only from [the store](#the-store), or from a folder you copy in yourself. And a skill can only make farmout *do* things (run its `test` command, give workers `write`) if it's one you vouch for: yours or the store's. A project's skills and fetched ones stay text; pass `--test` or `--write` yourself.
+
+## Hooks
+
+Commands that run on farmout's events, in your settings:
+
+```toml
+[[hooks]]
+event = "TaskEnd"                       # SessionStart, MessageReceived, TaskStart, TaskEnd, StageEnd, PipelineEnd
+command = "notify-send farmout done"
+matcher = "codex|claude"                # optional: a regex on the worker, session or pipeline name
+timeout = 30
+```
+
+A hook reads the event as one line of JSON on stdin (worker, prompt, files, session, result, run, stage and so on, by event). Exit 0 to go on; a `TaskStart` hook may print `{"prompt": "..."}` to rewrite the brief, or exit 2 (or print `{"decision": "block", "reason": "..."}`) to stop the task before it reaches the worker. Any other failure is shown and ignored. `farmout hooks` lists the hooks in effect.
+
+Hooks are code, so farmout runs only yours (`~/.config/farmout/settings`), those installed from the store, and a project's own `.farmout/settings` hooks once you `farmout trust` that file. Trust is pinned to the file's SHA-256: if it changes, its hooks stop until you trust it again.
+
+**`redact = true`** in your settings replaces credentials (API keys and tokens, private keys, JWTs, `password=…` values) in every brief and in piped stdin before they leave your machine. Files a worker reads itself are not touched; keep secrets out of `files`, or install the `guard-secrets` hook, which refuses tasks that list them.
+
+## The store
+
+`farmout store ls` lists reviewed skills, hooks and tools; `farmout store show <name>` prints an entry's files so you can read them first; `farmout store add <name>` installs it. Every file is checked against the SHA-256 in the store's index, and if any differs, nothing is installed. `farmout store update` reinstalls entries with a new version; tools run with `farmout tool run <name> [args]`.
+
+| entry | kind | what it does |
+|---|---|---|
+| `security-review` | skill | every worker reviews your change for security problems only, merged with agreement counts |
+| `test-gaps` | skill | the behaviours in your change that no test covers, and the test to add for each |
+| `notify` | hook | a desktop notification, and a phone push through [ntfy](https://ntfy.sh) if `NTFY_TOPIC` is set, when a long turn or a pipeline ends |
+| `guard-secrets` | hook | refuses a task that would hand a worker `.env`, private keys or credentials |
+| `prune` | tool | deletes sessions idle for more than N days, with their worktrees |
+
+The store is [`store/`](store/) in this repository (`index.json` plus each entry's files); every entry is read line by line before it's merged. Point `store` in your own settings (or `FARMOUT_STORE`) at another index, including a local path, to run your own. Only your settings can name a store, never a project's.
+
+## Which model is best on your code
+
+`farmout bench -n 3` finds recent small bug-fix commits in your history (a fix-like subject, at most 4 files and 80 changed lines of code), undoes each fix in a scratch worktree so the bug is back as an uncommitted change in its real codebase, has every worker review it, and scores a worker when one of its findings lands within 3 lines of the change. It costs one review per worker per commit; the report is saved under `~/.local/state/farmout/bench/`. On two tqdm fixes, Claude, Codex and Copilot found both and Antigravity's fast model one.
+
 ## Settings
 
 `~/.config/farmout/settings.toml` (yours) and `<repo>/.farmout/settings.toml` (the project's; `.json` works too, and on Python 3.9–3.10 only `.json` does):
@@ -161,6 +239,8 @@ write = false                   # forbid write and isolate here
 web = false                     # forbid web access (agy can't turn its search off, so it's refused)
 fallback = ["codex", "copilot", "claude"]   # who takes over when one hits its usage limit
 timeout = 900                   # seconds per task
+redact = true                   # strip credentials from briefs and piped input
+# [[hooks]] tables (see Hooks); in your own settings only: store = "<index URL or path>"
 ```
 
 Neither file can loosen the other: worker lists intersect, `write` and `web` are off if either says so, and the shorter timeout wins. Settings are always read from the main working tree, so a worker editing its worktree's copy changes nothing.
@@ -235,7 +315,7 @@ What we found building this, in case it saves you an afternoon:
 - **A nested `claude -p` inherits the parent session's variables** (`CLAUDECODE`, `CLAUDE_CODE_*`, ...). farmout strips them so every worker is a clean session on the other account. `claude --bare` never reads OAuth credentials, so it can't use a subscription login.
 - **Copilot CLI's `--allow-all-tools` approves your MCP servers too**, and `--deny-tool` doesn't stop them. Allowlist with `--available-tools` instead.
 - **Python's `text=True` turns CRLF into LF.** A diff read that way no longer applies to a CRLF file, so farmout moves patches as bytes.
-- **Git hooks fire on internal commits.** A review gate in pre-commit would review every worktree farmout makes; its internal commits use `--no-verify`.
+- **Git hooks fire on internal commits and checkouts.** A review gate in pre-commit would review every worktree farmout makes, and `--no-verify` still runs post-commit and post-checkout hooks; farmout's own git calls use `-c core.hooksPath=/dev/null`.
 - **Claude Code refuses edits under `.git`**, even inside a worktree placed there, so worktrees live in `<repo>/.farmout/worktrees/`.
 - **Models cite paths relative to whatever directory they think in** (`cli.py` for `pkg/cli.py`) and line numbers inside a `.diff` file unless told otherwise. farmout's review brief asks for current-file line numbers, and its citation check accepts a unique suffix match.
 
@@ -250,7 +330,8 @@ Tested with agy 1.4.6, codex-cli 0.163.0, Claude Code 2.1.323, GitHub Copilot CL
 | `FARMOUT_API_MODEL` | unset | model name sent to that endpoint |
 | `FARMOUT_API_KEY` | unset | bearer token for that endpoint |
 | `FARMOUT_TIMEOUT` | `1200` | seconds per task (a `timeout` setting can lower it) |
-| `FARMOUT_STATE` | `~/.local/state/farmout` | sessions, pipeline runs, the usage log |
+| `FARMOUT_STATE` | `~/.local/state/farmout` | sessions, pipeline runs, the usage log, bench reports |
+| `FARMOUT_STORE` | farmout's `store/index.json` on GitHub | the store's index (a URL or a local path) |
 | `FARMOUT_READ_GUARD` | on | `0` turns off the plugin's read guard |
 | `FARMOUT_SKIP` | unset | `1` skips the git hook once |
 
@@ -279,14 +360,14 @@ Good tools exist in this space; choose by what you need:
 | [PAL MCP Server](https://github.com/BeehiveInnovations/pal-mcp-server) (formerly Zen) | you want many workflow tools (consensus, code review, planning) and API-key models, plus its `clink` CLI bridge |
 | [claude-squad](https://github.com/smtg-ai/claude-squad), [Conductor](https://conductor.build), [vibe-kanban](https://github.com/BloopAI/vibe-kanban) | you want a TUI, desktop app or board to run several interactive agents side by side |
 | [claude-code-router](https://github.com/musistudio/claude-code-router) | you want to swap the model behind Claude Code rather than use other CLIs |
-| **farmout** | you want the subscriptions you already have working together, read-only by default, from a terminal or an MCP client, with sessions, cross-model review, races and pipelines, in standard-library Python you can audit |
+| **farmout** | you want the subscriptions you already have working together, read-only by default, from a terminal or an MCP client, with sessions, cross-model review, races, pipelines, skills, hooks and a hash-pinned store, in standard-library Python you can audit |
 
 ## Roadmap
 
-- Skills (the `SKILL.md` format Claude Code, Codex and Copilot share) and hooks on farmout's own events
-- A store for hooks and tools, vetted and pinned by hash; skills from anywhere
 - More workers with verified read-only flags: OpenCode, Qwen Code, Cursor CLI, Gemini CLI for API-key users
-- PyPI release for `uvx farmout`; a CI mode that comments only on findings models agree on
+- PyPI release for `uvx farmout`
+- A CI mode that comments on a pull request only with findings models agree on
+- Editors driving farmout over the Agent Client Protocol; workers in containers
 
 ## Contributing
 
