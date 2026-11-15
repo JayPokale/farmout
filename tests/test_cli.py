@@ -8,6 +8,7 @@ import json
 import os
 import re
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -123,6 +124,15 @@ class SessionTest(CliBase):
         stash = re.search(r"^- (\S+-stdin\.txt)$", brief, re.M).group(1)
         self.assertEqual(Path(stash).read_text(), "the piped data\n")
         self.assertIn("give a prompt", self.fo("run", "codex", rc=1).stderr)
+
+    def test_an_open_socket_on_stdin_is_not_read(self):
+        # Background jobs in some agent harnesses get a socket as stdin that never closes; reading it hung forever.
+        ours, theirs = socket.socketpair()
+        self.addCleanup(ours.close)
+        self.addCleanup(theirs.close)
+        p = subprocess.run([sys.executable, str(SERVER), "run", "codex", "say hi"], cwd=self.work, env=self.env,
+                           stdin=theirs, capture_output=True, text=True, timeout=30)
+        self.assertEqual((p.returncode, p.stdout), (0, "hi\n"), p.stderr)
 
     def test_json_output_and_failures(self):
         out = self.json("run", "codex", "say hi", "-n", "j")

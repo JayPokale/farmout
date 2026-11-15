@@ -51,6 +51,7 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 - On EOF the server exits at once, even while an `api` request is in flight.
 - A JSON line on stdin that is not an object no longer crashes the server.
 - `farmout review` mixed up different defects cited on the same or neighbouring lines: findings joined the first group that would take them, so a real run credited codex with a missing-row crash it never reported and inflated agreement counts. Findings are now grouped most-similar first (average linkage over a Dice word overlap), words a model repeats across its own findings (`file`, `quota`) count for little, and light stemming plus a few synonyms (`concurrent` and `race`) match different wordings of one bug. Three real four-model runs, grouped by hand, are regression tests.
+- A command given a prompt (`farmout race "..."`, `run`, `ask`, ...) hung forever when stdin was an open socket or device that never closes, as in background jobs of some agent harnesses. Only a pipe or a redirected file is read as piped input now.
 
 ## [0.1.0] - unreleased
 

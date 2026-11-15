@@ -5,6 +5,7 @@ import os
 import shlex
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -49,11 +50,22 @@ def table(rows):
     return "\n".join("  ".join(str(c).ljust(w) for c, w in zip(r, widths)).rstrip() for r in rows)
 
 
+def piped_stdin():
+    """What was piped or redirected into farmout. Only a pipe or a file counts: a terminal waits for typing, and a
+    socket or device left open by whatever started farmout (a background job in an agent harness, an IDE, a CI
+    runner) would block the read forever."""
+    try:
+        mode = os.fstat(sys.stdin.fileno()).st_mode
+    except (AttributeError, OSError, ValueError):  # no stdin at all, or a closed one
+        return ""
+    return sys.stdin.read() if stat.S_ISFIFO(mode) or stat.S_ISREG(mode) else ""
+
+
 def read_prompt(words, required=True, cwd=None):
     """(prompt, extra files). Piped stdin is the prompt when no words are given; otherwise it goes along as a file.
     With `redact = true` in the settings, credentials in piped text are replaced before anything is saved."""
     text = " ".join(words).strip()
-    piped = sys.stdin.read() if not sys.stdin.isatty() else ""
+    piped = piped_stdin()
     if piped.strip() and redacting(cwd):
         piped, n = farmout_hooks.redact(piped)
         if n:
