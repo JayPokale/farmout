@@ -23,7 +23,8 @@ const STATS = [
     src: "files_api case: all 5 planted bugs found, 4 of them by 4/4 · demo-review.md",
   },
   {
-    value: 0,
+    // Hubot Sans draws its zero with a bar, which reads as a theta at this size
+    text: "Zero",
     k: "dependencies: standard-library Python you can read before you hand it your logins",
     src: "pyproject.toml · dependencies = []",
   },
@@ -41,7 +42,7 @@ export default function Stats() {
             <dt className="sr-only">{s.k}</dt>
             <dd>
               <p className="display text-lanes w-fit text-4xl font-bold">
-                <Counter value={s.value} prefix={s.prefix} suffix={s.suffix} />
+                {"text" in s ? s.text : <Counter value={s.value} prefix={s.prefix} suffix={s.suffix} />}
               </p>
               <p className="mt-2 text-sm text-fg">{s.k}</p>
               <p className="mt-2 font-mono text-[10.5px] leading-snug text-dim">{s.src}</p>
