@@ -132,35 +132,6 @@ body {
   background: linear-gradient(90deg, var(--color-codex), var(--color-claude), var(--color-copilot), var(--color-agy));
 }
 
-/* Film grain over everything, faint: borrowed from jaypokale.me. The layer
-   overhangs the viewport by 50% on every side, so no step may move it more than
-   25% of its size or an edge loses its grain. */
-.grain::after {
-  content: "";
-  position: fixed;
-  inset: -50%;
-  width: 200%;
-  height: 200%;
-  pointer-events: none;
-  z-index: 60;
-  opacity: 0.045;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  animation: grain 8s steps(10) infinite;
-}
-[data-theme="light"] .grain::after { opacity: 0.03; }
-@keyframes grain {
-  0%, 100% { transform: translate(0, 0); }
-  10% { transform: translate(-5%, -10%); }
-  20% { transform: translate(-15%, 5%); }
-  30% { transform: translate(7%, -15%); }
-  40% { transform: translate(-5%, 15%); }
-  50% { transform: translate(-15%, 10%); }
-  60% { transform: translate(15%, 0%); }
-  70% { transform: translate(0%, 15%); }
-  80% { transform: translate(3%, 12%); }
-  90% { transform: translate(-10%, 10%); }
-}
-
 /* Hero: diagonal wash, a dot field that fades out, and the four lanes' light
    rising from below. Screen-blended on dark; plain and fainter on light, where
    screen against white would erase it. */
@@ -264,7 +235,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .grain::after, .neon, .caret::after, .spin { animation: none; }
+  .neon, .caret::after, .spin { animation: none; }
   .lane-pulse { display: none; }
   .lift, .lift:hover { transition: none; transform: none; }
 }

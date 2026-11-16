@@ -88,7 +88,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       suppressHydrationWarning
       className={`${hubot.variable} ${mona.variable} ${martian.variable}`}
     >
-      <body className="grain antialiased">
+      <body className="antialiased">
         {/* set the theme before paint, so no flash: dark by default, a saved choice wins */}
         <script
           dangerouslySetInnerHTML={{
