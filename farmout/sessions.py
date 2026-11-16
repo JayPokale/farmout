@@ -185,7 +185,12 @@ def is_farmout(pid, *argv):
     except FileNotFoundError:
         if Path("/proc/self").exists():  # Linux, and no such process
             return False
-        args = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True).stdout.split()
+        # macOS and the BSDs: ps lives in /bin whatever PATH says; if it can't be asked, assume the pid isn't ours
+        ps = "/bin/ps" if os.path.exists("/bin/ps") else shutil.which("ps")
+        try:
+            args = subprocess.run([ps, "-o", "command=", "-p", str(pid)], capture_output=True, text=True).stdout.split()
+        except (OSError, TypeError):
+            return False
     except OSError:
         return False
     return any(args[i:i + len(argv)] == list(argv) for i in range(len(args)))
