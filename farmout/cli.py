@@ -12,7 +12,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from . import VERSION, bench, flows, pipeline, proc, review, sessions, skills, store, usage
+from . import VERSION, bench, flows, live, pipeline, proc, review, sessions, skills, store, usage
 from . import hooks as farmout_hooks
 from .config import OUT_DIR, STATE, digest, find, project_root, read, repo_root, settings, trust_file
 from .workers import API_BASE, API_MODEL, ENABLED, SETUP, WORKERS
@@ -175,11 +175,14 @@ def show_answers(a, group, rounds):
 def cmd_ask(a):
     prompt, extra = read_prompt(a.prompt, cwd=a.cwd)
     workers = check_workers(split(a.workers)) or flows.default_workers()
-    if a.debate:
-        group, rounds = flows.debate(a.cwd, prompt, workers, a.file + extra, rounds=max(2, a.rounds))
-    else:
-        group, results = flows.ask(a.cwd, prompt, workers, a.file + extra)
-        rounds = [results]
+    group = sessions.new_group("debate" if a.debate else "ask")
+    title = f"farmout ask{' --debate' if a.debate else ''} · {len(workers)} workers · read-only"
+    with live.Lanes(group, workers, "answering", title=title, on=live.enabled(a)):
+        if a.debate:
+            group, rounds = flows.debate(a.cwd, prompt, workers, a.file + extra, rounds=max(2, a.rounds), group=group)
+        else:
+            group, results = flows.ask(a.cwd, prompt, workers, a.file + extra, group=group)
+            rounds = [results]
     return show_answers(a, group, rounds)
 
 
@@ -198,20 +201,31 @@ def show_review(a, r, min_agree=1, fail_on="never"):
 
 def cmd_review(a):
     workers = check_workers(split(a.workers)) or None
-    r = review.review(a.cwd, workers=workers, base=a.base, staged=a.staged, focus=" ".join(a.focus) or None)
+    group, lanes = sessions.new_group("review"), workers or flows.default_workers()
+    with live.Lanes(group, lanes, "reviewing", title=f"farmout review · {len(lanes)} workers · read-only",
+                    findings=True, on=live.enabled(a)):
+        r = review.review(a.cwd, workers=workers, base=a.base, staged=a.staged, focus=" ".join(a.focus) or None,
+                          group=group)
     return show_review(a, r, a.min_agree, a.fail_on)
 
 
 def cmd_race(a):
     task, extra = read_prompt(a.task, cwd=a.cwd)
     workers = check_workers(split(a.workers)) or flows.default_workers()
-    group, rows, winner = flows.race(a.cwd, task, workers, test=a.test, files=a.file + extra)
+    group = sessions.new_group("race")
+    with live.Lanes(group, workers, "working", title=f"farmout race · {len(workers)} workers · one worktree each",
+                    on=live.enabled(a)) as lanes:
+        group, rows, winner = flows.race(a.cwd, task, workers, test=a.test, files=a.file + extra, group=group,
+                                         progress=lanes.note)
     return show_race(a, group, rows, winner)
 
 
 def cmd_fix_pr(a):
     workers = check_workers(split(a.workers)) or flows.default_workers()
-    group, rows, winner = flows.fix_pr(a.cwd, a.number, workers, test=a.test)
+    group = sessions.new_group(f"pr{a.number}")
+    with live.Lanes(group, workers, "working", title=f"farmout fix-pr {a.number} · {len(workers)} workers",
+                    on=live.enabled(a)) as lanes:
+        group, rows, winner = flows.fix_pr(a.cwd, a.number, workers, test=a.test, group=group, progress=lanes.note)
     return show_race(a, group, rows, winner)
 
 
@@ -560,11 +574,15 @@ def cmd_bench(a):
     n = len(workers or flows.default_workers())
     if not a.json:
         err(f"farmout bench: up to {a.commits} commits x {n} workers = up to {a.commits * n} reviews on your subscriptions")
-    rows, report = bench.run(a.cwd, a.commits, workers, a.scan, progress=(lambda m: None) if a.json else err)
+    shown = workers or flows.default_workers()
+    lanes = (lambda g, t: live.Lanes(g, shown, "reviewing", title=t, findings=True)) if live.enabled(a) else None
+    rows, report = bench.run(a.cwd, a.commits, workers, a.scan, progress=(lambda m: None) if a.json else err,
+                             lanes=lanes)
     board = bench.scoreboard(rows)
+    card = bench.share(board, rows, report) if a.share else None
     if a.json:
         return emit(a, {"commits": rows, "scoreboard": [{"worker": w, "found": f, "of": o, "failed": x} for w, f, o, x in board],
-                        "report": str(report)})
+                        "report": str(report), **({"share": card} if card else {})})
     print(table([("WORKER", "FOUND", "FAILED")] + [(w, f"{f}/{o}", x) for w, f, o, x in board]))
     print()
     ws = [w for w, *_ in board]
@@ -572,6 +590,13 @@ def cmd_bench(a):
                                                  *("✓" if r["found"].get(w) else "x" if w in r["failed"] else "·" for w in ws))
                                                 for r in rows]))
     print(f"\n✓ found the bug   · missed it   x failed.  Report: {report}")
+    if card:
+        print("\n" + card["text"] + "\n")
+        print(f"Image: {card['png'] or card['svg']}" + ("" if card["png"] else "  (install librsvg or ImageMagick for a PNG)"))
+        print(f"Post it: {card['url']}")
+        print("Scores only: no repository name, file names or code.")
+    elif rows:
+        err("Share it: farmout bench --share")
 
 
 def progress(st):
@@ -849,6 +874,7 @@ def parser():
     bn.add_argument("-n", "--commits", type=int, default=3, help="how many bug-fix commits to replay (default 3)")
     bn.add_argument("-w", "--workers", metavar="W1,W2", help="only these workers")
     bn.add_argument("--scan", type=int, default=400, help="how far back to look for them (default 400 commits)")
+    bn.add_argument("--share", action="store_true", help="also make a post and an image card of the scores (no code)")
 
     sk = add("skill", "skills: SKILL.md folders run on your workers (`farmout <skill>` for short)", cmd_skill, ())
     ssub = sk.add_subparsers(dest="scmd", metavar="<action>")

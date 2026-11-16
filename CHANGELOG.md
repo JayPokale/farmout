@@ -35,6 +35,8 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 - Offline test suite (CI on Ubuntu and macOS, Python 3.9/3.12/3.14), a real-CLI smoke test (`tests/smoke.py [worker ...]`), a slash-command smoke test (`tests/plugin_smoke.sh`), and a tag-driven release workflow.
 - Contributor docs, issue and PR templates, and a security policy.
 - **A website** (`site/`, Next.js, deployed separately; not part of the Python package): install paths, the workers and their flags, replays of real `farmout review` and `farmout race` runs right after the hero, pipelines, the benchmarks and the safety model.
+- **Live lanes:** while `review`, `race`, `ask`, `fix-pr` and `bench` run, a terminal shows one row per worker: working, then its findings, its test result or its failure, with the time. Only on a terminal; `--json`, pipes and the MCP server see nothing, `NO_COLOR` drops the colours and `FARMOUT_LIVE=0` the lanes.
+- **`farmout bench --share`**: the scores as a post that fits on X, an image card (SVG, plus PNG when librsvg or ImageMagick is installed) and a one-click post link. Scores only: no repository name, file names or code.
 
 ### Changed
 

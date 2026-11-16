@@ -58,10 +58,10 @@ DEBATE = ("The other models answered the same question; their answers are in the
           "first line: FINAL: <one-line answer>.")
 
 
-def debate(cwd, prompt, workers, files=(), rounds=2):
+def debate(cwd, prompt, workers, files=(), rounds=2, group=None):
     """ask, then each model reads the others' answers and revises or defends its own, `rounds` times in all.
     Returns (group, [round results]); every round continues each model's own conversation."""
-    group, results = ask(cwd, prompt, workers, files, group=sessions.new_group("debate"))
+    group, results = ask(cwd, prompt, workers, files, group=group or sessions.new_group("debate"))
     history = [results]
     for _ in range(rounds - 1):
         ok = [(n, rec) for n, rec in results if rec["status"] == "ok"]
@@ -82,9 +82,11 @@ def debate(cwd, prompt, workers, files=(), rounds=2):
     return group, history
 
 
-def race(cwd, task, workers, test=None, timeout=None, group=None, files=()):
+def race(cwd, task, workers, test=None, timeout=None, group=None, files=(), progress=None):
     """Every worker attempts the task in its own worktree; your test command picks the winner (then the smallest
-    diff, then the fastest). Returns (group, rows, winner row or None)."""
+    diff, then the fastest). Returns (group, rows, winner row or None). progress(session, text), if given, hears
+    about the test runs."""
+    say = progress or (lambda name, text: None)
     group = group or sessions.new_group("race")
     brief = task + (f"\n\nSuccess means this command passes: {test}" if test else "") + RACE
     rows = []
@@ -95,8 +97,14 @@ def race(cwd, task, workers, test=None, timeout=None, group=None, files=()):
                "error": None if rec["status"] == "ok" else text(rec)[:300]}
         if row["ok"] and iso:
             row["files"], row["added"], row["removed"] = isolate.shortstat(iso)
-            if test and row["files"]:
+            if not row["files"]:
+                say(name, "no changes")
+            elif test:
+                say(name, "testing…")
                 row["tests"], row["test_output"] = proc.shell(test, os.path.join(iso["worktree"], iso.get("rel", ".")))
+                say(name, f"+{row['added']}/-{row['removed']}, tests " + ("pass" if row["tests"] else "FAIL"))
+            else:
+                say(name, f"+{row['added']}/-{row['removed']}")
         rows.append(row)
     contenders = [r for r in rows if r["ok"] and r["files"] and (r["tests"] if test else True)]
     winner = min(contenders, key=lambda r: (r["added"] + r["removed"], r["secs"] or 0), default=None)
@@ -150,7 +158,7 @@ def undo(name):
     return f"took {name}'s patch back out of {top}"
 
 
-def fix_pr(cwd, number, workers, test=None, timeout=None):
+def fix_pr(cwd, number, workers, test=None, timeout=None, group=None, progress=None):
     """A pull request's review comments and failing checks become a race: every worker attempts them in its own
     worktree, your tests pick the winner. The pull request's head must be checked out (`gh pr checkout N`)."""
     top = str(isolate.git(cwd, "rev-parse", "--show-toplevel").strip())
@@ -181,7 +189,8 @@ def fix_pr(cwd, number, workers, test=None, timeout=None):
     task += "".join(f"\n- review comment: {x}" for x in said)
     task += "".join(f"\n- inline comment at {x}" for x in inline)
     task += "".join(f"\n- failing check: {x}" for x in failing)
-    return race(cwd, task, workers, test=test, timeout=timeout, group=sessions.new_group(f"pr{number}"))
+    return race(cwd, task, workers, test=test, timeout=timeout, group=group or sessions.new_group(f"pr{number}"),
+                progress=progress)
 
 
 def pull_request(name):

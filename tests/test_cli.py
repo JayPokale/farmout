@@ -1060,6 +1060,20 @@ class MoreTest(CliBase):
         self.assertEqual(out["scoreboard"][0], {"worker": "codex", "found": 1, "of": 1, "failed": 0})
         self.assertEqual(self.git("worktree", "list").count("\n"), 1, "the scratch worktree is gone")
         self.assertEqual(self.git("status", "--porcelain"), "", "your tree is untouched")
+        # --share: a post and an image card with scores only, never the repository's names or code
+        p = self.fo("bench", "-n", "2", "-w", "codex,claude", "--share")
+        self.assertIn("Which AI reviews my code best? I replayed 1 real bug fix", p.stdout)
+        self.assertRegex(p.stdout, r"Codex\s+█ 1/1")
+        self.assertIn("https://x.com/intent/tweet?text=", p.stdout)
+        card = re.search(r"^Image: (\S+)", p.stdout, re.M).group(1)
+        svg = Path(card).with_suffix(".svg").read_text()
+        self.assertIn("Which AI reviews my code best?", svg)
+        for private in ("ratio", "m.py", "division", self.work.name):
+            self.assertNotIn(private, p.stdout.split("Report:")[1], private)
+            self.assertNotIn(private, svg, private)
+        shared = self.json("bench", "-n", "1", "-w", "codex", "--share")["share"]
+        self.assertTrue(Path(shared["svg"]).exists())
+        self.assertLessEqual(len(shared["text"]), 280, "fits in one post")
 
     def test_fix_pr_turns_feedback_into_a_race(self):
         self.repo()
@@ -1259,6 +1273,54 @@ class McpSessionTest(Base):
         self.assertAllDead(pids, "a cancelled send kept its worker running")
         self.assertIsNone(s.reply(rid, timeout=2))
 
+
+
+class LiveLanesTest(unittest.TestCase):
+    """The rows `farmout review` and friends draw on a terminal while workers run."""
+
+    def setUp(self):
+        import shutil
+        import tempfile
+        from farmout import sessions
+        self.root = Path(tempfile.mkdtemp(prefix="farmout-lanes-"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        old, sessions.ROOT = sessions.ROOT, self.root
+        self.addCleanup(setattr, sessions, "ROOT", old)
+
+    def turn(self, name, **rec):
+        d = self.root / name / "turns"
+        d.mkdir(parents=True)
+        (d / "0001.json").write_text(json.dumps({"n": 1, "started": time.time() - 3, **rec}))
+
+    def test_a_row_per_worker_redrawn_in_place(self):
+        import io
+        from farmout import live
+        out = self.root / "claude.md"
+        out.write_text("a.py:2 | high | divides by zero | f(0) | guard\na.py:9 | low | typo | - | fix\n")
+        self.turn("review-9-codex", status="running", worker="codex")
+        self.turn("review-9-claude", status="ok", worker="claude", secs=12.3, output=str(out))
+        self.turn("review-9-agy", status="failed", worker="copilot", secs=4)
+        buf = io.StringIO()
+        lanes = live.Lanes("review-9", ["codex", "claude", "agy", "copilot"], "reviewing", title="farmout review",
+                           findings=True, out=buf)
+        lanes.draw()
+        text = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", buf.getvalue())
+        self.assertRegex(text, r"codex\s+reviewing…")
+        self.assertRegex(text, r"claude\s+2 findings\s+12s")
+        self.assertRegex(text, r"agy\s+failed → copilot")
+        self.assertRegex(text, r"copilot\s+starting…")
+        lanes.note("review-9-claude", "tests pass")
+        lanes.draw()
+        self.assertIn("\x1b[5A", buf.getvalue(), "the next frame moves back up over the title and four rows")
+        self.assertIn("tests pass", buf.getvalue())
+
+    def test_nothing_is_drawn_until_a_worker_starts_or_off_a_terminal(self):
+        import io
+        from farmout import live
+        buf = io.StringIO()
+        live.Lanes("review-8", ["codex"], "reviewing", out=buf).draw()
+        self.assertEqual(buf.getvalue(), "", "an empty review never shows lanes")
+        self.assertFalse(live.enabled(type("A", (), {"json": True})()))
 
 if __name__ == "__main__":
     unittest.main()
