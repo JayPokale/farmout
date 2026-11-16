@@ -34,6 +34,7 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 - README demo (an animated replay of a real run), translations into Chinese, Japanese, Korean and Spanish, a FAQ, and a social preview image.
 - Offline test suite (CI on Ubuntu and macOS, Python 3.9/3.12/3.14), a real-CLI smoke test (`tests/smoke.py [worker ...]`), a slash-command smoke test (`tests/plugin_smoke.sh`), and a tag-driven release workflow.
 - Contributor docs, issue and PR templates, and a security policy.
+- **A website** (`site/`, Next.js, deployed separately; not part of the Python package): install paths, the workers and their flags, replays of real `farmout review` and `farmout race` runs right after the hero, pipelines, the benchmarks and the safety model.
 
 ### Changed
 

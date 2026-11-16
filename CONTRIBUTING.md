@@ -33,6 +33,7 @@
 | `farmout/bench.py` | `farmout bench` |
 | `farmout/config.py`, `usage.py` | paths, settings and trust; the usage log and limits |
 | `store/` | the store's entries and `index.json` (rebuilt by `scripts/build_store_index.py`) |
+| `site/` | the landing page (Next.js, not part of the Python package); see [site/README.md](site/README.md) |
 | `farmout/mcp.py`, `cli.py` | the two front ends |
 
 ## Setup

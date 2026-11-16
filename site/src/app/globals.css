@@ -1,0 +1,270 @@
+@import "tailwindcss";
+
+/* farmout's palette is its logo: one bone line (you, through farmout) fanning out
+   into four coloured lanes, one per subscription. On this page a colour always
+   means a worker; farmout itself is bone, or all four lanes at once. */
+@theme {
+  --color-bg: #0b0c11;
+  --color-surface: #101219;
+  --color-raised: #171a23;
+  --color-line: #242734;
+  --color-fg: #ece8df;
+  --color-dim: #9a9eaf;
+  --color-faint: #5f6375;
+  --color-brand: #ece8df;
+  --color-brand-hover: #ffffff;
+  --color-on-brand: #0b0c11;
+
+  --color-codex: #f2a65a;
+  --color-agy: #5ec4b6;
+  --color-copilot: #a78bfa;
+  --color-claude: #f47c7c;
+  --color-api: #c9c5bc;
+  --color-pass: #7bd88f;
+  --color-fail: #f47c7c;
+
+  /* the terminal stays dark in both themes, so it keeps its own copies */
+  --color-term: #08090d;
+  --color-term-line: #22252f;
+  --color-term-dim: #8b8fa3;
+  --color-term-fg: #ece8df;
+  --color-term-codex: #f2a65a;
+  --color-term-agy: #5ec4b6;
+  --color-term-copilot: #a78bfa;
+  --color-term-claude: #f47c7c;
+  --color-term-pass: #7bd88f;
+  --color-term-low: #a3a7b7;
+
+  --font-sans: var(--font-mona);
+  --font-display: var(--font-hubot);
+  --font-mono: var(--font-martian);
+}
+
+[data-theme="light"] {
+  --color-bg: #f7f5f0;
+  --color-surface: #f0ede6;
+  --color-raised: #e8e4da;
+  --color-line: #dbd6ca;
+  --color-fg: #15171f;
+  --color-dim: #575b69;
+  --color-faint: #8c8f9a;
+  --color-brand: #15171f;
+  --color-brand-hover: #2b2e3b;
+  --color-on-brand: #f7f5f0;
+  --color-codex: #b4621b;
+  --color-agy: #0f8478;
+  --color-copilot: #6a4fd0;
+  --color-claude: #c4433e;
+  --color-api: #5b5e6b;
+  --color-pass: #1d8a45;
+  --color-fail: #c4433e;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 5rem;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-mona), system-ui, sans-serif;
+  overflow-x: hidden;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+::selection {
+  background: var(--color-brand);
+  color: var(--color-on-brand);
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-line); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-dim); }
+
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Grid items may shrink below their content's width, so a wide code block
+   scrolls inside its panel instead of widening the page on a phone. */
+.grid > * { min-width: 0; }
+
+/* Panels that scroll inside the page: terminals, tables. */
+.pane-scroll { scrollbar-width: thin; scrollbar-color: var(--color-line) transparent; }
+.pane-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+
+/* Headlines: Hubot Sans, opened up on its width axis. */
+.display {
+  font-family: var(--font-hubot), system-ui, sans-serif;
+  font-stretch: 116%;
+  letter-spacing: -0.025em;
+}
+
+/* Martian Mono is wide; code and commands use it condensed so they fit. The
+   uppercase labels keep the full width, for character. */
+.font-mono, pre, code { font-stretch: 87.5%; }
+:not(pre) > code { font-size: 0.88em; white-space: nowrap; }
+
+/* Small uppercase labels, the page's connective tissue. */
+.mono-label {
+  font-family: var(--font-martian), ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* All four lanes at once: farmout's own emphasis. */
+.text-lanes {
+  background: linear-gradient(92deg, var(--color-codex) 0%, var(--color-claude) 34%, var(--color-copilot) 66%, var(--color-agy) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.bg-lanes {
+  background: linear-gradient(90deg, var(--color-codex), var(--color-claude), var(--color-copilot), var(--color-agy));
+}
+
+/* Film grain over everything, faint: borrowed from jaypokale.me. The layer
+   overhangs the viewport by 50% on every side, so no step may move it more than
+   25% of its size or an edge loses its grain. */
+.grain::after {
+  content: "";
+  position: fixed;
+  inset: -50%;
+  width: 200%;
+  height: 200%;
+  pointer-events: none;
+  z-index: 60;
+  opacity: 0.045;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation: grain 8s steps(10) infinite;
+}
+[data-theme="light"] .grain::after { opacity: 0.03; }
+@keyframes grain {
+  0%, 100% { transform: translate(0, 0); }
+  10% { transform: translate(-5%, -10%); }
+  20% { transform: translate(-15%, 5%); }
+  30% { transform: translate(7%, -15%); }
+  40% { transform: translate(-5%, 15%); }
+  50% { transform: translate(-15%, 10%); }
+  60% { transform: translate(15%, 0%); }
+  70% { transform: translate(0%, 15%); }
+  80% { transform: translate(3%, 12%); }
+  90% { transform: translate(-10%, 10%); }
+}
+
+/* Hero: diagonal wash, a dot field that fades out, and the four lanes' light
+   rising from below. Screen-blended on dark; plain and fainter on light, where
+   screen against white would erase it. */
+.hero-wash {
+  background: linear-gradient(236deg, var(--color-raised) 4%, var(--color-bg) 34%);
+}
+.dot-field {
+  background-image: radial-gradient(var(--color-line) 1.2px, transparent 1.2px);
+  background-size: 26px 26px;
+  mask-image: radial-gradient(ellipse 72% 58% at 50% 34%, #000 25%, transparent 78%);
+  opacity: 0.9;
+}
+.aurora {
+  position: absolute;
+  left: 50%;
+  bottom: -14%;
+  width: min(1760px, 150%);
+  height: 62%;
+  transform: translateX(-50%) rotate(-5deg);
+  background:
+    radial-gradient(26% 34% at 24% 78%, #f2a65a99, transparent 70%),
+    radial-gradient(24% 30% at 42% 84%, #f47c7c8c, transparent 70%),
+    radial-gradient(24% 32% at 60% 80%, #a78bfa8c, transparent 70%),
+    radial-gradient(24% 30% at 78% 76%, #5ec4b680, transparent 70%);
+  filter: blur(48px) saturate(1.15);
+  mix-blend-mode: screen;
+  opacity: 0.55;
+  pointer-events: none;
+}
+[data-theme="light"] .aurora { mix-blend-mode: normal; opacity: 0.22; }
+
+/* The install card's frame: a 1px conic border whose bright arc runs through the
+   four lane colours as it travels round. @property lets the angle animate. */
+@property --neon-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes neon-trace { to { --neon-angle: 360deg; } }
+.neon {
+  padding: 1px;
+  border-radius: 12px;
+  background: conic-gradient(from var(--neon-angle), #ece8df1a 0deg, #ece8df1a 250deg, #f2a65a 282deg, #f47c7c 304deg, #a78bfa 326deg, #5ec4b6 346deg, #ece8df1a 360deg);
+  box-shadow: 0 0 0 1px #ece8df0d, 0 30px 80px -30px #000;
+  animation: neon-trace 5s linear infinite;
+}
+[data-theme="light"] .neon {
+  background: conic-gradient(from var(--neon-angle), #15171f1f 0deg, #15171f1f 250deg, #b4621b 282deg, #c4433e 304deg, #6a4fd0 326deg, #0f8478 346deg, #15171f1f 360deg);
+  box-shadow: 0 30px 70px -36px #15171f66;
+}
+
+/* Lanes: a short bright dash travels each path. pathLength="1000" on the path
+   makes every dash the same length whatever the path's real length. The root
+   line runs first, then the four lanes, so the light looks like it passes
+   through farmout. The dash starts and ends fully off the path (80 / -1010),
+   so a round cap never leaves a dot behind. */
+.lane-pulse {
+  stroke-dasharray: 70 3000;
+  stroke-dashoffset: 80;
+}
+.lane-pulse.root { animation: pulse-root 5.6s cubic-bezier(0.55, 0, 0.45, 1) infinite; }
+.lane-pulse.fan { animation: pulse-fan 5.6s cubic-bezier(0.45, 0, 0.3, 1) infinite; }
+@keyframes pulse-root {
+  0% { stroke-dashoffset: 80; }
+  34%, 100% { stroke-dashoffset: -1010; }
+}
+@keyframes pulse-fan {
+  0%, 36% { stroke-dashoffset: 80; }
+  86%, 100% { stroke-dashoffset: -1010; }
+}
+
+/* Card under the cursor lifts and borders in bone. */
+.lift { transition: transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease; }
+.lift:hover { transform: translateY(-3px); border-color: color-mix(in oklab, var(--color-fg) 45%, transparent); }
+
+/* Underline that sweeps in from the left: borrowed from jaypokale.me. */
+.link-sweep { position: relative; text-decoration: none; }
+.link-sweep::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  height: 1px;
+  width: 100%;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.link-sweep:hover::after { transform: scaleX(1); transform-origin: left; }
+
+.caret::after {
+  content: "▌";
+  color: var(--color-term-fg);
+  animation: blink 1.1s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+.spin { display: inline-block; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .grain::after, .neon, .caret::after, .spin { animation: none; }
+  .lane-pulse { display: none; }
+  .lift, .lift:hover { transition: none; transform: none; }
+}
