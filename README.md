@@ -2,7 +2,7 @@
 
 **English** · [简体中文](i18n/README.zh-CN.md) · [日本語](i18n/README.ja.md) · [한국어](i18n/README.ko.md) · [Español](i18n/README.es.md)
 
-**Put every AI subscription you pay for to work: Codex, Gemini, GitHub Copilot, a second Claude account, local models. Conversations that remember, parallel review, races judged by your tests, and pipelines, from your terminal or from inside Claude Code. Read-only by default, no dependencies.**
+**Put every AI subscription you pay for to work: Codex, Gemini, GitHub Copilot, DeepSeek, a second Claude account, local models. Conversations that remember, parallel review, races judged by your tests, and pipelines, from your terminal or from inside Claude Code. Read-only by default, no dependencies.**
 
 [![CI](https://github.com/JayPokale/farmout/actions/workflows/ci.yml/badge.svg)](https://github.com/JayPokale/farmout/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.9%2B-3776ab)
@@ -10,13 +10,18 @@
 ![MCP](https://img.shields.io/badge/MCP-stdio-6e56cf)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
+```bash
+pipx install git+https://github.com/JayPokale/farmout
+cd your-repo && farmout bench --share   # which of your AI subscriptions finds real bugs in your own code?
+```
+
 <p align="center"><img src="assets/review-demo.svg" width="900" alt="Animated terminal replay of a real run: a review sends one uncommitted change to antigravity, codex, claude and copilot in parallel, then Claude prints a merged, verified table of nine findings with how many models flagged each"></p>
 
+- **`farmout bench`**: which AI is best on *your* code? Recent bug fixes from your git history are undone in a scratch worktree, each of your subscriptions is asked to find the bug, and `--share` turns the scores into a post and an image card (scores only, never your code).
 - **`farmout review`**: Codex, Gemini (through Antigravity), GitHub Copilot and a second Claude account review your change at the same time, read-only. Findings are merged across models with agreement counts, and any finding that cites a file or line that doesn't exist is dropped before you see it. In [our benchmark](bench/README.md), each of 32 bugs (23 planted, 9 real regressions from open-source projects) was flagged by at least three of the four models.
 - **`farmout race "<task>" --test "pytest -x"`**: every model attempts the same change in its own git worktree; your tests pick the winner, and nothing touches your tree until you `farmout apply` it.
 - **`farmout run` / `send` / `fork`**: named sessions with any worker that remember the conversation, queue messages while busy, and hand one session's reply to another.
 - **`farmout pipe run fix`**: review your change, fix what two or more models agree on in a worktree, then review the fix. Write your own pipelines with gates, approvals and parallel stages.
-- **`farmout bench`**: which of your subscriptions reviews best on *your* code: recent bug fixes from your git history are undone in a scratch worktree, and each model is scored on finding them.
 - **Skills, hooks and a store**: run `SKILL.md` skills (the format Claude Code, Codex and Copilot share) on any worker, hook into farmout's events, and install reviewed hooks, skills and tools with every file pinned by SHA-256.
 - **Inside Claude Code**: Claude hands long reads and boilerplate to whichever subscription fits. Summarizing three papers this way cost Claude **59% fewer tokens** (74% less cost) for the same answers.
 
@@ -32,7 +37,8 @@ Requirements: Python 3.9+, Linux (tested) or macOS (untested), git, and at least
 | `codex` | [Codex CLI](https://github.com/openai/codex), logged in | well-specified coding, tests, refactors, reviews |
 | `claude` | a second Claude Code account + `FARMOUT_CLAUDE_DIR` | general work on separate quota |
 | `copilot` | [GitHub Copilot CLI](https://github.com/github/copilot-cli), logged in | code review, focused coding questions, second opinions; models from several vendors |
-| `api` | `FARMOUT_API_BASE` + `FARMOUT_API_MODEL` | bulk or simple work on any OpenAI-compatible model (Ollama, vLLM, OpenRouter) |
+| `deepseek` | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`npm i -g @deepseek-ai/dsh`) and `DEEPSEEK_API_KEY` | bulk reading, summaries, routine coding and one more opinion on DeepSeek V4, cheap per token (experimental) |
+| `api` | `FARMOUT_API_BASE` + `FARMOUT_API_MODEL` | bulk or simple work on any OpenAI-compatible model (DeepSeek's API, Ollama, vLLM, OpenRouter) |
 
 The command line (a PyPI release, for `uvx farmout`, is coming):
 
@@ -52,7 +58,7 @@ claude plugin install farmout --marketplace JayPokale/farmout
 
 **Second Claude account:** log in once with `CLAUDE_CONFIG_DIR=~/.claude-2 claude`, then `export FARMOUT_CLAUDE_DIR=~/.claude-2` in your shell profile.
 
-**OpenAI-compatible endpoint:** `export FARMOUT_API_BASE=http://localhost:11434/v1 FARMOUT_API_MODEL=qwen3:32b` (and `FARMOUT_API_KEY` if needed). The `api` worker has no tools, so file text goes into the prompt; PDFs need `pdftotext`.
+**OpenAI-compatible endpoint:** `export FARMOUT_API_BASE=http://localhost:11434/v1 FARMOUT_API_MODEL=qwen3:32b` (and `FARMOUT_API_KEY` if needed); for DeepSeek's API itself, `FARMOUT_API_BASE=https://api.deepseek.com FARMOUT_API_MODEL=deepseek-flash` and your key. The `api` worker has no tools, so file text goes into the prompt; PDFs need `pdftotext`.
 
 ## A quick tour
 
@@ -127,7 +133,7 @@ Every command takes `--json` for scripts and `-C <dir>`. Prompts can come from s
 
 ## Sessions
 
-A session is a named conversation with one worker, saved in `~/.local/state/farmout/sessions/<name>/`. farmout resumes it through the worker CLI's own session id (`claude --resume`, `codex exec resume`, `copilot --session-id`, `agy --conversation`; for `api` it keeps the history itself), so the model really remembers earlier turns rather than rereading a summary.
+A session is a named conversation with one worker, saved in `~/.local/state/farmout/sessions/<name>/`. farmout resumes it through the worker CLI's own session id (`claude --resume`, `codex exec resume`, `copilot --session-id`, `agy --conversation`, `dsh --session-id`; for `api` it keeps the history itself), so the model really remembers earlier turns rather than rereading a summary.
 
 Messages go through an inbox. The session's runner, a background process that holds the session's lock, answers them in order, which is why `send` to a busy session queues instead of failing, why `farmout attach` works from any terminal, and why `farmout stop` stops exactly one session's worker. Forking a Claude session uses Claude's native fork; other workers get the transcript as a file. Review, ask, race and pipeline stages all create sessions too, so you can follow up with any reviewer: `farmout send review-3-codex "Show me the input that breaks line 42"`.
 
@@ -283,6 +289,21 @@ Plugin slash commands: `/farmout:review [--base <ref>] [focus]` (every worker re
 
 Other heads: `codex mcp add farmout -- farmout mcp`, `copilot mcp add farmout -- farmout mcp` (Codex asks before each MCP call; for `codex exec`, set `default_tools_approval_mode = "approve"` under `[mcp_servers.farmout]`). Without the plugin, Claude Code takes `claude mcp add -s user farmout -- farmout mcp`.
 
+**Inside DeepSeek Harness:** dsh loads MCP servers from its patch files. Add this to `$DSH_HOME/cordis.patch.yml` (every profile) or to one profile's `cordis.patch.yml`, and farmout's tools show up as `mcp__farmout__delegate` and so on. dsh strips credential-like and `DSH_*` variables from MCP servers, so pass what farmout needs in `env`:
+
+```yaml
+- insert:
+    - id: farmout
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: farmout
+        transport: stdio
+        command: farmout
+        args: [mcp]
+        env: { FARMOUT_CLAUDE_DIR: /home/you/.claude-2 }
+        cwd: !!js process.cwd()
+```
+
 ## Safety
 
 | worker | read-only (default) | write (`--write`, `--isolate`, `write: true`) |
@@ -291,6 +312,7 @@ Other heads: `codex mcp add farmout -- farmout mcp`, `copilot mcp add farmout --
 | `codex` | `codex exec -s read-only` | `-s workspace-write` |
 | `claude` | `claude -p --tools Read,Grep,Glob,WebSearch` | `--permission-mode acceptEdits` |
 | `copilot` | `copilot -p … --allow-all-tools --available-tools view rg glob web_fetch` | adds `apply_patch edit create`; never a shell |
+| `deepseek` | `dsh headless --permission-mode read-only --approval-policy never` | `--permission-mode workspace-write` |
 | `api` | no tools | n/a |
 
 - **Why plan mode for `agy`:** with `toolPermission: always-proceed` in agy's settings, `agy -p` runs shell commands without asking. Plan mode still answers questions about files but executes nothing, even with that setting on.
@@ -319,7 +341,7 @@ What we found building this, in case it saves you an afternoon:
 - **Claude Code refuses edits under `.git`**, even inside a worktree placed there, so worktrees live in `<repo>/.farmout/worktrees/`.
 - **Models cite paths relative to whatever directory they think in** (`cli.py` for `pkg/cli.py`) and line numbers inside a `.diff` file unless told otherwise. farmout's review brief asks for current-file line numbers, and its citation check accepts a unique suffix match.
 
-Tested with agy 1.4.6, codex-cli 0.163.0, Claude Code 2.1.323, GitHub Copilot CLI 1.0.112 and Python 3.14 on Arch Linux (November 2026); the offline test suite also passes on Python 3.9 and 3.12. CLIs change often, so if a worker breaks, please open an issue with your CLI version.
+Tested with agy 1.4.6, codex-cli 0.163.0, Claude Code 2.1.323, GitHub Copilot CLI 1.0.112 and Python 3.14 on Arch Linux (November 2026); the offline test suite also passes on Python 3.9 and 3.12. CLIs change often, so if a worker breaks, please open an issue with your CLI version. The `deepseek` worker is experimental: its flags follow DeepSeek Harness 0.2.2's documentation and haven't had a real smoke test yet.
 
 ## Configuration
 
@@ -360,6 +382,7 @@ Good tools exist in this space; choose by what you need:
 | [PAL MCP Server](https://github.com/BeehiveInnovations/pal-mcp-server) (formerly Zen) | you want many workflow tools (consensus, code review, planning) and API-key models, plus its `clink` CLI bridge |
 | [claude-squad](https://github.com/smtg-ai/claude-squad), [Conductor](https://conductor.build), [vibe-kanban](https://github.com/BloopAI/vibe-kanban) | you want a TUI, desktop app or board to run several interactive agents side by side |
 | [claude-code-router](https://github.com/musistudio/claude-code-router) | you want to swap the model behind Claude Code rather than use other CLIs |
+| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | you want an open, plugin-based harness to move into, built around DeepSeek's models (farmout can drive it as a worker, and run inside it) |
 | **farmout** | you want the subscriptions you already have working together, read-only by default, from a terminal or an MCP client, with sessions, cross-model review, races, pipelines, skills, hooks and a hash-pinned store, in standard-library Python you can audit |
 
 ## Roadmap

@@ -1,4 +1,4 @@
-"""Stand-in for agy, codex, claude, copilot and pdftotext in the offline tests.
+"""Stand-in for agy, codex, claude, copilot, dsh and pdftotext in the offline tests.
 
 The tests install a copy under each CLI's name, with a shebang for the current Python. Each run is logged to
 $FAKE_LOG/<pid>.json. Sessions work like the real CLIs': claude and copilot take the id farmout gives them, codex and
@@ -48,12 +48,14 @@ def sid():
         return flag("--conversation")
     if name == "codex" and "resume" in args:
         return args[args.index("-") - 1]
+    if name == "dsh":
+        return flag("--session-id")
     return None
 
 
 log = os.environ["FAKE_LOG"]
 brief = args[args.index("-p") + 1] if name in ("agy", "copilot") else sys.stdin.read()
-session = sid() or (str(uuid.uuid4()) if name in ("codex", "agy") else None)
+session = sid() or (str(uuid.uuid4()) if name in ("codex", "agy") else f"session-{uuid.uuid4()}" if name == "dsh" else None)
 with open(os.path.join(log, f"{os.getpid()}.json"), "w") as f:
     json.dump({"name": name, "argv": args, "cwd": os.getcwd(), "brief": brief, "session": session,
                "env": {k: v for k, v in os.environ.items() if k.startswith(("CLAUDE", "ANTHROPIC"))}}, f)
@@ -127,6 +129,10 @@ elif name == "codex":  # the final message goes to the -o file; stdout is progre
     if "--json" in args:
         print(json.dumps({"type": "thread.started", "thread_id": session}))
         print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 7, "output_tokens": 3}}))
+elif name == "dsh" and "--json" in args:  # NDJSON events: session first, final last
+    print(json.dumps({"type": "session", "sessionId": session, "cwd": os.getcwd()}))
+    print(json.dumps({"type": "text", "text": reply}))
+    print(json.dumps({"type": "final", "sessionId": session, "reason": "completed", "text": reply}))
 elif name == "claude" and flag("--output-format") == "json":
     new = flag("--session-id") if "--fork-session" in args or "--resume" not in args else flag("--resume")
     print(json.dumps({"type": "result", "is_error": False, "result": reply, "session_id": new or "no-session",

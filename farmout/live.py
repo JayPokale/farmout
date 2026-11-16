@@ -13,7 +13,7 @@ from . import review, sessions
 
 # the logo's lane colours, one per worker
 RGB = {"codex": (242, 166, 90), "antigravity": (94, 196, 182), "copilot": (167, 139, 250),
-       "claude": (244, 124, 124), "api": (236, 232, 223)}
+       "claude": (244, 124, 124), "deepseek": (77, 107, 254), "api": (236, 232, 223)}
 GOOD, BAD = (123, 216, 143), (255, 107, 107)
 SPIN = "◐◓◑◒"
 

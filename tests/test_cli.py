@@ -125,6 +125,19 @@ class SessionTest(CliBase):
         self.assertEqual(Path(stash).read_text(), "the piped data\n")
         self.assertIn("give a prompt", self.fo("run", "codex", rc=1).stderr)
 
+    def test_deepseek_harness_reads_only_writes_on_request_and_resumes(self):
+        env = {"PATH": f"{self.make_bin(('dsh',))}:{self.env['PATH']}"}
+        self.assertEqual(self.fo("run", "deepseek", "say first", "-n", "ds", **env).stdout, "first\n")
+        argv = self.last("dsh")["argv"]
+        self.assertEqual(argv[:2], ["headless", "--json"])
+        self.assertEqual((flag(argv, "--permission-mode"), flag(argv, "--approval-policy")), ("read-only", "never"))
+        self.assertEqual(argv[-1], "-", "the brief goes on stdin")
+        self.assertEqual(self.fo("send", "ds", "recall", **env).stdout, "say first\n", "the conversation resumes")
+        self.assertRegex(flag(self.last("dsh")["argv"], "--session-id"), r"^session-")
+        self.fo("run", "deepseek", "say edit", "--write", "-n", "dw", **env)
+        self.assertEqual(flag(self.last("dsh")["argv"], "--permission-mode"), "workspace-write")
+        self.assertIn("deepseek", self.fo("doctor", **env).stdout)
+
     def test_an_open_socket_on_stdin_is_not_read(self):
         # Background jobs in some agent harnesses get a socket as stdin that never closes; reading it hung forever.
         ours, theirs = socket.socketpair()

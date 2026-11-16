@@ -127,6 +127,24 @@ def copilot(t, key):
     return {"text": run(cmd, key, cwd, timeout=t.get("timeout")), "native_id": sid, "usage": None}
 
 
+def deepseek(t, key):
+    """DeepSeek Harness (`dsh`), headless. Its own profile and DEEPSEEK_API_KEY pick the model, so `model` and
+    `effort` don't apply. Read-only is the `read-only` permission preset; with approvals set to `never`, anything
+    it would have asked about is refused rather than left waiting for an answer nobody can give."""
+    cwd, _, dirs, brief = prep(t)
+    mode = "workspace-write" if t.get("write") else "read-only"
+    cmd = ["dsh", "headless", "--json", "--permission-mode", mode, "--approval-policy", "never"]
+    cmd += dirs + opt("--session-id", t.get("resume")) + ["-"]
+    out = run(cmd, key, cwd, stdin=brief, timeout=t.get("timeout"))
+    events = [parse_json(line) for line in out.splitlines() if line.startswith("{")]
+    final = next((e for e in reversed(events) if e.get("type") == "final"), None)
+    if final is None:
+        error = next((e.get("message") for e in events if e.get("type") == "error"), None)
+        raise RuntimeError(f"dsh: {error or out.strip()[-1500:] or 'no answer'}")
+    sid = final.get("sessionId") or next((e.get("sessionId") for e in events if e.get("type") == "session"), None)
+    return {"text": final.get("text") or "", "native_id": sid or t.get("resume"), "usage": None}
+
+
 def api(t, key):
     """No tools on this worker, so file contents go inline. A session's history comes in t["history"]."""
     cwd, files, _, _ = prep(t)
@@ -166,6 +184,10 @@ WORKERS = {  # web_off: can farmout turn its web access off when a repo's settin
     "copilot": Worker(copilot, shutil.which("copilot"), True,
                       "GitHub Copilot CLI on your Copilot plan (spends its AI credits); model accepts any id Copilot "
                       "offers, across vendors. For code review, focused coding questions, second opinions. No shell."),
+    "deepseek": Worker(deepseek, shutil.which("dsh"), False,
+                       "DeepSeek Harness (`dsh`) on your DeepSeek API key: DeepSeek V4 models, cheap per token, with "
+                       "its own tools and web search. For bulk reading, summaries, routine coding and a further "
+                       "opinion. Experimental: its model comes from dsh's own profile."),
     "api": Worker(api, API_BASE and API_MODEL, True,
                   f"{API_MODEL} via an OpenAI-compatible API; no tools, listed files are inlined as text (PDFs via "
                   "pdftotext). For bulk/simple work: extract, classify, reformat, translate, short summaries, boilerplate."),
@@ -176,6 +198,7 @@ SETUP = {  # name: (executable, how to enable), for `doctor`
     "codex": ("codex", "install the Codex CLI and run `codex login`"),
     "claude": ("claude", "log in a second account once (`CLAUDE_CONFIG_DIR=<dir> claude`), then set FARMOUT_CLAUDE_DIR=<dir>"),
     "copilot": ("copilot", "install the GitHub Copilot CLI and run `copilot login`"),
+    "deepseek": ("dsh", "install DeepSeek Harness (`npm i -g @deepseek-ai/dsh`) and set DEEPSEEK_API_KEY"),
     "api": (None, "set FARMOUT_API_BASE and FARMOUT_API_MODEL (and FARMOUT_API_KEY if needed)"),
 }
 

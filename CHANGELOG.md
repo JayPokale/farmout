@@ -37,6 +37,7 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 - **A website** (`site/`, Next.js, deployed separately; not part of the Python package): install paths, the workers and their flags, replays of real `farmout review` and `farmout race` runs right after the hero, pipelines, the benchmarks and the safety model.
 - **Live lanes:** while `review`, `race`, `ask`, `fix-pr` and `bench` run, a terminal shows one row per worker: working, then its findings, its test result or its failure, with the time. Only on a terminal; `--json`, pipes and the MCP server see nothing, `NO_COLOR` drops the colours and `FARMOUT_LIVE=0` the lanes.
 - **`farmout bench --share`**: the scores as a post that fits on X, an image card (SVG, plus PNG when librsvg or ImageMagick is installed) and a one-click post link. Scores only: no repository name, file names or code.
+- **`deepseek` worker (experimental):** DeepSeek Harness (`dsh headless --json`), read-only by default (`--permission-mode read-only --approval-policy never`), resumed with `--session-id`. The README also shows DeepSeek's API on the `api` worker and how to run farmout inside DeepSeek Harness as an MCP server.
 
 ### Changed
 
@@ -55,6 +56,7 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 - A JSON line on stdin that is not an object no longer crashes the server.
 - `farmout review` mixed up different defects cited on the same or neighbouring lines: findings joined the first group that would take them, so a real run credited codex with a missing-row crash it never reported and inflated agreement counts. Findings are now grouped most-similar first (average linkage over a Dice word overlap), words a model repeats across its own findings (`file`, `quota`) count for little, and light stemming plus a few synonyms (`concurrent` and `race`) match different wordings of one bug. Three real four-model runs, grouped by hand, are regression tests.
 - A command given a prompt (`farmout race "..."`, `run`, `ask`, ...) hung forever when stdin was an open socket or device that never closes, as in background jobs of some agent harnesses. Only a pipe or a redirected file is read as piped input now.
+- On macOS, stopping a session crashed when `ps` wasn't on PATH; farmout now asks `/bin/ps`, and treats a process it can't check as not its own.
 
 ## [0.1.0] - unreleased
 

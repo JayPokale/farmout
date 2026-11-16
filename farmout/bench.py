@@ -112,8 +112,9 @@ def scoreboard(rows):
 
 # `farmout bench --share`: the result as something people can post. Scores only: no repository name, file names,
 # commit subjects or code, so sharing it can't leak a private codebase.
-NAMES = {"claude": "Claude", "codex": "Codex", "antigravity": "Gemini", "copilot": "Copilot"}
-COLOURS = {"claude": "#f47c7c", "codex": "#f2a65a", "antigravity": "#5ec4b6", "copilot": "#a78bfa", "api": "#ece8df"}
+NAMES = {"claude": "Claude", "codex": "Codex", "antigravity": "Gemini", "copilot": "Copilot", "deepseek": "DeepSeek"}
+COLOURS = {"claude": "#f47c7c", "codex": "#f2a65a", "antigravity": "#5ec4b6", "copilot": "#a78bfa", "deepseek": "#4d6bfe",
+           "api": "#ece8df"}
 REPO = "github.com/JayPokale/farmout"
 
 
