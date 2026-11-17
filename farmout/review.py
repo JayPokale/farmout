@@ -11,7 +11,7 @@ from .isolate import git
 
 # The same brief as skills/review/SKILL.md (a test keeps them identical).
 BRIEF = """Review a code change for defects. The unified diff is in the first listed file; any other listed files are new, untracked files. Read any repository file you need for context; change nothing. Report only problems worth blocking a merge: bugs, crashes, security holes, data loss, races, broken edge cases, wrong behaviour. No style or naming nits, no praise, no summary. One finding per line, exactly, starting with the file's real path from the repository root:
-path/to/file.py:42 | high/medium/low | defect | input or state that triggers it | fix
+path/to/file.py:42 | high/medium/low | what is wrong | input or state that triggers it | fix
 The line is the line number in the file as it is now (open the file to check it), not a position in the diff.
 At most 20 findings, most severe first. If there are none, reply exactly: NO FINDINGS"""
 MODELS = {"antigravity": "gemini-3.8-flash-low"}  # 22 of 23 planted bugs in ~20s, vs 3+ minutes on the default
@@ -49,13 +49,33 @@ def parse(text, worker):
         s = re.sub(r"^(?:[-*•]|\d+[.)])\s+", "", raw.strip().strip("|").strip()).replace("`", "").replace("**", "")
         m = ROW.match(s)
         if m:
-            defect, trigger, fix = ([p.strip() for p in m["rest"].split("|")] + ["", "", ""])[:3]
+            parts = [p.strip() for p in m["rest"].split("|")]
+            if len(parts) > 1 and parts[0].lower() in LABEL:  # `| defect | <the defect> | ...`: the brief's word copied
+                parts = parts[1:]
+            defect, trigger, fix = (parts + ["", "", ""])[:3]
             out.append({"worker": worker, "path": m["path"], "line": int(m["line"]), "severity": m["sev"].lower(),
                         "defect": defect, "trigger": trigger, "fix": fix})
     return out
 
 
 PLACEHOLDER = {"path", "file", "filename", "path/to/file", "path/to/file.py", "<path>", "<file>"}
+LABEL = {"defect", "bug", "issue", "problem", "finding", "what is wrong"}  # column names some models copy as a value
+
+
+def diff_positions(diff_text):
+    """{line number in the diff file: (path, line number in the new file)} for the diff's context and added lines.
+    Some models cite where a line sits in the diff they were given, not in the file."""
+    out, path, new = {}, None, 0
+    for n, line in enumerate(diff_text.splitlines(), 1):
+        if line.startswith("+++ "):
+            path = line[6:] if line.startswith("+++ b/") else None
+        elif line.startswith("@@"):
+            m = re.search(r"\+(\d+)", line)
+            new = int(m.group(1)) if m else 0
+        elif path and new and line[:1] in (" ", "+"):
+            out[n] = (path, new)
+            new += 1
+    return out
 
 
 def resolve(root, p, changed=(), known=()):
@@ -253,8 +273,15 @@ def review(cwd, workers=None, base=None, staged=False, focus=None, since=None, r
     changed = re.findall(r"^\+\+\+ b/(.+)$", diff.read_text(errors="replace"), re.M)
     changed += [os.path.relpath(f, top) for f in untracked]
     known = [k for k in git(top, "ls-files", "-z").split("\0") if k] + changed
+    positions, sizes = diff_positions(diff.read_text(errors="replace")), {}
     for f in found:
         f["rel"] = resolve(top, f["path"], changed, known)
+        if f["rel"] and f["rel"] not in sizes:
+            with open(Path(top, f["rel"]), errors="replace") as fh:
+                sizes[f["rel"]] = sum(1 for _ in fh)
+        at = positions.get(f["line"])
+        if f["rel"] and f["line"] > sizes[f["rel"]] and at and at[0] == f["rel"]:
+            f["line"] = at[1]  # past the end of the file, but that diff line is in this file: a diff position
     clusters = merge(found)
     check_lines(clusters, top)
     for c in clusters:

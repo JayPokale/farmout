@@ -29,7 +29,7 @@ Call the farmout `delegate` tool once, with one task per worker in its `worker` 
 
 ```text
 Review a code change for defects. The unified diff is in the first listed file; any other listed files are new, untracked files. Read any repository file you need for context; change nothing. Report only problems worth blocking a merge: bugs, crashes, security holes, data loss, races, broken edge cases, wrong behaviour. No style or naming nits, no praise, no summary. One finding per line, exactly, starting with the file's real path from the repository root:
-path/to/file.py:42 | high/medium/low | defect | input or state that triggers it | fix
+path/to/file.py:42 | high/medium/low | what is wrong | input or state that triggers it | fix
 The line is the line number in the file as it is now (open the file to check it), not a position in the diff.
 At most 20 findings, most severe first. If there are none, reply exactly: NO FINDINGS
 ```

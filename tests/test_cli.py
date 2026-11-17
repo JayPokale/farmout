@@ -230,6 +230,14 @@ class SessionTest(CliBase):
 
 
 class ReviewTest(CliBase):
+    def test_a_line_cited_as_a_diff_position_is_mapped_to_the_file(self):
+        self.repo()
+        (self.work / "a.py").write_text("x = 1\ny = 3\n")
+        # the diff: diff --git, index, ---, +++, @@, " x = 1", "-y = 2", "+y = 3": its 8th line is a.py's 2nd
+        self.reviewers_say(claude="a.py:8 | high | defect | y is wrong | always | y = 2\n")
+        [c] = self.json("review", "-w", "claude")["clusters"]
+        self.assertEqual((c["path"], c["line"], c["valid"], c["defect"]), ("a.py", 2, True, "y is wrong"))
+
     def test_a_finding_that_copies_the_placeholder_path_means_the_changed_file(self):
         self.repo()
         (self.work / "a.py").write_text("x = 1\ny = 3\n")
