@@ -26,6 +26,18 @@ def git(cwd, *args, stdin=None, binary=False, env=None):
     return p.stdout
 
 
+def need_head(cwd):
+    """Worktrees start from HEAD. Say why up front, instead of every worker failing on its own."""
+    try:
+        git(cwd, "rev-parse", "--show-toplevel")
+    except RuntimeError:
+        raise ValueError("this works on a git repository (each worker gets its own worktree); run it inside one") from None
+    try:
+        git(cwd, "rev-parse", "--verify", "-q", "HEAD")
+    except RuntimeError:
+        raise ValueError("this repository has no commits yet, and each worker's worktree starts from one: commit first") from None
+
+
 @contextmanager
 def repo_lock(top):
     """One farmout process at a time adds or removes worktrees in a repository (git's own lock files and

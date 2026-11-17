@@ -114,12 +114,13 @@ class Lanes:
         secs = rec.get("secs") if status != "running" else time.time() - rec["started"]
         took = paint(f"{secs or 0:.0f}s", dim=True)
         fallback = f" → {via}" if via != w else ""
+        # padded so the times line up whether a row says "reviewing…", "1 finding" or "5 findings"
         if status == "running":
-            return f"  {paint(SPIN[tick % len(SPIN)], RGB.get(w))} {label}{self.verb}…{fallback}  {took}"
+            return f"  {paint(SPIN[tick % len(SPIN)], RGB.get(w))} {label}{(self.verb + '…' + fallback):<11}  {took}"
         if status == "ok":
             what = self.notes.get(name) or self.summary(rec, via)
-            return f"  {paint('✓', GOOD)} {label}{what}{fallback}  {took}"
-        return f"  {paint('■' if status == 'stopped' else '✗', BAD)} {label}{status}{fallback}  {took}"
+            return f"  {paint('✓', GOOD)} {label}{(what + fallback):<11}  {took}"
+        return f"  {paint('■' if status == 'stopped' else '✗', BAD)} {label}{(status + fallback):<11}  {took}"
 
     def summary(self, rec, worker):
         if not self.findings:

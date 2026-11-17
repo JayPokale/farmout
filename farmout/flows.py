@@ -87,6 +87,7 @@ def race(cwd, task, workers, test=None, timeout=None, group=None, files=(), prog
     diff, then the fastest). Returns (group, rows, winner row or None). progress(session, text), if given, hears
     about the test runs."""
     say = progress or (lambda name, text: None)
+    isolate.need_head(cwd or os.getcwd())
     group = group or sessions.new_group("race")
     brief = task + (f"\n\nSuccess means this command passes: {test}" if test else "") + RACE
     rows = []
@@ -140,6 +141,15 @@ def apply(name):
     shutil.copyfile(patch, applied)
     applied.with_suffix(".mode").write_text("3way")  # --3way also staged it, so undo unstages it too
     return f"applied {name}'s patch to {top} with a 3-way merge; check for conflict markers:\n{stat}"
+
+
+def last_applied():
+    """The session whose patch `farmout apply` applied most recently: what a bare `farmout undo` takes back."""
+    marks = [(sessions.path(n) / "applied.patch", n) for n in sessions.names()]
+    marks = [(p.stat().st_mtime, n) for p, n in marks if p.exists()]
+    if not marks:
+        raise ValueError("nothing to undo: no patch is applied by `farmout apply`")
+    return max(marks)[1]
 
 
 def undo(name):

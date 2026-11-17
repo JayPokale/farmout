@@ -65,3 +65,7 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 - On macOS, stopping a session crashed when `ps` wasn't on PATH; farmout now asks `/bin/ps`, and treats a process it can't check as not its own.
 - A turn that finished just as its waiter looked could be reported as "the runner stopped mid-turn": the waiter now reads the turn once more after the runner is gone. CI on macOS caught it.
 - With four workers, the review table's "flagged by" column made rows wrap on a 120-column terminal; the findings column now takes only the room the others leave.
+- `farmout race` in a repository with no commits listed every worker as FAILED with no reason; it now says to commit first, since each worktree starts from one.
+- `farmout bench` left its twelve-odd review sessions in `farmout ls`, pointing at a scratch worktree that no longer exists; it now removes them, and the report keeps the scores.
+- A bare `farmout undo` (which `farmout apply`'s own error suggests) was an argument error; it now takes back the last patch applied. A bare `farmout wait` waits for whatever is running or queued.
+- In the live lanes, "1 finding" and "2 findings" put the times in different columns.

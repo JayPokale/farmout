@@ -345,7 +345,10 @@ def cmd_attach(a):
 
 def cmd_wait(a):
     rc, out = 0, []
-    for name in a.sessions:
+    names = a.sessions or [n for n in sessions.names() if sessions.busy(n) or sessions.pending(n)]
+    if not names:
+        return print("Nothing is running.")
+    for name in names:
         rec = sessions.wait_idle(name, a.timeout)
         status = rec["status"] if rec else "new"
         rc = rc or int(status not in ("ok", "new"))
@@ -399,8 +402,9 @@ def cmd_apply(a):
 
 
 def cmd_undo(a):
-    msg = flows.undo(a.session)
-    emit(a, {"session": a.session, "result": msg}, msg)
+    name = a.session or flows.last_applied()
+    msg = flows.undo(name)
+    emit(a, {"session": name, "result": msg}, msg)
 
 
 def export_html(name, meta, recs):
@@ -573,7 +577,8 @@ def cmd_bench(a):
     workers = check_workers(split(a.workers)) or None
     n = len(workers or flows.default_workers())
     if not a.json:
-        err(f"farmout bench: up to {a.commits} commits x {n} workers = up to {a.commits * n} reviews on your subscriptions")
+        err(f"farmout bench: up to {a.commits} commit{'s' * (a.commits != 1)} x {n} worker{'s' * (n != 1)}"
+            f" = up to {a.commits * n} review{'s' * (a.commits * n != 1)} on your subscriptions")
     shown = workers or flows.default_workers()
     lanes = (lambda g, t: live.Lanes(g, shown, "reviewing", title=t, findings=True)) if live.enabled(a) else None
     rows, report = bench.run(a.cwd, a.commits, workers, a.scan, progress=(lambda m: None) if a.json else err,
@@ -829,7 +834,7 @@ def parser():
     lg.add_argument("--follow", action="store_true", help="keep showing new turns (Ctrl-C to stop watching)")
     add("attach", "watch a running session until it's idle (Ctrl-C detaches; it keeps running)", cmd_attach).add_argument("session")
     w = add("wait", "wait until sessions are idle; exit 1 if a last turn failed", cmd_wait)
-    w.add_argument("sessions", nargs="+")
+    w.add_argument("sessions", nargs="*", help="default: every session that's running or queued")
     w.add_argument("--timeout", type=float, metavar="SECONDS")
     st = add("stop", "stop sessions: the running turn and anything queued", cmd_stop)
     st.add_argument("sessions", nargs="*")
@@ -841,7 +846,8 @@ def parser():
     ap = add("apply", "apply isolated sessions' patches to your tree in order, or open a pull request", cmd_apply)
     ap.add_argument("sessions", nargs="+")
     ap.add_argument("--pr", action="store_true", help="instead: commit it on a new branch, push, and open a PR with gh")
-    add("undo", "take back a patch `farmout apply` applied", cmd_undo).add_argument("session")
+    add("undo", "take back a patch `farmout apply` applied", cmd_undo).add_argument(
+        "session", nargs="?", help="default: the patch applied last")
     ex = add("export", "a session's conversation as Markdown (or --html), to share", cmd_export)
     ex.add_argument("session")
     ex.add_argument("--html", action="store_true")

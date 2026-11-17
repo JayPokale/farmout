@@ -161,7 +161,8 @@ class SessionTest(CliBase):
         self.fo("run", "codex", "nap 1", "-n", "q", "--bg")
         self.fo("send", "q", "say second", "--bg")
         self.fo("send", "q", "say third", "--bg")
-        self.assertEqual(self.fo("wait", "q").stdout, "q: ok\n")
+        self.assertEqual(self.fo("wait").stdout, "q: ok\n", "a bare wait waits for whatever is running or queued")
+        self.assertEqual(self.fo("wait").stdout, "Nothing is running.\n")
         turns = self.json("log", "q")
         self.assertEqual([(t["n"], t["status"], t["text"]) for t in turns],
                          [(1, "ok", "napped"), (2, "ok", "second"), (3, "ok", "third")])
@@ -1033,9 +1034,17 @@ class MoreTest(CliBase):
         self.assertIn("already applied: p1", p.stderr)
         self.assertEqual((self.work / "one.txt").read_text(), "1")
         self.assertFalse((self.work / "three.txt").exists(), "the queue stops at the first patch that doesn't apply")
-        self.assertIn("took p1's patch back out", self.fo("undo", "p1").stdout)
+        self.assertIn("took p1's patch back out", self.fo("undo").stdout, "a bare undo takes back the last apply")
         self.assertFalse((self.work / "one.txt").exists())
         self.assertIn("no applied patch", self.fo("undo", "p1", rc=1).stderr)
+        self.assertIn("nothing to undo", self.fo("undo", rc=1).stderr)
+
+    def test_race_in_a_repository_without_commits_says_why(self):
+        bare = self.tmp / "bare"
+        bare.mkdir()
+        self.git("init", "-q", cwd=bare)
+        self.assertIn("no commits yet", self.fo("race", "do it", cwd=bare, rc=1).stderr)
+        self.assertEqual(self.json("ls"), [], "no worker was started")
 
     def test_status_line_and_watch(self):
         self.assertEqual(self.fo("status", "--line").stdout, "farmout: idle\n")
@@ -1073,6 +1082,7 @@ class MoreTest(CliBase):
         self.assertEqual(out["scoreboard"][0], {"worker": "codex", "found": 1, "of": 1, "failed": 0})
         self.assertEqual(self.git("worktree", "list").count("\n"), 1, "the scratch worktree is gone")
         self.assertEqual(self.git("status", "--porcelain"), "", "your tree is untouched")
+        self.assertEqual(self.json("ls"), [], "nor do its reviews linger in `farmout ls`")
         # --share: a post and an image card with scores only, never the repository's names or code
         p = self.fo("bench", "-n", "2", "-w", "codex,claude", "--share")
         self.assertIn("Which AI reviews my code best? I replayed 1 real bug fix", p.stdout)
@@ -1326,6 +1336,20 @@ class LiveLanesTest(unittest.TestCase):
         lanes.draw()
         self.assertIn("\x1b[5A", buf.getvalue(), "the next frame moves back up over the title and four rows")
         self.assertIn("tests pass", buf.getvalue())
+
+    def test_times_line_up_whatever_a_row_says(self):
+        import io
+        from farmout import live
+        one, two = self.root / "one.md", self.root / "two.md"
+        one.write_text("a.py:2 | high | divides by zero | f(0) | guard\n")
+        two.write_text("a.py:2 | high | divides by zero | f(0) | guard\na.py:9 | low | typo | - | fix\n")
+        self.turn("review-6-codex", status="ok", worker="codex", secs=7, output=str(one))
+        self.turn("review-6-claude", status="ok", worker="claude", secs=12, output=str(two))
+        self.turn("review-6-copilot", status="running", worker="copilot")
+        buf = io.StringIO()
+        live.Lanes("review-6", ["codex", "claude", "copilot"], "reviewing", findings=True, out=buf).draw()
+        rows = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", buf.getvalue()).splitlines()
+        self.assertEqual(len({re.search(r"\d+s$", r).start() for r in rows}), 1, rows)
 
     def test_nothing_is_drawn_until_a_worker_starts_or_off_a_terminal(self):
         import io

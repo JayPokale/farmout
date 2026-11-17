@@ -96,6 +96,10 @@ def run(cwd, n=3, workers=None, scan=400, progress=print, lanes=None):
         finally:
             subprocess.run(["git", "-C", str(top), "worktree", "remove", "--force", str(wt)], capture_output=True)
             shutil.rmtree(tmp, ignore_errors=True)
+            for name in sessions.names():  # their worktree is gone, so in `farmout ls` they'd only be clutter
+                if name.startswith(f"{group}-{i}-"):
+                    with contextlib.suppress(RuntimeError, OSError):
+                        sessions.remove(name)
     out = STATE / "bench" / f"{time.strftime('%Y%m%d-%H%M%S')}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"repo": str(top), "commits": rows}, indent=1))
