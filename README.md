@@ -10,6 +10,8 @@
 ![MCP](https://img.shields.io/badge/MCP-stdio-6e56cf)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
+> **Public preview.** Try it, tell us what breaks in [Discussions](https://github.com/JayPokale/farmout/discussions), and star or watch the repo to hear when 0.1.0 ships.
+
 ```bash
 pipx install git+https://github.com/JayPokale/farmout
 cd your-repo && farmout bench --share   # which of your AI subscriptions finds real bugs in your own code?

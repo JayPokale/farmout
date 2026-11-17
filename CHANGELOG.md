@@ -4,6 +4,8 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+## [0.1.0] - unreleased
+
 ### Added
 
 - **A command line:** `farmout` (`pip install .`, or `python3 server.py <command>`), with `--json` and exit codes on every command, and prompts from stdin (`git diff | farmout ask "..."`).
@@ -38,6 +40,10 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 - **Live lanes:** while `review`, `race`, `ask`, `fix-pr` and `bench` run, a terminal shows one row per worker: working, then its findings, its test result or its failure, with the time. Only on a terminal; `--json`, pipes and the MCP server see nothing, `NO_COLOR` drops the colours and `FARMOUT_LIVE=0` the lanes.
 - **`farmout bench --share`**: the scores as a post that fits on X, an image card (SVG, plus PNG when librsvg or ImageMagick is installed) and a one-click post link. Scores only: no repository name, file names or code.
 - **`deepseek` worker (experimental):** DeepSeek Harness (`dsh headless --json`), read-only by default (`--permission-mode read-only --approval-policy never`), resumed with `--session-id`. The README also shows DeepSeek's API on the `api` worker and how to run farmout inside DeepSeek Harness as an MCP server.
+- MCP server with a `delegate` tool, 4 workers, parallel execution, cancellation that kills the process group, timeouts, result files and an output cap.
+- Read-only and write flags verified against agy 1.4.6, codex-cli 0.163.0 and Claude Code 2.1.323.
+- Workers are auto-detected; no personal paths in the code.
+- README, LICENSE (MIT) and .gitignore.
 
 ### Changed
 
@@ -57,12 +63,3 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 - `farmout review` mixed up different defects cited on the same or neighbouring lines: findings joined the first group that would take them, so a real run credited codex with a missing-row crash it never reported and inflated agreement counts. Findings are now grouped most-similar first (average linkage over a Dice word overlap), words a model repeats across its own findings (`file`, `quota`) count for little, and light stemming plus a few synonyms (`concurrent` and `race`) match different wordings of one bug. Three real four-model runs, grouped by hand, are regression tests.
 - A command given a prompt (`farmout race "..."`, `run`, `ask`, ...) hung forever when stdin was an open socket or device that never closes, as in background jobs of some agent harnesses. Only a pipe or a redirected file is read as piped input now.
 - On macOS, stopping a session crashed when `ps` wasn't on PATH; farmout now asks `/bin/ps`, and treats a process it can't check as not its own.
-
-## [0.1.0] - unreleased
-
-### Added
-
-- MCP server with a `delegate` tool, 4 workers, parallel execution, cancellation that kills the process group, timeouts, result files and an output cap.
-- Read-only and write flags verified against agy 1.4.6, codex-cli 0.163.0 and Claude Code 2.1.323.
-- Workers are auto-detected; no personal paths in the code.
-- README, LICENSE (MIT) and .gitignore.

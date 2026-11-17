@@ -1,6 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640">
-  <rect width="1280" height="640" fill="#14161f"/>
-  <g transform="translate(96 152) scale(0.66)">
+  <defs>
+    <linearGradient id="lanes" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#f2a65a"/>
+      <stop offset="0.36" stop-color="#f47c7c"/>
+      <stop offset="0.68" stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#5ec4b6"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="640" fill="#0b0c11"/>
+  <g transform="translate(88 70) scale(0.16)">
+    <rect width="512" height="512" rx="112" fill="#14161f"/>
     <g fill="none" stroke-width="26" stroke-linecap="round">
       <path d="M104 256H196C256 256 262 140 326 140H384" stroke="#f2a65a"/>
       <path d="M104 256H196C250 256 262 218 326 218H384" stroke="#5ec4b6"/>
@@ -9,16 +18,12 @@
     </g>
     <path d="M104 256H204" stroke="#ece8df" stroke-width="26" stroke-linecap="round"/>
     <circle cx="104" cy="256" r="40" fill="#ece8df"/>
-    <circle cx="404" cy="140" r="30" fill="#f2a65a"/>
-    <circle cx="404" cy="218" r="30" fill="#5ec4b6"/>
-    <circle cx="404" cy="294" r="30" fill="#a78bfa"/>
-    <circle cx="404" cy="372" r="30" fill="#f47c7c"/>
   </g>
-  <g font-family="DejaVu Sans, Inter, Helvetica, Arial, sans-serif" fill="#ece8df">
-    <text x="470" y="262" font-size="92" font-weight="700">farmout</text>
-    <text x="474" y="330" font-size="34" fill="#c9c5bc">Every AI subscription you have,</text>
-    <text x="474" y="374" font-size="34" fill="#c9c5bc">working for Claude Code in parallel.</text>
-    <text x="474" y="448" font-size="26" font-family="DejaVu Sans Mono, Menlo, monospace" xml:space="preserve"><tspan fill="#f2a65a">codex</tspan><tspan fill="#6b6f80">  ·  </tspan><tspan fill="#5ec4b6">gemini</tspan><tspan fill="#6b6f80">  ·  </tspan><tspan fill="#a78bfa">copilot</tspan><tspan fill="#6b6f80">  ·  </tspan><tspan fill="#f47c7c">claude</tspan><tspan fill="#6b6f80">  ·  </tspan><tspan fill="#ece8df">local</tspan></text>
-    <text x="474" y="520" font-size="24" fill="#8b8fa3">One Python file · read-only by default · MIT</text>
+  <g font-family="Hubot Sans, Mona Sans, DejaVu Sans, Inter, Helvetica, Arial, sans-serif">
+    <text x="190" y="128" font-size="44" font-weight="700" fill="#ece8df">farmout</text>
+    <text x="88" y="300" font-size="56" font-weight="800" fill="#ece8df">You already pay for the models.</text>
+    <text x="88" y="378" font-size="56" font-weight="800" fill="url(#lanes)">Put all of them to work.</text>
+    <text x="88" y="478" font-size="26" font-family="DejaVu Sans Mono, Menlo, monospace" xml:space="preserve"><tspan fill="#f2a65a">codex</tspan><tspan fill="#5f6375">  ·  </tspan><tspan fill="#5ec4b6">gemini</tspan><tspan fill="#5f6375">  ·  </tspan><tspan fill="#a78bfa">copilot</tspan><tspan fill="#5f6375">  ·  </tspan><tspan fill="#f47c7c">claude</tspan><tspan fill="#5f6375">  ·  </tspan><tspan fill="#6f8bff">deepseek</tspan><tspan fill="#5f6375">  ·  </tspan><tspan fill="#ece8df">local</tspan></text>
+    <text x="88" y="560" font-size="21" fill="#9a9eaf">Cross-model review · races your tests judge · read-only by default · zero dependencies · MIT</text>
   </g>
 </svg>
