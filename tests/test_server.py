@@ -327,9 +327,12 @@ class DelegateTest(Base):
             {"worker": "nope", "prompt": "say hi"},
             {"worker": "claude", "prompt": "say hi", "files": ["missing.txt"], "cwd": str(self.work)},
             {"worker": "antigravity", "prompt": "agyerror"},
-            {"worker": "antigravity", "prompt": "say fine"})
+            {"worker": "antigravity", "prompt": "say fine"},
+            {"worker": "antigravity", "prompt": "agyerror the whole answer"})
         self.assertFalse(is_error, "one task succeeded")
-        self.assertEqual([r[1] for r in results], [False, False, False, False, True])
+        self.assertEqual([r[1] for r in results], [False, False, False, False, True, True])
+        self.assertEqual(results[5][3], 'the whole answer\n\n[farmout] agy ended with {"status": "ERROR"}',
+                         "an answer agy wrote before ending with ERROR is kept, with how it ended")
         bodies = [r[3] for r in results]
         self.assertEqual(bodies[0], "RuntimeError: codex exited 1: boom")
         self.assertEqual(bodies[1], "ValueError: unknown or unavailable worker 'nope'; available: antigravity, codex, claude, copilot")
@@ -710,6 +713,47 @@ class RepoTest(unittest.TestCase):
         self.assertIn('name = "farmout"', (SERVER.parent / "pyproject.toml").read_text())
         # PyPI shows the README without the repo around it, so relative links and images would break there
         self.assertNotRegex(readme, r'\]\((?!https?://|#)|src="(?!https?://)')
+
+
+class ProcTest(unittest.TestCase):
+    """Stopping a worker takes its whole process group down, including children that ignore TERM."""
+
+    def setUp(self):
+        from farmout import proc
+        self.proc, old = proc, proc.GRACE
+        proc.GRACE = 0.5
+        self.addCleanup(setattr, proc, "GRACE", old)
+        self.tmp = Path(tempfile.mkdtemp(prefix="farmout-proc-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def child(self):
+        pid = self.tmp / "child"
+        wait_until(lambda: pid.exists() and pid.read_text().strip())
+        return int(pid.read_text())
+
+    def test_a_timeout_kills_a_child_that_outlives_the_cli(self):
+        cmd = ["sh", "-c", f'(trap "" TERM; exec sleep 300) & echo $! > {self.tmp / "child"}; wait']
+        with self.assertRaises(RuntimeError):
+            self.proc.run(cmd, "t1", str(self.tmp), timeout=1)
+        child = self.child()
+        wait_until(lambda: not alive(child), timeout=10)
+
+    def test_cancel_kills_a_worker_that_ignores_term(self):
+        cmd = ["sh", "-c", f'trap "" TERM; sleep 300 & echo $! > {self.tmp / "child"}; wait']
+        errors = []
+        t = threading.Thread(target=lambda: errors.append(self.raises(cmd)))
+        t.start()
+        child = self.child()
+        self.proc.cancel("t2")
+        t.join(15)
+        self.assertFalse(t.is_alive(), "the cancelled run returns")
+        wait_until(lambda: not alive(child), timeout=10)
+
+    def raises(self, cmd):
+        try:
+            self.proc.run(cmd, "t2", str(self.tmp))
+        except RuntimeError as e:
+            return e
 
 
 if __name__ == "__main__":

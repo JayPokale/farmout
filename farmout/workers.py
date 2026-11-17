@@ -59,10 +59,14 @@ def antigravity(t, key):
     cmd += ["--mode", "accept-edits", "--sandbox"] if t.get("write") else ["--mode", "plan"]
     cmd += dirs + opt("--model", t.get("model")) + opt("--effort", t.get("effort")) + opt("--conversation", t.get("resume"))
     res = parse_json(run(cmd, key, cwd, timeout=t.get("timeout")))
+    text = res.get("response") or ""
     if res.get("status") != "SUCCESS":
-        raise RuntimeError(json.dumps(res)[:1500])
-    return {"text": res.get("response") or "", "native_id": res.get("conversation_id") or t.get("resume"),
-            "usage": res.get("usage")}
+        if not text.strip():
+            raise RuntimeError(json.dumps(res)[:1500])
+        # agy sometimes ends with ERROR after writing its whole answer: keep the answer, and say how it ended
+        rest = {k: v for k, v in res.items() if k not in ("response", "conversation_id", "usage")}
+        text += f"\n\n[farmout] agy ended with {json.dumps(rest)[:500]}"
+    return {"text": text, "native_id": res.get("conversation_id") or t.get("resume"), "usage": res.get("usage")}
 
 
 def codex(t, key):

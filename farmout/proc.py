@@ -4,8 +4,10 @@ import os
 import signal
 import subprocess
 import threading
+import time
 
 TIMEOUT = int(os.environ.get("FARMOUT_TIMEOUT", 1200))
+GRACE = 10  # seconds a stopped worker gets after TERM before what's left of its process group is killed
 running, cancelled = {}, set()  # key (an MCP request id, a session name) -> live processes; cancelled keys
 lock = threading.Lock()
 
@@ -17,12 +19,41 @@ def signal_group(p, sig=signal.SIGTERM):
         pass
 
 
-def stop(p):
-    signal_group(p)
+def group_alive(p):
     try:
-        p.wait(10)
+        os.killpg(p.pid, 0)
+        return True
+    except (ProcessLookupError, PermissionError):
+        return False
+
+
+def stop(p, grace=None):
+    """TERM the worker's process group, give it `grace` seconds, then KILL what's left of the group: a CLI that
+    ignores TERM, and children that ignore it or outlive the CLI (they'd otherwise run on, unowned)."""
+    grace = GRACE if grace is None else grace
+    signal_group(p)
+    deadline = time.time() + grace
+    try:
+        p.wait(grace)
     except subprocess.TimeoutExpired:
-        signal_group(p, signal.SIGKILL)
+        pass
+    while group_alive(p) and time.time() < deadline:
+        time.sleep(0.1)
+    signal_group(p, signal.SIGKILL)
+    try:
+        p.wait(5)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def drain(p):
+    """Close a stopped worker's pipes (what an interrupted communicate() leaves open)."""
+    try:
+        p.communicate(timeout=5)
+    except (subprocess.TimeoutExpired, ValueError, OSError):
+        for f in (p.stdin, p.stdout, p.stderr):
+            if f:
+                f.close()
 
 
 def run(cmd, key, cwd, stdin=None, env=None, timeout=None):
@@ -39,9 +70,11 @@ def run(cmd, key, cwd, stdin=None, env=None, timeout=None):
         out, err = p.communicate(stdin, timeout=timeout)
     except subprocess.TimeoutExpired:
         stop(p)
+        drain(p)
         raise RuntimeError(f"timed out after {timeout}s") from None
     except BaseException:  # Ctrl-C or SIGTERM in a CLI process: take the worker down too
         stop(p)
+        drain(p)
         raise
     finally:
         with lock:
@@ -59,9 +92,11 @@ def shell(cmd, cwd, timeout=None):
         out = p.communicate(timeout=timeout or TIMEOUT)[0]
     except subprocess.TimeoutExpired:
         stop(p)
+        drain(p)
         return False, f"timed out after {timeout or TIMEOUT}s"
     except BaseException:
         stop(p)
+        drain(p)
         raise
     return p.returncode == 0, out[-2000:]
 
@@ -70,12 +105,16 @@ def cancel(key):
     with lock:
         cancelled.add(key)
         procs = list(running.get(key, ()))
-    for p in procs:
-        signal_group(p)
+    for p in procs:  # TERM now; KILL whatever ignores it, without holding up the caller
+        threading.Thread(target=stop, args=(p,), daemon=True).start()
 
 
-def kill_all():
+def kill_all(grace=3):
+    """Shutdown: TERM every worker's group, then KILL what's left after `grace` seconds."""
     with lock:
         procs = [p for ps in running.values() for p in ps]
-    for p in procs:
-        signal_group(p)
+    threads = [threading.Thread(target=stop, args=(p, grace), daemon=True) for p in procs]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(grace + 6)
