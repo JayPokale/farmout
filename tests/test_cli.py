@@ -1473,16 +1473,21 @@ class LeaderboardTest(CliBase):
         board.mkdir()
         (board / "suite.json").write_text(json.dumps({"lanes": [["codex", None], ["claude", "opus"]], "repos": [
             {"repo": str(self.work), "lang": "Python",
-             "fixes": [{"sha": sha, "subject": "fix division by zero in ratio", "files": ["m.py"], "date": "2026-11-01"}]}]}))
+             "fixes": [{"sha": sha, "subject": "fix division by zero in ratio", "files": ["m.py"], "date": "2026-11-01"},
+                       {"sha": "0" * 40, "subject": "fix a commit that isn't there", "files": ["m.py"], "date": "2026-11-02"}]}]}))
         self.reviewers_say(codex="m.py:2 | high | divides by zero | ratio(1, 0) | guard\n", claude="NO FINDINGS")
         out = self.board("run")
         self.assertIn("✓ codex", out)
         self.assertIn("· claude:opus", out)
+        self.assertIn("x codex  failed: replay failed", out, "one bad fix is recorded, and the run goes on")
         self.assertEqual(self.last("claude")["argv"][self.last("claude")["argv"].index("--model") + 1], "opus")
-        codex = json.loads(next((board / "results" / "codex").glob("*.json")).read_text())
-        self.assertEqual((codex["found"], codex["model"], codex["findings"][0]["line"]), (True, None, 2))
+        self.assertIn('web_search="disabled"', self.last("codex")["argv"], "public fixes: no searching for the answer")
+        self.assertNotIn("WebSearch", " ".join(self.last("claude")["argv"]))
+        mine = lambda lane: next(p for p in (board / "results" / lane).glob("*.json") if sha[:12] in p.name)
+        codex = json.loads(mine("codex").read_text())
+        self.assertEqual((codex["found"], codex["model"], codex["findings"][0]["line"], codex["web"]), (True, None, 2, False))
         self.assertIn("0 new results", self.board("run"), "a second run resumes: nothing left to do")
-        saved = next((board / "results" / "claude_opus").glob("*.json"))
+        saved = mine("claude_opus")
         old = json.loads(saved.read_text())  # as if an older parser had missed this reply
         saved.write_text(json.dumps({**old, "reply": "path:2 | high | divides by zero | ratio(1, 0) | guard"}))
         self.assertIn("✓ claude:opus", self.board("rescore"))
@@ -1490,8 +1495,8 @@ class LeaderboardTest(CliBase):
         saved.write_text(json.dumps(old))
         self.board("render")
         readme = (board / "README.md").read_text()
-        self.assertIn("| `codex` | 1/1 | 100% | 0 |", readme)
-        self.assertIn("| `claude:opus` | 0/1 | 0% | 0 |", readme)
+        self.assertIn("| `codex` | 1/1 | 100% | 1 |", readme)
+        self.assertIn("| `claude:opus` | 0/1 | 0% | 1 |", readme)
         self.assertEqual([b["lane"] for b in json.loads((board / "leaderboard.json").read_text())["board"]],
                          ["codex", "claude:opus"])
         self.assertIn("Claude · opus", (board / "card.svg").read_text())

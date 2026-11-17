@@ -216,7 +216,7 @@ def pr_task(cwd, number):
         """Comments by people other than the pull request's author: no bots (size reports, coverage, previews)."""
         return [x for x in gh("api", "--paginate", f"repos/{{owner}}/{{repo}}/{path}") or []
                 if (x.get("body") or "").strip() and (x.get("user") or {}).get("type") != "Bot"
-                and (x.get("user") or {}).get("login") != author]
+                and not (author and (x.get("user") or {}).get("login") == author)]
     said = [x["body"].strip() for x in feedback(f"pulls/{number}/reviews") if x.get("state") != "APPROVED"]
     said += [x["body"].strip() for x in feedback(f"issues/{number}/comments")]
     inline = [f"{c.get('path')}:{c.get('line') or c.get('original_line') or '?'}: {c['body'].strip()}"

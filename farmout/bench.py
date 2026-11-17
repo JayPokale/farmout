@@ -80,10 +80,11 @@ def scored(result, changed, worker):
     return False
 
 
-def prepare(top, c, wt, fresh=False):
+def prepare(top, c, wt, fresh=False, settings=None):
     """Make wt a scratch copy of the fixed tree, as its only commit, with the fix's source changes undone. fresh=True
     copies the files into a new repository instead of adding a worktree, so not even `git log --all` reaches the
-    original history (public benchmarks); a worktree keeps your repository's .farmout/settings in force."""
+    original history (public benchmarks); a worktree keeps your repository's .farmout/settings in force. settings,
+    with fresh, is the copy's own .farmout/settings.toml (kept out of git, so no reviewer sees it as a change)."""
     if fresh:
         wt.mkdir(parents=True)
         tar = git(top, "archive", "--format=tar", c["sha"], binary=True)
@@ -96,15 +97,20 @@ def prepare(top, c, wt, fresh=False):
         git(top, *SNAPSHOT, "worktree", "add", "-q", "--detach", str(wt), snap)
     fix = git(top, "diff", "--binary", f"{c['sha']}^", c["sha"], "--", *c["files"], binary=True)
     git(wt, "apply", "-R", "--whitespace=nowarn", stdin=fix, binary=True)
+    if fresh and settings:
+        (wt / ".farmout").mkdir(exist_ok=True)
+        (wt / ".farmout" / "settings.toml").write_text(settings)
+        with open(wt / ".git" / "info" / "exclude", "a") as f:
+            f.write("\n/.farmout/\n")
 
-def replay(top, c, workers=None, group=None, models=None, lanes=None, title="", fresh=False):
+def replay(top, c, workers=None, group=None, models=None, lanes=None, title="", fresh=False, settings=None):
     """One fix, undone in a scratch copy and reviewed. Returns the row: commit, subject, secs, found {worker: bool},
     failed {worker: reason}, findings {worker: [...]}."""
     group = group or sessions.new_group("bench")
     tmp = Path(tempfile.mkdtemp(prefix="farmout-bench-"))
     wt = tmp / "wt"
     try:
-        prepare(top, c, wt, fresh)
+        prepare(top, c, wt, fresh, settings)
         changed = changed_lines(str(wt))
         t0 = time.time()
         with lanes(group, title) if lanes else contextlib.nullcontext():

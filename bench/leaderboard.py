@@ -68,6 +68,15 @@ def clone(repo):
     return d
 
 
+def ready(repo, sha):
+    """The clone, fetched again if it doesn't have this commit yet (a suite edited after the clone was made)."""
+    top = clone(repo)
+    if not os.path.isdir(repo) and subprocess.run(["git", "-C", str(top), "cat-file", "-e", f"{sha}^{{commit}}"],
+                                                  capture_output=True).returncode:
+        subprocess.run(["git", "-C", str(top), "fetch", "-q", "origin", "+refs/heads/*:refs/heads/*"], check=True)
+    return str(top)
+
+
 def load():
     return json.loads(SUITE.read_text())
 
@@ -98,8 +107,8 @@ def cmd_check(a):
     import tempfile
     bad = 0
     for r in load()["repos"]:
-        top = str(clone(r["repo"]))
         for f in r.get("fixes", []):
+            top = ready(r["repo"], f["sha"])
             with tempfile.TemporaryDirectory(prefix="farmout-board-") as tmp:
                 try:
                     bench.prepare(top, f, Path(tmp) / "wt", fresh=True)
@@ -135,36 +144,46 @@ def cmd_run(a):
     if missing:
         sys.exit(f"not ready here: {', '.join(missing)} (farmout doctor says why)")
     versions = {w: version(w) for w in {w for w, _ in lanes}}
-    todo = [(r["repo"], f) for r in suite["repos"] if not a.only or r["repo"] in a.only for f in r.get("fixes", [])]
-    todo = todo[:a.max] if a.max else todo
+    todo = []
+    for r in suite["repos"]:
+        for fix in r.get("fixes", []) if not a.only or r["repo"] in a.only else []:
+            pending = []
+            for w, m in lanes:
+                p = result_path(lane_name(w, m), r["repo"], fix["sha"])
+                old = json.loads(p.read_text()) if p.exists() else None
+                if not old or (a.retry_failed and old["failed"]):
+                    pending.append((w, m))
+            if pending:
+                todo.append((r["repo"], fix, pending))
+    todo = todo[:a.max] if a.max else todo  # --max counts fixes that still need a review
     day, done = time.strftime("%Y-%m-%d"), 0
-    for i, (repo, fix) in enumerate(todo, 1):
-        pending = []
-        for w, m in lanes:
-            p = result_path(lane_name(w, m), repo, fix["sha"])
-            old = json.loads(p.read_text()) if p.exists() else None
-            if not old or (a.retry_failed and old["failed"]):
-                pending.append((w, m))
-        if not pending:
-            continue
-        top = str(clone(repo))
-        while pending:  # one review per round; a worker on two models takes two rounds
+    for i, (repo, fix, pending) in enumerate(todo, 1):
+        top = ready(repo, fix["sha"])
+        while pending:  # one review per round: a worker on two models takes two, and so does a lane that can't go offline
             rnd = []
             for w, m in pending:
-                if w not in {x for x, _ in rnd}:
+                if w not in {x for x, _ in rnd} and all(workers.WORKERS[w].web_off == workers.WORKERS[x].web_off for x, _ in rnd):
                     rnd.append((w, m))
             pending = [x for x in pending if x not in rnd]
+            offline = workers.WORKERS[rnd[0][0]].web_off  # no web search: the fixes are public, the answers a search away
             print(f"[{i}/{len(todo)}] {repo} {fix['sha'][:9]} {fix['subject'][:60]}  ({', '.join(lane_name(*x) for x in rnd)})",
                   flush=True)
-            row = bench.replay(top, fix, [w for w, _ in rnd], sessions.new_group("board"),
-                               models={w: m for w, m in rnd if m}, fresh=True)
+            try:
+                row = bench.replay(top, fix, [w for w, _ in rnd], sessions.new_group("board"),
+                                   models={w: m for w, m in rnd if m}, fresh=True,
+                                   settings="web = false\n" if offline else None)
+            except Exception as e:  # noqa: BLE001 (one bad fix mustn't end a long run)
+                row = {"found": {}, "failed": {w: f"replay failed: {type(e).__name__}: {e}"[:300] for w, _ in rnd},
+                       "findings": {}, "worker_secs": {}, "replies": {}}
             for w, m in rnd:
                 p = result_path(lane_name(w, m), repo, fix["sha"])
                 p.parent.mkdir(parents=True, exist_ok=True)
                 failed = row["failed"].get(w)
+                if not failed and w not in row["found"]:
+                    failed = "no review ran (an empty change?)"
                 p.write_text(json.dumps({
                     "repo": repo, "sha": fix["sha"], "subject": fix["subject"], "lane": lane_name(w, m), "worker": w,
-                    "model": m, "cli": versions.get(w), "farmout": VERSION, "date": day,
+                    "model": m, "cli": versions.get(w), "farmout": VERSION, "date": day, "web": not offline,
                     "found": None if failed else row["found"].get(w, False), "failed": failed,
                     "secs": row["worker_secs"].get(w), "findings": row["findings"].get(w, []),
                     "reply": row["replies"].get(w)}, indent=1) + "\n")
@@ -195,7 +214,7 @@ def cmd_rescore(a):
     for (repo, sha), items in by_fix.items():
         with tempfile.TemporaryDirectory(prefix="farmout-board-") as tmp:
             wt = Path(tmp) / "wt"
-            bench.prepare(str(clone(repo)), fixes[(repo, sha)], wt, fresh=True)
+            bench.prepare(ready(repo, sha), fixes[(repo, sha)], wt, fresh=True)
             changed = bench.changed_lines(str(wt))
             known = [k for k in git(wt, "ls-files", "-z").split("\0") if k]
             for p, r in items:
@@ -254,7 +273,7 @@ def cmd_render(a):
             ok = [r for r in rows if r["lane"] == lane and langs.get(r["repo"]) == lang and not r["failed"]]
             cells.append(f"{sum(bool(r['found']) for r in ok)}/{len(ok)}" if ok else "-")
         lines.append(f"| `{lane}` | " + " | ".join(cells) + " |")
-    lines += ["", "## Every fix", "", "✓ found · missed x failed (blank: not run)", "",
+    lines += ["", "## Every fix", "", "✓ found, · missed, x failed, blank: not run", "",
               "| repository | fix | " + " | ".join(f"`{x}`" for x in lanes) + " |", "|---|---|" + "---|" * len(lanes)]
     for repo, f in fixes:
         cells = []
@@ -277,6 +296,8 @@ def cmd_render(a):
               "- **Scoring:** a lane finds the bug when one of its findings cites a changed line, within 3 lines. That can "
               "credit a right line with the wrong reason, or miss a right reason on the wrong line; every finding is in "
               "`results/` to check. *Findings per fix* is how much a lane reports: more findings, more chances to hit.",
+              "- **No web search** where the CLI can turn it off (the fixes are public, so a search could find the answer). "
+              "Antigravity can't, so its lanes had web search available; each result records `web`.",
               "- **Failed** runs (a usage limit, a crash) are re-run with `run --retry-failed` and don't count as misses.",
               "- **CLIs:** " + ", ".join(f"{w} {v}" for w, v in clis) + f"; farmout {VERSION}.",
               "", f"Rerun: `python3 bench/leaderboard.py run -l <lanes>` then `render`. Last rendered "

@@ -1,5 +1,5 @@
 {
- "about": "Fixes for bench/leaderboard.py. `pick` fills `fixes`; read each one before a run. lanes: [worker, model or null].",
+ "about": "Fixes for bench/leaderboard.py. `pick` fills `fixes`; every pick is screened by hand and by two models (screening.md) before a run; rejects go in `skip`. lanes: [worker, model or null].",
  "lanes": [
   [
    "claude",
@@ -119,14 +119,6 @@
      "date": "2026-11-10"
     },
     {
-     "sha": "d9d05f104e3187bd42b4bc288234ef1523a2cc73",
-     "subject": "Fixed #36642 -- Fixed capitalization of locale suggestions in makemessages.",
-     "files": [
-      "django/core/management/commands/makemessages.py"
-     ],
-     "date": "2026-11-06"
-    },
-    {
      "sha": "8e3dec67c42f1557fe0ecb11b620ed707b01f498",
      "subject": "Fixed #37330 -- Fixed QuerySet.values() crash with an annotation transform.",
      "files": [
@@ -139,7 +131,8 @@
     "9e2e5a31e",
     "29b7829d6",
     "9425a85c9",
-    "5d6d1f051"
+    "5d6d1f051",
+    "d9d05f104"
    ]
   },
   {
@@ -163,14 +156,6 @@
      "date": "2026-10-28"
     },
     {
-     "sha": "3261273a1f5ec51d75f5744bab41ca243d84942a",
-     "subject": "fix: use _imp._fix_co_filename to fix the filename in the bytecode and use a pure python implementation as fallback",
-     "files": [
-      "src/_pytest/assertion/rewrite.py"
-     ],
-     "date": "2026-09-16"
-    },
-    {
      "sha": "3e7bf1dad095080edcc9b61a1aac58380d0969d6",
      "subject": "fix(rewrite): freeze operands a later walrus would clobber",
      "files": [
@@ -186,6 +171,9 @@
      ],
      "date": "2026-09-01"
     }
+   ],
+   "skip": [
+    "3261273a1"
    ]
   },
   {
@@ -412,14 +400,6 @@
      "date": "2026-09-19"
     },
     {
-     "sha": "d8f2d588d7573b3438cfc95b7a47f9ec8966273c",
-     "subject": "fix(engine): add default ReadHeaderTimeout to http.Server in Run methods (#4800)",
-     "files": [
-      "gin.go"
-     ],
-     "date": "2026-09-19"
-    },
-    {
      "sha": "5c6a15f8f9566612076bd209e623861bf92a6283",
      "subject": "fix(context): handle missing HTML renderer (#4805)",
      "files": [
@@ -428,6 +408,9 @@
      ],
      "date": "2026-09-16"
     }
+   ],
+   "skip": [
+    "d8f2d588d"
    ]
   },
   {
@@ -443,23 +426,6 @@
      "date": "2026-10-28"
     },
     {
-     "sha": "8705c87040c67dc410169ff1da4c37a6ace9876b",
-     "subject": "net: fix peer credentials on NetBSD (#8589)",
-     "files": [
-      "tokio/src/net/unix/ucred.rs"
-     ],
-     "date": "2026-10-09"
-    },
-    {
-     "sha": "d3587dac4bd40e3379d8d91c2bc799d3e70ef0ac",
-     "subject": "fs: fix coop for emscripten fs shim (#8422)",
-     "files": [
-      "tokio/src/blocking.rs",
-      "tokio/src/task/coop/mod.rs"
-     ],
-     "date": "2026-09-10"
-    },
-    {
      "sha": "13094519876096fcc014aa0e876785d6a9870fa0",
      "subject": "runtime: fix idle bookkeeping when a task dump wakes parked workers (#8372)",
      "files": [
@@ -472,7 +438,9 @@
    "skip": [
     "63fd69496",
     "40b877948",
-    "787697f76"
+    "787697f76",
+    "8705c8704",
+    "d3587dac4"
    ]
   }
  ]
