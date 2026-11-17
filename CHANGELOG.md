@@ -68,5 +68,6 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 - With four workers, the review table's "flagged by" column made rows wrap on a 120-column terminal; the findings column now takes only the room the others leave.
 - `farmout race` in a repository with no commits listed every worker as FAILED with no reason; it now says to commit first, since each worktree starts from one.
 - `farmout bench` left its twelve-odd review sessions in `farmout ls`, pointing at a scratch worktree that no longer exists; it now removes them, and the report keeps the scores.
-- A bare `farmout undo` (which `farmout apply`'s own error suggests) was an argument error; it now takes back the last patch applied. A bare `farmout wait` waits for whatever is running or queued.
+- A bare `farmout undo` (which `farmout apply`'s own error suggests) was an argument error; it now takes back the last patch applied in the current repository, never one applied in another project. A bare `farmout wait` waits for whatever is running or queued.
+- `FARMOUT_CLAUDE_MAIN=1` ignored a `CLAUDE_CONFIG_DIR` set in your shell, so a main login kept outside `~/.claude` ran as the wrong (or no) account.
 - In the live lanes, "1 finding" and "2 findings" put the times in different columns.

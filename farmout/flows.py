@@ -143,12 +143,17 @@ def apply(name):
     return f"applied {name}'s patch to {top} with a 3-way merge; check for conflict markers:\n{stat}"
 
 
-def last_applied():
-    """The session whose patch `farmout apply` applied most recently: what a bare `farmout undo` takes back."""
+def last_applied(cwd=None):
+    """The session whose patch `farmout apply` applied most recently to this repository: what a bare `farmout undo`
+    takes back. Never one applied elsewhere, which would change a project you aren't looking at."""
+    try:
+        top = isolate.git(os.path.realpath(cwd or os.getcwd()), "rev-parse", "--show-toplevel").strip()
+    except RuntimeError:
+        top = None
     marks = [(sessions.path(n) / "applied.patch", n) for n in sessions.names()]
-    marks = [(p.stat().st_mtime, n) for p, n in marks if p.exists()]
+    marks = [(p.stat().st_mtime, n) for p, n in marks if p.exists() and (sessions.load(n).get("iso") or {}).get("top") == top]
     if not marks:
-        raise ValueError("nothing to undo: no patch is applied by `farmout apply`")
+        raise ValueError("nothing to undo here: `farmout apply` hasn't applied a patch to this repository")
     return max(marks)[1]
 
 

@@ -92,8 +92,10 @@ def claude(t, key):
     # Drop the head session's CLAUDE*/ANTHROPIC* vars (session ids, effort, API key) so the
     # worker is an independent session on the other account's subscription login.
     env = {k: v for k, v in os.environ.items() if not k.startswith(("CLAUDE", "ANTHROPIC"))}
-    if CLAUDE_DIR:  # else FARMOUT_CLAUDE_MAIN: the default login
-        env["CLAUDE_CONFIG_DIR"] = CLAUDE_DIR
+    # FARMOUT_CLAUDE_MAIN (never inside Claude Code): the login `claude` uses in your shell, its config dir included
+    config = CLAUDE_DIR or os.environ.get("CLAUDE_CONFIG_DIR")
+    if config:
+        env["CLAUDE_CONFIG_DIR"] = config
     cmd = ["claude", "-p", "--output-format", "json", "--model", t.get("model") or "sonnet"]
     if t.get("resume"):
         cmd += ["--resume", t["resume"]] + (["--fork-session", "--session-id", t["session_id"]] if t.get("fork") else [])

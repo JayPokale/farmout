@@ -402,7 +402,7 @@ def cmd_apply(a):
 
 
 def cmd_undo(a):
-    name = a.session or flows.last_applied()
+    name = a.session or flows.last_applied(a.cwd)
     msg = flows.undo(name)
     emit(a, {"session": name, "result": msg}, msg)
 
@@ -853,7 +853,7 @@ def parser():
     ap.add_argument("sessions", nargs="+")
     ap.add_argument("--pr", action="store_true", help="instead: commit it on a new branch, push, and open a PR with gh")
     add("undo", "take back a patch `farmout apply` applied", cmd_undo).add_argument(
-        "session", nargs="?", help="default: the patch applied last")
+        "session", nargs="?", help="default: the patch applied last in this repository")
     ex = add("export", "a session's conversation as Markdown (or --html), to share", cmd_export)
     ex.add_argument("session")
     ex.add_argument("--html", action="store_true")

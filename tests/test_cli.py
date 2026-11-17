@@ -1039,6 +1039,18 @@ class MoreTest(CliBase):
         self.assertIn("no applied patch", self.fo("undo", "p1", rc=1).stderr)
         self.assertIn("nothing to undo", self.fo("undo", rc=1).stderr)
 
+    def test_bare_undo_never_reaches_into_another_repository(self):
+        self.repo()
+        self.fo("run", "codex", "write one.txt 1", "--isolate", "-n", "p1")
+        self.fo("apply", "p1")
+        other = self.tmp / "other"
+        other.mkdir()
+        self.git("init", "-q", cwd=other)
+        self.assertIn("nothing to undo here", self.fo("undo", cwd=other, rc=1).stderr)
+        self.assertIn("nothing to undo here", self.fo("undo", cwd=self.tmp, rc=1).stderr, "outside any repository too")
+        self.assertEqual((self.work / "one.txt").read_text(), "1", "the patch applied in the other project stays")
+        self.assertIn("took p1's patch back out", self.fo("undo", "-C", str(self.work), cwd=other).stdout)
+
     def test_race_in_a_repository_without_commits_says_why(self):
         bare = self.tmp / "bare"
         bare.mkdir()
@@ -1116,6 +1128,9 @@ class MoreTest(CliBase):
                       "other commands use it only when asked")
         self.fo("run", "claude", "say hi", "-n", "m", FARMOUT_CLAUDE_DIR="", FARMOUT_CLAUDE_MAIN="1")
         self.assertEqual(self.last("claude")["env"], {})
+        mine = str(self.tmp / "my-claude")  # a main login kept outside ~/.claude
+        self.fo("run", "claude", "say hi", "-n", "m2", FARMOUT_CLAUDE_DIR="", FARMOUT_CLAUDE_MAIN="1", CLAUDE_CONFIG_DIR=mine)
+        self.assertEqual(self.last("claude")["env"], {"CLAUDE_CONFIG_DIR": mine}, "the login `claude` uses in your shell")
 
     def test_fix_pr_turns_feedback_into_a_race(self):
         self.repo()
