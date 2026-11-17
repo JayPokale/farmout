@@ -1,0 +1,479 @@
+{
+ "about": "Fixes for bench/leaderboard.py. `pick` fills `fixes`; read each one before a run. lanes: [worker, model or null].",
+ "lanes": [
+  [
+   "claude",
+   "opus"
+  ],
+  [
+   "codex",
+   "gpt-5.6-terra"
+  ],
+  [
+   "antigravity",
+   "gemini-3.8-flash-high"
+  ],
+  [
+   "copilot",
+   null
+  ]
+ ],
+ "repos": [
+  {
+   "repo": "pydantic/pydantic",
+   "lang": "Python",
+   "fixes": [
+    {
+     "sha": "fe5b5ce5581f10626a16dc7ff4159cf3cb6ddbec",
+     "subject": "Fix model signature when a field alias is the name used for extra kwargs (#14255)",
+     "files": [
+      "pydantic/_internal/_signature.py"
+     ],
+     "date": "2026-11-09"
+    },
+    {
+     "sha": "9fcca16fa794f136b4f1153243c5a7fbe02277e4",
+     "subject": "Fix validation constraints leaking into the `Decimal` JSON Schema (#14254)",
+     "files": [
+      "pydantic/json_schema.py"
+     ],
+     "date": "2026-11-08"
+    },
+    {
+     "sha": "dabcc6461dafa4337c52faf3e9941431ea41ce4a",
+     "subject": "Fix `Decimal` JSON Schema patterns accepting bare `0` when no whole digits are allowed (#14244)",
+     "files": [
+      "pydantic/json_schema.py"
+     ],
+     "date": "2026-11-06"
+    },
+    {
+     "sha": "a813d406d144cff8ef9848e791769216666e7a0a",
+     "subject": "Fix JSON Schema for `arguments` schema (#13953)",
+     "files": [
+      "pydantic/json_schema.py"
+     ],
+     "date": "2026-11-05"
+    },
+    {
+     "sha": "e22d85f0af6dbd083e5dccaaa213f6b4ee9946b8",
+     "subject": "Fix `ByteSize.human_readable()` showing `1024.0KiB` instead of `1.0MiB` just below a unit boundary (#14176)",
+     "files": [
+      "pydantic/types.py"
+     ],
+     "date": "2026-11-01"
+    }
+   ]
+  },
+  {
+   "repo": "pallets/flask",
+   "lang": "Python",
+   "fixes": [
+    {
+     "sha": "7203feabf723edae0286ae5dc64fec8ac4c91735",
+     "subject": "Fix IPv6 server name parsing",
+     "files": [
+      "src/flask/app.py"
+     ],
+     "date": "2026-08-11"
+    },
+    {
+     "sha": "de8429ffda8cfb54db175529e2bae72a24e1fa7e",
+     "subject": "Fix IPv6 session transactions",
+     "files": [
+      "src/flask/testing.py"
+     ],
+     "date": "2026-08-11"
+    }
+   ],
+   "skip": [
+    "329c32b91"
+   ]
+  },
+  {
+   "repo": "django/django",
+   "lang": "Python",
+   "fixes": [
+    {
+     "sha": "102c3c327d4974a58883b47a68f8d85da0be3648",
+     "subject": "Fixed #37423 -- Enforced integer expiry times for file-based sessions.",
+     "files": [
+      "django/contrib/sessions/backends/file.py"
+     ],
+     "date": "2026-11-17"
+    },
+    {
+     "sha": "c57c20ff4e8b98b21fa85029614f36c933830790",
+     "subject": "Fixed #37442 -- Fixed JSONL deserialization of Unicode line separators.",
+     "files": [
+      "django/core/serializers/jsonl.py"
+     ],
+     "date": "2026-11-13"
+    },
+    {
+     "sha": "3f079b9d84a52bf0b04f5ede7125c898fa2a0bcf",
+     "subject": "Fixed #36998 -- Rejected firstof tags without arguments before \"as\".",
+     "files": [
+      "django/template/defaulttags.py"
+     ],
+     "date": "2026-11-10"
+    },
+    {
+     "sha": "d9d05f104e3187bd42b4bc288234ef1523a2cc73",
+     "subject": "Fixed #36642 -- Fixed capitalization of locale suggestions in makemessages.",
+     "files": [
+      "django/core/management/commands/makemessages.py"
+     ],
+     "date": "2026-11-06"
+    },
+    {
+     "sha": "8e3dec67c42f1557fe0ecb11b620ed707b01f498",
+     "subject": "Fixed #37330 -- Fixed QuerySet.values() crash with an annotation transform.",
+     "files": [
+      "django/db/models/sql/query.py"
+     ],
+     "date": "2026-11-05"
+    }
+   ],
+   "skip": [
+    "9e2e5a31e",
+    "29b7829d6",
+    "9425a85c9",
+    "5d6d1f051"
+   ]
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "lang": "Python",
+   "fixes": [
+    {
+     "sha": "dcd0e636b4ce69021a9f607b060ea0056c339fd2",
+     "subject": "Fix IndexError in Collector.repr_failure for CollectError without args",
+     "files": [
+      "src/_pytest/nodes.py"
+     ],
+     "date": "2026-11-09"
+    },
+    {
+     "sha": "564d690c6beb29bc8d92d5f008f8f8802efbe53c",
+     "subject": "Fix pytest.approx regression with JAX arrays",
+     "files": [
+      "src/_pytest/approx.py"
+     ],
+     "date": "2026-10-28"
+    },
+    {
+     "sha": "3261273a1f5ec51d75f5744bab41ca243d84942a",
+     "subject": "fix: use _imp._fix_co_filename to fix the filename in the bytecode and use a pure python implementation as fallback",
+     "files": [
+      "src/_pytest/assertion/rewrite.py"
+     ],
+     "date": "2026-09-16"
+    },
+    {
+     "sha": "3e7bf1dad095080edcc9b61a1aac58380d0969d6",
+     "subject": "fix(rewrite): freeze operands a later walrus would clobber",
+     "files": [
+      "src/_pytest/assertion/rewrite.py"
+     ],
+     "date": "2026-09-01"
+    },
+    {
+     "sha": "a2f89c0c1da965d6bea8c09928aa05e0715e1eca",
+     "subject": "fix(rewrite): show correct walrus values in BoolOp explanations",
+     "files": [
+      "src/_pytest/assertion/rewrite.py"
+     ],
+     "date": "2026-09-01"
+    }
+   ]
+  },
+  {
+   "repo": "fastapi/fastapi",
+   "lang": "Python",
+   "fixes": [
+    {
+     "sha": "a1a05b75d3e60f6ced5f3bb067232ebc6b47e201",
+     "subject": "\ud83d\udc1b Fix OpenAPI for response model with nested computed field (#14490)",
+     "files": [
+      "fastapi/_compat/v2.py"
+     ],
+     "date": "2026-11-15"
+    },
+    {
+     "sha": "5f4f9c197654e22c39456bd9c3928069d54c0c41",
+     "subject": "\ud83d\udc1b Fix async yield dependency cleanup on cancellation (#16739)",
+     "files": [
+      "fastapi/concurrency.py",
+      "fastapi/dependencies/utils.py"
+     ],
+     "date": "2026-11-13"
+    },
+    {
+     "sha": "eb2f4926de7c9f79f5d2f8a7823742737ca2a978",
+     "subject": "\ud83d\udc1b Fix synchronous dependency cleanup on cancellation (#16734)",
+     "files": [
+      "fastapi/concurrency.py"
+     ],
+     "date": "2026-11-11"
+    },
+    {
+     "sha": "f90d0369380a539c673b1bbbbd86535b8cdee746",
+     "subject": "\ud83d\udc1b Fix OpenAPI schemas for standalone nullable form unions (#16598)",
+     "files": [
+      "fastapi/dependencies/utils.py"
+     ],
+     "date": "2026-10-22"
+    },
+    {
+     "sha": "1282e9a9f1ac0647cb2031c6dd9c1d5631ade4d4",
+     "subject": "\ud83d\udc1b Fix validation error locations for form and file `AliasChoices` (#16564)",
+     "files": [
+      "fastapi/dependencies/utils.py"
+     ],
+     "date": "2026-10-21"
+    }
+   ],
+   "skip": [
+    "6a9928edc"
+   ]
+  },
+  {
+   "repo": "colinhacks/zod",
+   "lang": "TypeScript",
+   "fixes": [
+    {
+     "sha": "90bf57b8e96a3729d766fff3185d39b2ab3ba016",
+     "subject": "fix(v4): skip a record key that converts to __proto__ at the write (#6760)",
+     "files": [
+      "packages/zod/src/v3/helpers/parseUtil.ts",
+      "packages/zod/src/v4/core/compile.ts",
+      "packages/zod/src/v4/core/schemas.ts",
+      "packages/zod/src/v4/core/util.ts"
+     ],
+     "date": "2026-11-15"
+    },
+    {
+     "sha": "00f532f1c59f534168eb13154f91a09e2721a8d1",
+     "subject": "fix(v4): resolve the whole JSON Pointer in a fromJSONSchema $ref (#6761)",
+     "files": [
+      "packages/zod/src/v4/classic/from-json-schema.ts"
+     ],
+     "date": "2026-11-15"
+    },
+    {
+     "sha": "1e099241d9fa2dd2f029dd43a8488ba5ceae1f4e",
+     "subject": "fix(v4): list null in nullable enums in openapi-3.0 output (#6759)",
+     "files": [
+      "packages/zod/src/v4/core/json-schema-processors.ts",
+      "packages/zod/src/v4/core/to-json-schema.ts"
+     ],
+     "date": "2026-11-15"
+    },
+    {
+     "sha": "4fb18a3eef81c50d77194607bcbc1e76a9a48487",
+     "subject": "fix(locales): remove literal \"undefined\" from lt and hy messages (#6755)",
+     "files": [
+      "packages/zod/src/v4/locales/hy.ts",
+      "packages/zod/src/v4/locales/lt.ts"
+     ],
+     "date": "2026-11-13"
+    },
+    {
+     "sha": "b539e16671e0aa7aa1739a2b1102cc26ed5267ee",
+     "subject": "fix(v4): emit valid JSON Schema for empty tuples (#6754)",
+     "files": [
+      "packages/zod/src/v4/core/json-schema-processors.ts"
+     ],
+     "date": "2026-11-13"
+    }
+   ]
+  },
+  {
+   "repo": "honojs/hono",
+   "lang": "TypeScript",
+   "fixes": [
+    {
+     "sha": "399e7c92071b4f717f532087ff67cd2843ffd01b",
+     "subject": "fix(lambda-edge): omit body in a 204 result (#5643)",
+     "files": [
+      "adapters/lambda-edge/src/handler.ts",
+      "src/adapter/lambda-edge/handler.ts"
+     ],
+     "date": "2026-11-16"
+    },
+    {
+     "sha": "dea44c8880b91a5b6e19469ca3715660eabdb864",
+     "subject": "fix(jsx/dom): keep a falsy Suspense fallback (#5644)",
+     "files": [
+      "src/jsx/dom/components.ts"
+     ],
+     "date": "2026-11-16"
+    },
+    {
+     "sha": "265f36be629379967d90ccd6f6d5f121a3c6901c",
+     "subject": "fix(combine): continue the chain when a Condition returns true in every() (#5392)",
+     "files": [
+      "src/middleware/combine/index.ts"
+     ],
+     "date": "2026-11-16"
+    },
+    {
+     "sha": "6dc11ed09e253f8b38374f21b60837803d66c756",
+     "subject": "fix(jsx/dom): restore attributes and effects when Suspense children suspend again (#5642)",
+     "files": [
+      "src/jsx/dom/render.ts"
+     ],
+     "date": "2026-11-16"
+    },
+    {
+     "sha": "64a1d5a9e53bf244ab13caff7b7d64dcbfb803de",
+     "subject": "fix(method-override): drop the body when overriding to GET or HEAD (#5641)",
+     "files": [
+      "src/middleware/method-override/index.ts"
+     ],
+     "date": "2026-11-16"
+    }
+   ]
+  },
+  {
+   "repo": "caddyserver/caddy",
+   "lang": "Go",
+   "fixes": [
+    {
+     "sha": "f458aa0081f55445b09fae9799d40ed98ed4b3b7",
+     "subject": "caddyhttp: fix min_rate credit overflow on transfers over 9.2 GB (#8396)",
+     "files": [
+      "modules/caddyhttp/idletimeout.go"
+     ],
+     "date": "2026-11-10"
+    },
+    {
+     "sha": "c645c2b43928896ab8deeb555c69fd36fc6bd4d8",
+     "subject": "rewrite: fix strip_path_suffix decoding a literal '%' as an escape (#8005)",
+     "files": [
+      "modules/caddyhttp/rewrite/rewrite.go"
+     ],
+     "date": "2026-11-03"
+    },
+    {
+     "sha": "221ebc4503398fa8c87d95a52d43d0d93a6aeef4",
+     "subject": "fix: preserve FastCGI dial errors for retry (#8172)",
+     "files": [
+      "modules/caddyhttp/reverseproxy/fastcgi/fastcgi.go",
+      "modules/caddyhttp/reverseproxy/reverseproxy.go"
+     ],
+     "date": "2026-10-08"
+    },
+    {
+     "sha": "04fe16102872eba7c017b495a9006fddae4dbdc4",
+     "subject": "encode: fix ETag list matching (#8128)",
+     "files": [
+      "modules/caddyhttp/encode/encode.go"
+     ],
+     "date": "2026-10-03"
+    },
+    {
+     "sha": "fbc88ae2322082b55aef52e0209a0bc56166eca6",
+     "subject": "internal: fix `MaxSizeSubjectsListForLog` off-by-one when `maxToDisplay` is `0` (#7970)",
+     "files": [
+      "internal/logs.go"
+     ],
+     "date": "2026-09-26"
+    }
+   ]
+  },
+  {
+   "repo": "gin-gonic/gin",
+   "lang": "Go",
+   "fixes": [
+    {
+     "sha": "ea9fab99e01d55a5e4f8daacc0d11ccffaee0a15",
+     "subject": "fix(tree): grow skippedNodes when pooled capacity is stale (#4852)",
+     "files": [
+      "tree.go"
+     ],
+     "date": "2026-10-10"
+    },
+    {
+     "sha": "1bd0ecf2d3e08da37efa270bb7be20c1eddb0d68",
+     "subject": "fix(context): load Keys under the mutex in Copy (#4854)",
+     "files": [
+      "context.go"
+     ],
+     "date": "2026-09-25"
+    },
+    {
+     "sha": "3b08cd7235bd5ad2f055aa9e38135f111f6c5926",
+     "subject": "fix: reset skipped-nodes stack on getValue entry to prevent slice overflow panic [#4818] (#4819)",
+     "files": [
+      "tree.go"
+     ],
+     "date": "2026-09-19"
+    },
+    {
+     "sha": "d8f2d588d7573b3438cfc95b7a47f9ec8966273c",
+     "subject": "fix(engine): add default ReadHeaderTimeout to http.Server in Run methods (#4800)",
+     "files": [
+      "gin.go"
+     ],
+     "date": "2026-09-19"
+    },
+    {
+     "sha": "5c6a15f8f9566612076bd209e623861bf92a6283",
+     "subject": "fix(context): handle missing HTML renderer (#4805)",
+     "files": [
+      "context.go",
+      "render/html.go"
+     ],
+     "date": "2026-09-16"
+    }
+   ]
+  },
+  {
+   "repo": "tokio-rs/tokio",
+   "lang": "Rust",
+   "fixes": [
+    {
+     "sha": "844500fd42537518c997a9461947e91abef727ea",
+     "subject": "rt: fix io_uring shutdown errors (#8634)",
+     "files": [
+      "tokio/src/runtime/io/driver/uring.rs"
+     ],
+     "date": "2026-10-28"
+    },
+    {
+     "sha": "8705c87040c67dc410169ff1da4c37a6ace9876b",
+     "subject": "net: fix peer credentials on NetBSD (#8589)",
+     "files": [
+      "tokio/src/net/unix/ucred.rs"
+     ],
+     "date": "2026-10-09"
+    },
+    {
+     "sha": "d3587dac4bd40e3379d8d91c2bc799d3e70ef0ac",
+     "subject": "fs: fix coop for emscripten fs shim (#8422)",
+     "files": [
+      "tokio/src/blocking.rs",
+      "tokio/src/task/coop/mod.rs"
+     ],
+     "date": "2026-09-10"
+    },
+    {
+     "sha": "13094519876096fcc014aa0e876785d6a9870fa0",
+     "subject": "runtime: fix idle bookkeeping when a task dump wakes parked workers (#8372)",
+     "files": [
+      "tokio/src/runtime/scheduler/multi_thread/idle.rs",
+      "tokio/src/runtime/scheduler/multi_thread/worker.rs"
+     ],
+     "date": "2026-09-08"
+    }
+   ],
+   "skip": [
+    "63fd69496",
+    "40b877948",
+    "787697f76"
+   ]
+  }
+ ]
+}

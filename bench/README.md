@@ -122,6 +122,16 @@ Claude's cost halved (writing a PDF into its context is the expensive part) for 
 
 Disclosure for both head benchmarks: the head account had the [Chisle](https://github.com/JayPokale/Chisle) plugin on (it makes Claude's replies terser; same author as farmout). Each comparison has it on both sides, so the differences are like for like, but the absolute numbers are not those of a stock Claude Code.
 
+## Bug-Finding Leaderboard (tooling ready, not run yet)
+
+`leaderboard.py` scales the real-regression idea up: recent bug fixes (since August 2026) from ten well-known projects in Python, TypeScript, Go and Rust (46 fixes in `leaderboard/suite.json`; every subject screened by hand, every doubtful diff read, 8 rejected), each undone in a fresh repository and reviewed by every lane: a worker on its default model or a named one, such as `copilot:gpt-6.1-sol`. Only a fix's source files are undone, so no deleted regression test or changelog line names the bug, and the copy's only commit is "snapshot", so `git log` can't either. Each (fix, lane) is one review, results are kept per file so a run resumes, and a new model is one more lane:
+
+```bash
+python3 bench/leaderboard.py run -l claude:opus,codex,antigravity:gemini-3.8-flash-high,copilot
+python3 bench/leaderboard.py run -l copilot:gemini-4-carbon     # a model that shipped today: one more lane
+python3 bench/leaderboard.py render                              # leaderboard/README.md, leaderboard.json, card.svg/.png
+```
+
 ## Reproduce
 
 ```bash

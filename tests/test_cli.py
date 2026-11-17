@@ -1445,6 +1445,51 @@ class LiveLanesTest(unittest.TestCase):
         self.assertIn("I replayed 2 real bug fixes", bench.card_text([], 2), "an empty scoreboard still makes a card")
 
 
+class LeaderboardTest(CliBase):
+    def board(self, *args, rc=0):
+        p = subprocess.run([sys.executable, str(SERVER.parent / "bench" / "leaderboard.py"), *args], cwd=self.work,
+                           env={**self.env, "FARMOUT_LEADERBOARD": str(self.tmp / "board")}, capture_output=True,
+                           text=True, timeout=120)
+        self.assertEqual(p.returncode, rc, p.stdout + p.stderr)
+        return p.stdout
+
+    def test_lanes_resume_and_render(self):
+        self.repo()
+        (self.work / "m.py").write_text("def ratio(a, b):\n    return a / b\n")
+        self.git("add", "m.py")
+        self.git("commit", "-qm", "add ratio")
+        (self.work / "m.py").write_text("def ratio(a, b):\n    if b == 0:\n        return 0\n    return a / b\n")
+        self.git("commit", "-qam", "fix division by zero in ratio")
+        sha = self.git("rev-parse", "HEAD").strip()
+        board = self.tmp / "board"
+        board.mkdir()
+        (board / "suite.json").write_text(json.dumps({"lanes": [["codex", None], ["claude", "opus"]], "repos": [
+            {"repo": str(self.work), "lang": "Python",
+             "fixes": [{"sha": sha, "subject": "fix division by zero in ratio", "files": ["m.py"], "date": "2026-11-01"}]}]}))
+        self.reviewers_say(codex="m.py:2 | high | divides by zero | ratio(1, 0) | guard\n", claude="NO FINDINGS")
+        out = self.board("run")
+        self.assertIn("✓ codex", out)
+        self.assertIn("· claude:opus", out)
+        self.assertEqual(self.last("claude")["argv"][self.last("claude")["argv"].index("--model") + 1], "opus")
+        codex = json.loads(next((board / "results" / "codex").glob("*.json")).read_text())
+        self.assertEqual((codex["found"], codex["model"], codex["findings"][0]["line"]), (True, None, 2))
+        self.assertIn("0 new results", self.board("run"), "a second run resumes: nothing left to do")
+        saved = next((board / "results" / "claude_opus").glob("*.json"))
+        old = json.loads(saved.read_text())  # as if an older parser had missed this reply
+        saved.write_text(json.dumps({**old, "reply": "path:2 | high | divides by zero | ratio(1, 0) | guard"}))
+        self.assertIn("✓ claude:opus", self.board("rescore"))
+        self.assertTrue(json.loads(saved.read_text())["found"])
+        saved.write_text(json.dumps(old))
+        self.board("render")
+        readme = (board / "README.md").read_text()
+        self.assertIn("| `codex` | 1/1 | 100% | 0 |", readme)
+        self.assertIn("| `claude:opus` | 0/1 | 0% | 0 |", readme)
+        self.assertEqual([b["lane"] for b in json.loads((board / "leaderboard.json").read_text())["board"]],
+                         ["codex", "claude:opus"])
+        self.assertIn("Claude · opus", (board / "card.svg").read_text())
+        self.assertEqual(self.git("status", "--porcelain"), "", "the repository is untouched")
+
+
 class BenchCopyTest(unittest.TestCase):
     """The scratch copy a replayed fix is reviewed in must not give the bug away."""
 

@@ -29,12 +29,15 @@ CODE = {".py", ".js", ".mjs", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt
         ".h", ".hpp", ".cs", ".swift", ".scala", ".sh", ".lua", ".m", ".ex", ".exs", ".dart", ".vue", ".svelte"}
 TEST = re.compile(r"(^|/)(tests?|specs?|__tests__|testdata|fixtures?)/|(^|/)(test_[^/]*|conftest\.py)$|_(test|spec)\.\w+$"
                   r"|\.(test|spec)\.\w+$", re.I)
+DOC = re.compile(r"(^|/)(docs?|changelog\.?d?|changes|news|releases?)/|\.(md|rst|txt|adoc)$|(^|/)(CHANGES|CHANGELOG|NEWS|HISTORY)[^/]*$",
+                 re.I)
 NEAR = 3
 SNAPSHOT = ("-c", "user.name=farmout", "-c", "user.email=farmout@localhost", "-c", "core.hooksPath=/dev/null")
 
 def candidates(top, n, scan=400, since=None):
     """Up to n recent commits that look like small bug fixes in code: a fix-like subject and 1-80 changed lines in at
-    most 4 source files (tests, docs and the rest may change too, and stay as fixed)."""
+    most 4 source files. Tests and docs may change too, and stay as fixed; anything else (a template, a config) rules
+    the commit out, since undoing only its code would half-undo the fix."""
     out = []
     since = [f"--since={since}"] if since else []
     for line in git(top, "log", f"-n{scan}", *since, "--no-merges", "--format=%H%x09%P%x09%s").splitlines():
@@ -47,6 +50,8 @@ def candidates(top, n, scan=400, since=None):
         rows = [r.split("\t") for r in git(top, "show", "--numstat", "--format=", sha).splitlines() if r.strip()]
         src = [r for r in rows if len(r) == 3 and r[0].isdigit() and r[1].isdigit()
                and Path(r[2]).suffix.lower() in CODE and not TEST.search(r[2])]
+        if any(r not in src and not TEST.search(r[-1]) and not DOC.search(r[-1]) for r in rows):
+            continue  # a template, stylesheet or config is part of the fix: undoing only the code would half-undo it
         size = sum(int(r[0]) + int(r[1]) for r in src)
         if src and len(src) <= 4 and 0 < size <= 80:
             out.append({"sha": sha, "subject": subject, "files": [r[2] for r in src]})
@@ -107,7 +112,8 @@ def replay(top, c, workers=None, group=None, models=None, lanes=None, title="", 
         mine = {w: [{k: f.get(k) for k in ("rel", "path", "line", "severity", "defect")}
                     for cl in r["clusters"] for f in cl["findings"] if f["worker"] == w] for w in r["workers"]}
         return {"commit": c["sha"], "subject": c["subject"], "secs": round(time.time() - t0),
-                "found": {w: scored(r, changed, w) for w in r["workers"]}, "failed": r["failed"], "findings": mine}
+                "found": {w: scored(r, changed, w) for w in r["workers"]}, "failed": r["failed"], "findings": mine,
+                "worker_secs": r["secs"], "replies": r["replies"]}
     finally:
         if not fresh:
             subprocess.run(["git", "-C", str(top), "worktree", "remove", "--force", str(wt)], capture_output=True)
@@ -154,7 +160,10 @@ REPO = "github.com/JayPokale/farmout"
 
 
 def display(worker):
-    return NAMES.get(worker) or (os.environ.get("FARMOUT_API_MODEL") if worker == "api" else None) or worker
+    """A worker's name for people; a leaderboard lane `worker:model` shows its model too."""
+    worker, _, model = worker.partition(":")
+    name = NAMES.get(worker) or (os.environ.get("FARMOUT_API_MODEL") if worker == "api" and not model else None) or worker
+    return f"{name} · {model}" if model else name
 
 
 def card_text(board, commits):
@@ -171,20 +180,23 @@ def card_text(board, commits):
             + "\n".join(lines) + f"\n\nRanked with farmout: {REPO}")
 
 
-def card_svg(board, commits, day):
+def card_svg(board, commits, day, title="Which AI reviews my code best?", subtitle=None, label="farmout bench"):
     """A 1200x630 image card in the site's colours."""
     rows, top = [], 250
+    wide = max([len(display(w)) for w, *_ in board[:5]] or [0]) > 10  # leaderboard lanes carry a model name
+    size, bar = (24, 520) if wide else (32, 330)
     for i, (w, found, of, failed) in enumerate(board[:5]):
         y = top + i * 68
         frac = found / of if of else 0
-        colour = COLOURS.get(w, "#ece8df")
+        colour = COLOURS.get(w.partition(":")[0], "#ece8df")
         score = f"{found}/{of}" if of else "failed"
         rows.append(
-            f'<text x="80" y="{y + 30}" font-size="32" font-weight="700" fill="{colour}">{escape(display(w))}</text>'
-            f'<rect x="330" y="{y + 6}" width="660" height="34" rx="8" fill="#171a23"/>'
-            f'<rect x="330" y="{y + 6}" width="{max(0.0, 660 * frac):.0f}" height="34" rx="8" fill="{colour}"/>'
+            f'<text x="80" y="{y + 30}" font-size="{size}" font-weight="700" fill="{colour}">{escape(display(w))}</text>'
+            f'<rect x="{bar}" y="{y + 6}" width="{990 - bar}" height="34" rx="8" fill="#171a23"/>'
+            f'<rect x="{bar}" y="{y + 6}" width="{max(0.0, (990 - bar) * frac):.0f}" height="34" rx="8" fill="{colour}"/>'
             f'<text x="1120" y="{y + 32}" font-size="30" font-weight="700" fill="#ece8df" text-anchor="end">{score}</text>')
-    fixes = f"{commits} real bug fix{'es' * (commits != 1)} from my git history, replayed, and each AI asked to find {'them' if commits != 1 else 'it'}"
+    fixes = subtitle or (f"{commits} real bug fix{'es' * (commits != 1)} from my git history, replayed, and each AI "
+                         f"asked to find {'them' if commits != 1 else 'it'}")
     lanes = "".join(f'<path d="M104 256H196C{250 + (i in (0, 3)) * 6} 256 262 {y} 326 {y}H384" stroke="{c}" stroke-width="26" '
                     'stroke-linecap="round" fill="none"/>'
                     for i, (y, c) in enumerate(((140, "#f2a65a"), (218, "#5ec4b6"), (294, "#a78bfa"), (372, "#f47c7c"))))
@@ -193,9 +205,9 @@ def card_svg(board, commits, day):
 <g font-family="Hubot Sans, Mona Sans, -apple-system, Segoe UI, Helvetica, Arial, sans-serif">
 <g transform="translate(80 60) scale(0.11)"><rect width="512" height="512" rx="112" fill="#14161f"/>{lanes}
 <path d="M104 256H204" stroke="#ece8df" stroke-width="26" stroke-linecap="round"/><circle cx="104" cy="256" r="40" fill="#ece8df"/></g>
-<text x="152" y="102" font-size="30" font-weight="700" fill="#ece8df">farmout bench</text>
+<text x="152" y="102" font-size="30" font-weight="700" fill="#ece8df">{escape(label)}</text>
 <text x="1120" y="102" font-size="24" fill="#9a9eaf" text-anchor="end">{escape(day)}</text>
-<text x="80" y="180" font-size="56" font-weight="800" fill="#ece8df">Which AI reviews my code best?</text>
+<text x="80" y="180" font-size="56" font-weight="800" fill="#ece8df">{escape(title)}</text>
 <text x="80" y="222" font-size="24" fill="#9a9eaf">{escape(fixes)}</text>
 {"".join(rows)}
 <text x="80" y="{min(590, top + len(board[:5]) * 68 + 50)}" font-size="26" fill="#9a9eaf">Ranked with farmout · {REPO}</text>

@@ -225,7 +225,7 @@ def review(cwd, workers=None, base=None, staged=False, focus=None, since=None, r
     group = group or sessions.new_group("review")
     diff, untracked, label = capture(top, group, base, staged, since)
     result = {"group": group, "label": label, "diff": str(diff), "workers": [], "failed": {}, "clusters": [],
-              "sessions": [], "empty": not diff.stat().st_size and not untracked}
+              "sessions": [], "secs": {}, "replies": {}, "empty": not diff.stat().st_size and not untracked}
     if result["empty"]:
         return result
     workers = workers or flows.default_workers()
@@ -242,9 +242,11 @@ def review(cwd, workers=None, base=None, staged=False, focus=None, since=None, r
             flows.ACTIVE.discard(name)
         result["sessions"].append(name)
         w = rec.get("worker") or meta["worker"]
+        result["secs"][w] = rec.get("secs")
         if rec["status"] == "ok":
             result["workers"].append(w)
-            found += parse(flows.text(rec), w)
+            result["replies"][w] = flows.text(rec)
+            found += parse(result["replies"][w], w)
         else:
             lines = flows.text(rec).strip().splitlines() or [rec["status"]]
             result["failed"][w] = lines[0][:300]
