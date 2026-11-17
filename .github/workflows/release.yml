@@ -30,3 +30,19 @@ jobs:
           awk -v v="[${GITHUB_REF_NAME#v}]" '/^## \[/ { p = index($0, v); next } p' CHANGELOG.md > notes.md
           [ -s notes.md ] || { echo "CHANGELOG.md has no section for ${GITHUB_REF_NAME#v}"; exit 1; }
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md
+
+  pypi:
+    # PyPI trusted publishing: no token stored here. One-time setup on pypi.org → Publishing → add a pending
+    # publisher: project farmout, owner JayPokale, repository farmout, workflow release.yml, environment pypi.
+    needs: release
+    runs-on: ubuntu-24.04
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - run: python -m pip install --quiet build && python -m build
+      - uses: pypa/gh-action-pypi-publish@release/v1
