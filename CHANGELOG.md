@@ -19,6 +19,9 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 - **`.farmoutinclude`**: ignored files (such as `.env`) copied into isolated worktrees, never into patches.
 - **MCP tools** `send`, `sessions` and `pipeline`, next to `delegate` (which gains `effort`).
 - **The official MCP Registry:** `server.json` (`io.github.JayPokale/farmout`, run as `uvx farmout mcp`); each release is listed there by the release workflow once PyPI has it.
+- **`farmout fix-pr --dry-run`** prints the brief the workers would get from a pull request's feedback, and starts nothing.
+- `farmout review --json` (and `bench`'s report) include each worker's raw reply, next to the parsed findings.
+- **Bug-Finding Leaderboard tooling** (`bench/leaderboard.py`, in the repository): 46 recent real fixes from 10 well-known projects, reviewed per lane (a worker on its default model or a named one, such as `copilot:gpt-6.1-sol`), with resumable runs, a no-quota `check`, `rescore` after a parser fix, and a Markdown table, JSON and card from `render`.
 - `--effort` for every worker (`--effort`, `--reasoning-effort`, `model_reasoning_effort`).
 - **Skills:** `SKILL.md` folders (the format Claude Code, Codex and Copilot share) run on your workers with `farmout <skill>`, in ask, review or race mode, also as pipeline stages. `farmout skill add` installs from a folder, a git repository or a URL; remote skills that contain code are refused.
 - **Hooks** on farmout's events (SessionStart, MessageReceived, TaskStart, TaskEnd, StageEnd, PipelineEnd): JSON on stdin; a TaskStart hook can rewrite or block the brief. A project's own hooks run only after `farmout trust`, pinned to the settings file's SHA-256. `redact = true` strips credentials from briefs and piped input.
@@ -71,3 +74,8 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 - A bare `farmout undo` (which `farmout apply`'s own error suggests) was an argument error; it now takes back the last patch applied in the current repository, never one applied in another project. A bare `farmout wait` waits for whatever is running or queued.
 - `FARMOUT_CLAUDE_MAIN=1` ignored a `CLAUDE_CONFIG_DIR` set in your shell, so a main login kept outside `~/.claude` ran as the wrong (or no) account.
 - In the live lanes, "1 finding" and "2 findings" put the times in different columns.
+- `farmout bench` gave the bug away: the diff a worker reviewed also deleted the fix's regression test and changelog line, and the fix itself was the scratch worktree's HEAD commit, so a worker with a shell could read its subject in `git log`. Only the fix's source files are undone now, in a copy whose only commit is "snapshot"; a fix that adds a test file qualifies, and one that changes a template or config doesn't (undoing only its code would half-undo it).
+- With no worker ready, `farmout review` printed "No findings", as if the change were fine; review, ask, race, fix-pr and bench now stop and point to `farmout doctor`.
+- A review finding that copied the brief's placeholder (`path:163 | high | ...`) cited a missing file and was dropped, though it named the bug. The brief asks for the real path now, and a placeholder path means the changed file when there's only one.
+- `farmout fix-pr` treated CI bots' reports (bundle size, benchmarks), the pull request author's own replies and approving reviews as problems to fix, and failed on more than one page of comments.
+- An isolated `delegate` result left its worktree and branch behind with no hint; it now names the commands that remove them.
