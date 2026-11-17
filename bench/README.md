@@ -120,6 +120,8 @@ Task (`claude -p`, Sonnet head, plugin loaded): "Summarize every numbered sectio
 
 Claude's cost halved (writing a PDF into its context is the expensive part) for the same section-by-section answer, but it took four minutes instead of twenty seconds. An earlier guard-on run exposed an Antigravity plan-mode stub ("approve to proceed"); Claude then read the PDF anyway (85,871 tokens, $0.155). That is fixed. On skim tasks (abstracts, first pages) the guard never fires: Claude reads one page per paper and stays cheap.
 
+Disclosure for both head benchmarks: the head account had the [Chisle](https://github.com/JayPokale/Chisle) plugin on (it makes Claude's replies terser; same author as farmout). Each comparison has it on both sides, so the differences are like for like, but the absolute numbers are not those of a stock Claude Code.
+
 ## Reproduce
 
 ```bash
