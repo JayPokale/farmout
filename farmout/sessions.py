@@ -259,6 +259,11 @@ def wait_msg(name, msg_id, timeout=None, poll=0.15):
         if rec and rec["status"] != "running":
             return rec
         if not busy(name):
+            # the runner may have finished the turn and exited between the two checks: it writes the final record
+            # before it exits, so read it once more before calling the turn interrupted
+            rec = find(name, msg_id) or rec
+            if rec and rec["status"] != "running":
+                return rec
             if rec:  # its runner died mid-turn
                 return {**rec, "status": "interrupted", "error": f"the runner stopped mid-turn; see {path(name) / 'runner.log'}"}
             if not any(f.name.endswith(f"-{msg_id}.json") for f in pending(name)):

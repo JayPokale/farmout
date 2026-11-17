@@ -1362,5 +1362,17 @@ class RenderWidthTest(unittest.TestCase):
             longest = max(len(line) for line in review_mod.render(result, 1, width).splitlines())
             self.assertLess(longest, width, f"a row wraps at {width} columns")
 
+
+class WaitRaceTest(unittest.TestCase):
+    def test_a_turn_that_ends_between_the_checks_is_not_interrupted(self):
+        # The waiter reads the turn ("running"), then sees no runner: in between, the runner wrote "ok" and exited.
+        from unittest import mock
+        from farmout import sessions
+        running = {"id": "m1", "n": 1, "status": "running"}
+        done = {"id": "m1", "n": 1, "status": "ok", "output": "x"}
+        with mock.patch.object(sessions, "find", side_effect=[running, done]), \
+                mock.patch.object(sessions, "busy", return_value=False):
+            self.assertEqual(sessions.wait_msg("s", "m1", timeout=5)["status"], "ok")
+
 if __name__ == "__main__":
     unittest.main()
