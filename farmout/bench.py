@@ -166,11 +166,16 @@ COLOURS = {"claude": "#f47c7c", "codex": "#f2a65a", "antigravity": "#5ec4b6", "c
 REPO = "github.com/JayPokale/farmout"
 
 
+# The models farmout itself picks for a review (claude worker's default, review.MODELS), named on the card so a score
+# from a fast setting isn't read as the vendor's best; codex and copilot run whatever their own CLI is set to.
+CHOSEN = {"claude": "Sonnet", "antigravity": "Flash low"}
+
+
 def display(worker):
     """A worker's name for people; a leaderboard lane `worker:model` shows its model too."""
     worker, _, model = worker.partition(":")
     name = NAMES.get(worker) or (os.environ.get("FARMOUT_API_MODEL") if worker == "api" and not model else None) or worker
-    return f"{name} · {model}" if model else name
+    return f"{name} · {model}" if model else f"{name} {CHOSEN[worker]}" if worker in CHOSEN else name
 
 
 def card_text(board, commits):

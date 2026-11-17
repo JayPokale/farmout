@@ -1534,6 +1534,16 @@ class BenchCopyTest(unittest.TestCase):
         return subprocess.run(["git", "-C", str(cwd or self.top), *args], check=True, capture_output=True, text=True,
                               env=self.env).stdout
 
+    def test_cards_name_the_models_farmout_picks_and_fit_one_post(self):
+        from farmout import bench, review
+        self.assertIn("flash-low", review.MODELS["antigravity"], "CHOSEN must describe the model reviews really use")
+        board = [(w, 7, 10, 0) for w in ("antigravity", "codex", "claude", "copilot")]
+        text = bench.card_text(board, 10)
+        for name in ("Gemini Flash low", "Claude Sonnet", "Codex", "Copilot"):
+            self.assertIn(name, text)
+        self.assertLessEqual(len(text), 280, "four workers still fit in one post")
+        self.assertIn("Gemini Flash low", bench.card_svg(board, 10, "2026-11-18"))
+
     def test_only_the_source_change_is_undone_and_history_hides_the_fix(self):
         from farmout import bench
         [c] = bench.candidates(str(self.top), 5)
