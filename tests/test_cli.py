@@ -1349,5 +1349,18 @@ class LiveLanesTest(unittest.TestCase):
             lanes.note("review-7-codex", "tests pass")  # no exception escapes, here or on exit
         self.assertIn("I replayed 2 real bug fixes", bench.card_text([], 2), "an empty scoreboard still makes a card")
 
+
+class RenderWidthTest(unittest.TestCase):
+    def test_the_review_table_fits_the_terminal(self):
+        everyone = ["antigravity", "codex", "claude", "copilot"]
+        cluster = {"valid": True, "workers": everyone, "severity": "high", "path": "files_api.py", "line": 18,
+                   "defect": "SQL injection: the owner is interpolated into the query, so any caller reads every row",
+                   "findings": []}
+        result = {"empty": False, "workers": everyone, "label": "uncommitted changes", "group": "review-1",
+                  "clusters": [cluster], "failed": {}}
+        for width in (100, 120, 160):
+            longest = max(len(line) for line in review_mod.render(result, 1, width).splitlines())
+            self.assertLess(longest, width, f"a row wraps at {width} columns")
+
 if __name__ == "__main__":
     unittest.main()

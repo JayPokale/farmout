@@ -279,7 +279,9 @@ def render(result, min_agree=1, width=None):
         rows = [("agree", "severity", "where", "finding", "flagged by")]
         rows += [(f"{len(c['workers'])}/{n}", c["severity"], f"{c['path']}:{c['line']}", c["defect"], ", ".join(c["workers"]))
                  for c in good]
-        cap = max(30, (width or 120) - 60)
+        # the finding column takes what the others leave of the terminal, so no row wraps
+        fixed = sum(max(len(r[i]) for r in rows) for i in (0, 1, 2, 4)) + 8
+        cap = max(24, (width or 120) - fixed - 1)
         rows = [(a, b, c, d if len(d) <= cap else d[:cap - 1] + "…", e) for a, b, c, d, e in rows]
         widths = [max(len(r[i]) for r in rows) for i in range(4)]
         lines += ["  ".join(r[i].ljust(widths[i]) for i in range(4)) + "  " + r[4] for r in rows]
