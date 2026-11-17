@@ -10,6 +10,13 @@
 ![MCP](https://img.shields.io/badge/MCP-stdio-6e56cf)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
+> **참고:** 이 번역은 이전 버전을 기준으로 합니다. 최신 기능(`farmout bench --share`, 실시간 진행 표시, DeepSeek 지원 등)은 [영어 README](../README.md)를 참고하세요.
+
+```bash
+pipx install git+https://github.com/JayPokale/farmout
+cd your-repo && farmout bench --share   # 내 코드의 실제 버그를 가장 잘 찾는 AI는?
+```
+
 <p align="center"><img src="../assets/review-demo.svg" width="900" alt="실제 실행 터미널 리플레이: /farmout:review가 커밋되지 않은 변경 사항 하나를 antigravity, codex, claude, copilot에 병렬로 전달하면, Claude가 각 문제를 지적한 모델 수와 함께 검증된 9가지 발견 항목을 병합된 표로 출력합니다"></p>
 
 - **`/farmout:review`**: Codex, Gemini(Antigravity 경유), GitHub Copilot, 두 번째 Claude 계정이 동시에 읽기 전용으로 diff를 리뷰합니다. Claude는 각 모델이 발견한 내용을 병합하고, 문제를 지적한 모델 수를 집계하며, 코드와 대조하여 모든 항목을 검증합니다. [자체 벤치마크](../bench/README.md)에서는 32개의 버그(의도적으로 심은 23개, 오픈소스 프로젝트의 실제 회귀 9개) 모두가 4개 모델 중 최소 3개에서 지적되었습니다.

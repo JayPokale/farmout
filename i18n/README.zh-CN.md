@@ -10,6 +10,13 @@
 ![MCP](https://img.shields.io/badge/MCP-stdio-6e56cf)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
+> **说明：** 本译文对应较早的版本。最新功能（`farmout bench --share`、实时进度显示、DeepSeek 支持等）请以[英文 README](../README.md) 为准。
+
+```bash
+pipx install git+https://github.com/JayPokale/farmout
+cd your-repo && farmout bench --share   # 哪个 AI 订阅最能在你自己的代码里找出真实的 bug？
+```
+
 <p align="center"><img src="../assets/review-demo.svg" width="900" alt="真实运行的终端动画回放：/farmout:review 将一处未提交修改并行发送给 antigravity、codex、claude 和 copilot，随后 Claude 输出合并校验后的 9 条发现结果表格，并标明各问题被多少个模型指出"></p>
 
 - **`/farmout:review`**：Codex、Gemini（通过 Antigravity）、GitHub Copilot 以及第二个 Claude 账号同时以只读方式审查你的 diff。Claude 会合并审查结果，统计指出每个问题的模型数量，并对照代码逐一核对每项发现。在[我们的基准测试](../bench/README.md)中，32 个 Bug（23 个预设的、9 个来自开源项目的真实回归）全部被 4 个模型中的至少 3 个指出。

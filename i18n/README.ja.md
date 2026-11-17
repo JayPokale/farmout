@@ -10,6 +10,13 @@
 ![MCP](https://img.shields.io/badge/MCP-stdio-6e56cf)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
+> **注:** この翻訳は以前のバージョンに基づいています。最新の機能（`farmout bench --share`、ライブ進捗表示、DeepSeek 対応など）は[英語の README](../README.md) をご覧ください。
+
+```bash
+pipx install git+https://github.com/JayPokale/farmout
+cd your-repo && farmout bench --share   # あなたのコードの実際のバグを一番見つけるのはどの AI か？
+```
+
 <p align="center"><img src="../assets/review-demo.svg" width="900" alt="実際の実行を再現したターミナルのアニメーション。/farmout:review が未コミットの変更 1 件を antigravity、codex、claude、copilot に並列で送り、Claude が統合・検証済みの 9 件の指摘と、各指摘を挙げたモデル数を表にして表示する"></p>
 
 - **`/farmout:review`**: Codex、Gemini (Antigravity 経由)、GitHub Copilot、2 つ目の Claude アカウントが、あなたの diff を読み取り専用で同時にレビューします。Claude が結果を統合し、各問題を指摘したモデル数を集計して、すべての指摘をコードと照合します。[ベンチマーク](../bench/README.md)では、32 件のバグ (仕込んだ 23 件と、オープンソースプロジェクトの実際のリグレッション 9 件) のすべてが、4 モデル中 3 モデル以上に指摘されました。
