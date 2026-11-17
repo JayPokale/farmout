@@ -1408,6 +1408,57 @@ class LiveLanesTest(unittest.TestCase):
         self.assertIn("I replayed 2 real bug fixes", bench.card_text([], 2), "an empty scoreboard still makes a card")
 
 
+class BenchCopyTest(unittest.TestCase):
+    """The scratch copy a replayed fix is reviewed in must not give the bug away."""
+
+    def setUp(self):
+        import shutil
+        import tempfile
+        self.tmp = Path(tempfile.mkdtemp(prefix="farmout-bench-test-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.top = self.tmp / "repo"
+        self.top.mkdir()
+        self.env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@localhost",
+                    "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@localhost"}
+        self.git("init", "-q")
+        files = {"m.py": "def ratio(a, b):\n    return a / b\n", "tests/test_m.py": "def test_one():\n    pass\n",
+                 "CHANGELOG.md": "# Changes\n"}
+        for name, text in files.items():
+            (self.top / name).parent.mkdir(exist_ok=True)
+            (self.top / name).write_text(text)
+        self.git("add", ".")
+        self.git("commit", "-qm", "add ratio")
+        (self.top / "m.py").write_text("def ratio(a, b):\n    if b == 0:\n        return 0\n    return a / b\n")
+        (self.top / "tests" / "test_m.py").write_text("def test_one():\n    pass\n\ndef test_zero_division():\n    pass\n")
+        (self.top / "tests" / "test_regression.py").write_text("def test_ratio_by_zero():\n    pass\n")
+        (self.top / "CHANGELOG.md").write_text("# Changes\n\n- Fixed: ratio crashed dividing by zero\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "fix ZeroDivisionError in ratio")
+
+    def git(self, *args, cwd=None):
+        return subprocess.run(["git", "-C", str(cwd or self.top), *args], check=True, capture_output=True, text=True,
+                              env=self.env).stdout
+
+    def test_only_the_source_change_is_undone_and_history_hides_the_fix(self):
+        from farmout import bench
+        [c] = bench.candidates(str(self.top), 5)
+        self.assertEqual(c["files"], ["m.py"], "a new test file doesn't disqualify a fix, and tests aren't undone")
+        for fresh in (False, True):
+            with self.subTest(fresh=fresh):
+                wt = self.tmp / f"wt-{fresh}"
+                bench.prepare(str(self.top), c, wt, fresh=fresh)
+                self.assertEqual(self.git("diff", "HEAD", "--name-only", cwd=wt), "m.py\n")
+                self.assertIn("return a / b", (wt / "m.py").read_text())
+                self.assertNotIn("b == 0", (wt / "m.py").read_text(), "the bug is back")
+                self.assertTrue((wt / "tests" / "test_regression.py").exists(), "tests stay as fixed")
+                self.assertIn("Fixed: ratio", (wt / "CHANGELOG.md").read_text())
+                self.assertEqual(self.git("log", "--format=%s", cwd=wt), "snapshot\n", "no fix subject in the history")
+                if fresh:
+                    self.assertEqual(self.git("log", "--all", "--format=%s", cwd=wt), "snapshot\n")
+                else:
+                    self.git("worktree", "remove", "--force", str(wt))
+
+
 class RenderWidthTest(unittest.TestCase):
     def test_the_review_table_fits_the_terminal(self):
         everyone = ["antigravity", "codex", "claude", "copilot"]

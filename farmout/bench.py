@@ -3,6 +3,10 @@
 Recent small bug-fix commits are undone in a scratch worktree, so each bug is back as an uncommitted change in its
 real codebase; every worker reviews it with farmout's review brief, and a worker scores when one of its findings
 points within 3 lines of the reintroduced change. Costs one review per worker per commit.
+
+Only the fix's source files are undone: its tests, docs and changelog stay as fixed, since a diff that deletes
+`test_zero_division` or a "Fixed: ..." line would name the bug. The scratch copy's only commit holds the fixed tree
+under a neutral message, so a worker that reads `git log` can't find the fix's subject there either.
 """
 import contextlib
 import json
@@ -23,28 +27,32 @@ from .isolate import git
 FIX = re.compile(r"\b(fix(e[sd])?|bug|regression|crash(es)?|broken|wrong|leak|race)\b", re.I)
 CODE = {".py", ".js", ".mjs", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt", ".rb", ".php", ".c", ".cc", ".cpp",
         ".h", ".hpp", ".cs", ".swift", ".scala", ".sh", ".lua", ".m", ".ex", ".exs", ".dart", ".vue", ".svelte"}
+TEST = re.compile(r"(^|/)(tests?|specs?|__tests__|testdata|fixtures?)/|(^|/)(test_[^/]*|conftest\.py)$|_(test|spec)\.\w+$"
+                  r"|\.(test|spec)\.\w+$", re.I)
 NEAR = 3
+SNAPSHOT = ("-c", "user.name=farmout", "-c", "user.email=farmout@localhost", "-c", "core.hooksPath=/dev/null")
 
-
-def candidates(top, n, scan=400):
-    """Up to n recent commits that look like small bug fixes in code: a fix-like subject, at most 4 files, 1-80
-    changed lines of code."""
+def candidates(top, n, scan=400, since=None):
+    """Up to n recent commits that look like small bug fixes in code: a fix-like subject and 1-80 changed lines in at
+    most 4 source files (tests, docs and the rest may change too, and stay as fixed)."""
     out = []
-    for line in git(top, "log", f"-n{scan}", "--no-merges", "--format=%H%x09%P%x09%s").splitlines():
+    since = [f"--since={since}"] if since else []
+    for line in git(top, "log", f"-n{scan}", *since, "--no-merges", "--format=%H%x09%P%x09%s").splitlines():
         sha, parents, subject = (line.split("\t", 2) + ["", ""])[:3]
         if not parents or " " in parents.strip() or not FIX.search(subject):
             continue
-        if git(top, "show", "--diff-filter=ADR", "--name-only", "--format=", sha).strip():
-            continue  # a fix that adds, deletes or renames files leaves no lines to point at once undone
+        moved = git(top, "show", "--diff-filter=ADR", "--name-only", "--format=", sha).splitlines()
+        if any(f.strip() and not TEST.search(f) for f in moved):
+            continue  # a fix that adds, deletes or renames source files leaves no lines to point at once undone
         rows = [r.split("\t") for r in git(top, "show", "--numstat", "--format=", sha).splitlines() if r.strip()]
-        code = [r for r in rows if len(r) == 3 and r[0].isdigit() and r[1].isdigit() and Path(r[2]).suffix.lower() in CODE]
-        size = sum(int(r[0]) + int(r[1]) for r in code)
-        if code and len(rows) <= 4 and 0 < size <= 80:
-            out.append({"sha": sha, "subject": subject, "files": [r[2] for r in code]})
+        src = [r for r in rows if len(r) == 3 and r[0].isdigit() and r[1].isdigit()
+               and Path(r[2]).suffix.lower() in CODE and not TEST.search(r[2])]
+        size = sum(int(r[0]) + int(r[1]) for r in src)
+        if src and len(src) <= 4 and 0 < size <= 80:
+            out.append({"sha": sha, "subject": subject, "files": [r[2] for r in src]})
             if len(out) >= n:
                 break
     return out
-
 
 def changed_lines(wt):
     """file -> line numbers of the uncommitted change in the current files."""
@@ -67,6 +75,48 @@ def scored(result, changed, worker):
     return False
 
 
+def prepare(top, c, wt, fresh=False):
+    """Make wt a scratch copy of the fixed tree, as its only commit, with the fix's source changes undone. fresh=True
+    copies the files into a new repository instead of adding a worktree, so not even `git log --all` reaches the
+    original history (public benchmarks); a worktree keeps your repository's .farmout/settings in force."""
+    if fresh:
+        wt.mkdir(parents=True)
+        tar = git(top, "archive", "--format=tar", c["sha"], binary=True)
+        subprocess.run(["tar", "-x", "-C", str(wt)], input=tar, check=True, capture_output=True)
+        git(wt, "init", "-q")
+        git(wt, "add", "-A", "-f")
+        git(wt, *SNAPSHOT, "commit", "-q", "--no-verify", "-m", "snapshot")
+    else:
+        snap = git(top, *SNAPSHOT, "commit-tree", f"{c['sha']}^{{tree}}", "-m", "snapshot").strip()
+        git(top, *SNAPSHOT, "worktree", "add", "-q", "--detach", str(wt), snap)
+    fix = git(top, "diff", "--binary", f"{c['sha']}^", c["sha"], "--", *c["files"], binary=True)
+    git(wt, "apply", "-R", "--whitespace=nowarn", stdin=fix, binary=True)
+
+def replay(top, c, workers=None, group=None, models=None, lanes=None, title="", fresh=False):
+    """One fix, undone in a scratch copy and reviewed. Returns the row: commit, subject, secs, found {worker: bool},
+    failed {worker: reason}, findings {worker: [...]}."""
+    group = group or sessions.new_group("bench")
+    tmp = Path(tempfile.mkdtemp(prefix="farmout-bench-"))
+    wt = tmp / "wt"
+    try:
+        prepare(top, c, wt, fresh)
+        changed = changed_lines(str(wt))
+        t0 = time.time()
+        with lanes(group, title) if lanes else contextlib.nullcontext():
+            r = review.review(str(wt), workers=workers, group=group, models=models)
+        mine = {w: [{k: f.get(k) for k in ("rel", "path", "line", "severity", "defect")}
+                    for cl in r["clusters"] for f in cl["findings"] if f["worker"] == w] for w in r["workers"]}
+        return {"commit": c["sha"], "subject": c["subject"], "secs": round(time.time() - t0),
+                "found": {w: scored(r, changed, w) for w in r["workers"]}, "failed": r["failed"], "findings": mine}
+    finally:
+        if not fresh:
+            subprocess.run(["git", "-C", str(top), "worktree", "remove", "--force", str(wt)], capture_output=True)
+        shutil.rmtree(tmp, ignore_errors=True)
+        for name in sessions.names():  # their worktree is gone, so in `farmout ls` they'd only be clutter
+            if name.startswith(f"{group}-"):
+                with contextlib.suppress(RuntimeError, OSError):
+                    sessions.remove(name)
+
 def run(cwd, n=3, workers=None, scan=400, progress=print, lanes=None):
     """lanes(group, title), if given, returns a context manager that shows each commit's reviews as they run
     (the CLI's live lanes); otherwise progress(line) hears about each commit."""
@@ -81,30 +131,11 @@ def run(cwd, n=3, workers=None, scan=400, progress=print, lanes=None):
         title = f"[{i}/{len(picks)}] {c['sha'][:9]} {c['subject'][:70]}"
         if not lanes:
             progress(title)
-        tmp = Path(tempfile.mkdtemp(prefix="farmout-bench-"))
-        wt = tmp / "wt"
-        git(top, "-c", "core.hooksPath=/dev/null", "worktree", "add", "-q", "--detach", str(wt), c["sha"])
-        try:
-            fix = git(top, "diff", "--binary", f"{c['sha']}^", c["sha"], binary=True)
-            git(wt, "apply", "-R", "--whitespace=nowarn", stdin=fix, binary=True)
-            changed = changed_lines(str(wt))
-            t0 = time.time()
-            with lanes(f"{group}-{i}", title) if lanes else contextlib.nullcontext():
-                r = review.review(str(wt), workers=workers, group=f"{group}-{i}")
-            rows.append({"commit": c["sha"], "subject": c["subject"], "secs": round(time.time() - t0),
-                         "found": {w: scored(r, changed, w) for w in r["workers"]}, "failed": r["failed"]})
-        finally:
-            subprocess.run(["git", "-C", str(top), "worktree", "remove", "--force", str(wt)], capture_output=True)
-            shutil.rmtree(tmp, ignore_errors=True)
-            for name in sessions.names():  # their worktree is gone, so in `farmout ls` they'd only be clutter
-                if name.startswith(f"{group}-{i}-"):
-                    with contextlib.suppress(RuntimeError, OSError):
-                        sessions.remove(name)
+        rows.append(replay(str(top), c, workers, f"{group}-{i}", lanes=lanes, title=title))
     out = STATE / "bench" / f"{time.strftime('%Y%m%d-%H%M%S')}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"repo": str(top), "commits": rows}, indent=1))
     return rows, out
-
 
 def scoreboard(rows):
     """[(worker, found, out of, failed)] best first."""

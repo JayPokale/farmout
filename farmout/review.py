@@ -210,8 +210,9 @@ def ranked(clusters):
     return sorted(clusters, key=lambda c: (-len(c["workers"]), -SEVERITY[c["severity"]], c["path"], c["line"]))
 
 
-def review(cwd, workers=None, base=None, staged=False, focus=None, since=None, root=None, group=None):
-    """Run the review. Returns a dict: group, label, diff, workers (answered), failed {worker: reason}, clusters."""
+def review(cwd, workers=None, base=None, staged=False, focus=None, since=None, root=None, group=None, models=None):
+    """Run the review. Returns a dict: group, label, diff, workers (answered), failed {worker: reason}, clusters.
+    models {worker: model} overrides the defaults (MODELS, else each CLI's own)."""
     top = str(root or repo_root(cwd) or "")
     if not top:
         raise ValueError("farmout review works on a git repository; run it inside one")
@@ -225,7 +226,7 @@ def review(cwd, workers=None, base=None, staged=False, focus=None, since=None, r
     prompt = BRIEF + (f"\nFocus: {focus}" if focus else "")
     files = [str(diff), *untracked]
     found = []
-    for name, rec in flows.fan(group, workers, top, prompt, files, models=MODELS):
+    for name, rec in flows.fan(group, workers, top, prompt, files, models={**MODELS, **(models or {})}):
         meta = sessions.load(name)
         if rec["status"] != "ok" and meta["model"] and meta["model"] == MODELS.get(meta["worker"]):
             meta["model"] = None  # an older CLI may not know the fast model: once more on its default
