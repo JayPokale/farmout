@@ -171,7 +171,7 @@ def cmd_run(a):
             try:
                 row = bench.replay(top, fix, [w for w, _ in rnd], sessions.new_group("board"),
                                    models={w: m for w, m in rnd if m}, fresh=True,
-                                   settings="web = false\n" if offline else None)
+                                   settings={"web": False} if offline else None)
             except Exception as e:  # noqa: BLE001 (one bad fix mustn't end a long run)
                 row = {"found": {}, "failed": {w: f"replay failed: {type(e).__name__}: {e}"[:300] for w, _ in rnd},
                        "findings": {}, "worker_secs": {}, "replies": {}}

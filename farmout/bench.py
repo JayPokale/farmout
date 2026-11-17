@@ -83,8 +83,9 @@ def scored(result, changed, worker):
 def prepare(top, c, wt, fresh=False, settings=None):
     """Make wt a scratch copy of the fixed tree, as its only commit, with the fix's source changes undone. fresh=True
     copies the files into a new repository instead of adding a worktree, so not even `git log --all` reaches the
-    original history (public benchmarks); a worktree keeps your repository's .farmout/settings in force. settings,
-    with fresh, is the copy's own .farmout/settings.toml (kept out of git, so no reviewer sees it as a change)."""
+    original history (public benchmarks); a worktree keeps your repository's .farmout/settings in force. settings (a
+    dict), with fresh, become the copy's own .farmout/settings.json (JSON: TOML needs Python 3.11), kept out of git
+    so no reviewer sees it as a change."""
     if fresh:
         wt.mkdir(parents=True)
         tar = git(top, "archive", "--format=tar", c["sha"], binary=True)
@@ -99,7 +100,7 @@ def prepare(top, c, wt, fresh=False, settings=None):
     git(wt, "apply", "-R", "--whitespace=nowarn", stdin=fix, binary=True)
     if fresh and settings:
         (wt / ".farmout").mkdir(exist_ok=True)
-        (wt / ".farmout" / "settings.toml").write_text(settings)
+        (wt / ".farmout" / "settings.json").write_text(json.dumps(settings))
         with open(wt / ".git" / "info" / "exclude", "a") as f:
             f.write("\n/.farmout/\n")
 

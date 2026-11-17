@@ -106,6 +106,11 @@ def alive(pid):
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
+    try:  # Linux: /proc, since minimal images (python:*-slim) have no ps
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] != "Z"
+    except FileNotFoundError:
+        if Path("/proc/self").exists():
+            return False
     stat = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
     return bool(stat) and not stat.startswith("Z")
 
