@@ -93,6 +93,15 @@ def check_workers(names):
     return names
 
 
+def everyone(asked):
+    """The workers a fan-out command uses: the ones asked for, else every ready one. Never none: with no worker
+    installed, a review would print "No findings" and look like a clean change."""
+    workers = check_workers(split(asked)) or flows.default_workers()
+    if not workers:
+        raise ValueError("no workers are ready here: `farmout doctor` shows what to install or log in to")
+    return workers
+
+
 def auto_worker(cwd):
     """The first allowed worker that isn't at a usage limit: your fallback order first, then the rest."""
     s, limited = settings(cwd), usage.limits()
@@ -174,7 +183,7 @@ def show_answers(a, group, rounds):
 
 def cmd_ask(a):
     prompt, extra = read_prompt(a.prompt, cwd=a.cwd)
-    workers = check_workers(split(a.workers)) or flows.default_workers()
+    workers = everyone(a.workers)
     group = sessions.new_group("debate" if a.debate else "ask")
     title = f"farmout ask{' --debate' if a.debate else ''} · {len(workers)} workers · read-only"
     with live.Lanes(group, workers, "answering", title=title, on=live.enabled(a)):
@@ -200,9 +209,9 @@ def show_review(a, r, min_agree=1, fail_on="never"):
 
 
 def cmd_review(a):
-    workers = check_workers(split(a.workers)) or None
-    group, lanes = sessions.new_group("review"), workers or flows.default_workers()
-    with live.Lanes(group, lanes, "reviewing", title=f"farmout review · {len(lanes)} workers · read-only",
+    workers = everyone(a.workers)
+    group = sessions.new_group("review")
+    with live.Lanes(group, workers, "reviewing", title=f"farmout review · {len(workers)} workers · read-only",
                     findings=True, on=live.enabled(a)):
         r = review.review(a.cwd, workers=workers, base=a.base, staged=a.staged, focus=" ".join(a.focus) or None,
                           group=group)
@@ -211,7 +220,7 @@ def cmd_review(a):
 
 def cmd_race(a):
     task, extra = read_prompt(a.task, cwd=a.cwd)
-    workers = check_workers(split(a.workers)) or flows.default_workers()
+    workers = everyone(a.workers)
     group = sessions.new_group("race")
     with live.Lanes(group, workers, "working", title=f"farmout race · {len(workers)} workers · one worktree each",
                     on=live.enabled(a)) as lanes:
@@ -221,7 +230,7 @@ def cmd_race(a):
 
 
 def cmd_fix_pr(a):
-    workers = check_workers(split(a.workers)) or flows.default_workers()
+    workers = everyone(a.workers)
     group = sessions.new_group(f"pr{a.number}")
     with live.Lanes(group, workers, "working", title=f"farmout fix-pr {a.number} · {len(workers)} workers",
                     on=live.enabled(a)) as lanes:
@@ -577,13 +586,12 @@ def cmd_bench(a):
     asked = split(a.workers)
     if (not asked or "claude" in asked) and use_main_claude() and not a.json:
         err("farmout bench: your main Claude login takes part, on its own quota (no second account in FARMOUT_CLAUDE_DIR)")
-    workers = check_workers(asked) or None
-    n = len(workers or flows.default_workers())
+    workers = everyone(a.workers)
+    n = len(workers)
     if not a.json:
         err(f"farmout bench: up to {a.commits} commit{'s' * (a.commits != 1)} x {n} worker{'s' * (n != 1)}"
             f" = up to {a.commits * n} review{'s' * (a.commits * n != 1)} on your subscriptions")
-    shown = workers or flows.default_workers()
-    lanes = (lambda g, t: live.Lanes(g, shown, "reviewing", title=t, findings=True)) if live.enabled(a) else None
+    lanes = (lambda g, t: live.Lanes(g, workers, "reviewing", title=t, findings=True)) if live.enabled(a) else None
     rows, report = bench.run(a.cwd, a.commits, workers, a.scan, progress=(lambda m: None) if a.json else err,
                              lanes=lanes)
     board = bench.scoreboard(rows)

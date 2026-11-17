@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import signal
 import socket
 import subprocess
@@ -1038,6 +1039,18 @@ class MoreTest(CliBase):
         self.assertFalse((self.work / "one.txt").exists())
         self.assertIn("no applied patch", self.fo("undo", "p1", rc=1).stderr)
         self.assertIn("nothing to undo", self.fo("undo", rc=1).stderr)
+
+    def test_fan_out_commands_refuse_when_no_worker_is_ready(self):
+        self.repo()
+        (self.work / "a.py").write_text("x = 3\n")
+        bare = self.tmp / "only-git"
+        bare.mkdir()
+        (bare / "git").symlink_to(shutil.which("git"))
+        for args in (["review"], ["ask", "hi"], ["race", "do it"], ["bench"]):
+            with self.subTest(args[0]):
+                p = self.fo(*args, rc=1, PATH=str(bare), FARMOUT_CLAUDE_DIR="")
+                self.assertIn("no workers are ready here", p.stderr)
+                self.assertNotIn("No findings", p.stdout, "an empty review must not look like a clean change")
 
     def test_bare_undo_never_reaches_into_another_repository(self):
         self.repo()
