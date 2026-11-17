@@ -7,7 +7,7 @@ export default function Workers() {
   return (
     <section id="workers" className="border-y border-line bg-surface py-28">
       <div className="mx-auto max-w-6xl px-5">
-        <SectionHead eyebrow="Workers" title="Five subscriptions, one interface">
+        <SectionHead eyebrow="Workers" title="Your subscriptions, one interface">
           Each worker is the vendor&apos;s own CLI in its documented non-interactive mode, logged in as
           you. farmout resumes every conversation through that CLI&apos;s own session id, so a model
           really remembers earlier turns instead of rereading a summary.

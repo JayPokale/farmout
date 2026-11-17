@@ -37,6 +37,7 @@ const DOCTOR = [
   ["ready", "codex", "codex-cli 0.163.0", "text-term-codex"],
   ["ready", "claude", "2.1.323 (Claude Code)", "text-term-claude"],
   ["ready", "copilot", "GitHub Copilot CLI 1.0.112.", "text-term-copilot"],
+  ["missing", "deepseek", "install DeepSeek Harness (`npm i -g @deepseek-ai/dsh`) and set DEEPSEEK_API_KEY", "text-term-dim"],
   ["missing", "api", "set FARMOUT_API_BASE and FARMOUT_API_MODEL (and FARMOUT_API_KEY if needed)", "text-term-dim"],
 ] as const;
 

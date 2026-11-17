@@ -34,6 +34,10 @@ const QA = [
     a: "That plugin drives Codex only, from Claude Code. farmout drives whichever subscriptions you have, several at once, from your terminal or any MCP client, with sessions, pipelines, cross-model review and races.",
   },
   {
+    q: "Does it work with DeepSeek?",
+    a: "Three ways. The deepseek worker drives DeepSeek Harness (dsh) headless, read-only by default and resumed by session id; it's experimental until it has had a real smoke test. The api worker talks to DeepSeek's API directly (FARMOUT_API_BASE=https://api.deepseek.com, model deepseek-flash). And DeepSeek Harness can load farmout as an MCP server, so a dsh agent can hand work to your other subscriptions.",
+  },
+  {
     q: "Which platforms?",
     a: "Linux is tested; macOS should work but is untested; Windows isn't supported before v1.0. Python 3.9 or newer, git, and at least one worker CLI.",
   },

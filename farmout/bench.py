@@ -133,7 +133,7 @@ def card_text(board, commits):
         lines.append(f"{display(w):<{pad}}  {'█' * filled}{'░' * (width - filled)} {score}")
     fixes = f"{commits} real bug fix{'es' * (commits != 1)}"
     return (f"Which AI reviews my code best? I replayed {fixes} from my own git history:\n\n"
-            + "\n".join(lines) + "\n\nRanked with farmout: uvx farmout bench")
+            + "\n".join(lines) + f"\n\nRanked with farmout: {REPO}")
 
 
 def card_svg(board, commits, day):
@@ -163,7 +163,7 @@ def card_svg(board, commits, day):
 <text x="80" y="180" font-size="56" font-weight="800" fill="#ece8df">Which AI reviews my code best?</text>
 <text x="80" y="222" font-size="24" fill="#9a9eaf">{escape(fixes)}</text>
 {"".join(rows)}
-<text x="80" y="{min(590, top + len(board[:5]) * 68 + 50)}" font-size="26" fill="#9a9eaf">Ranked with farmout · uvx farmout bench · {REPO}</text>
+<text x="80" y="{min(590, top + len(board[:5]) * 68 + 50)}" font-size="26" fill="#9a9eaf">Ranked with farmout · {REPO}</text>
 </g>
 </svg>
 """
@@ -189,5 +189,5 @@ def share(board, rows, report):
     svg = Path(report).with_suffix(".svg")
     svg.write_text(card_svg(board, len(rows), time.strftime("%Y-%m-%d")))
     image = png(svg)
-    url = "https://x.com/intent/tweet?text=" + urllib.parse.quote(f"{text}\n\n{REPO}")
+    url = "https://x.com/intent/tweet?text=" + urllib.parse.quote(text)
     return {"text": text, "svg": str(svg), "png": str(image) if image else None, "url": url}

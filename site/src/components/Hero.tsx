@@ -158,9 +158,9 @@ export default function Hero() {
               <span className="text-lanes block text-balance">Put all of them to work.</span>
             </h1>
             <p className="max-w-2xl text-base leading-relaxed text-fg/80 sm:text-lg">
-              Codex, Gemini, GitHub Copilot, a second Claude and local models review your change side by
-              side, race on fixes your tests judge, and take turns in pipelines. From your terminal, or
-              from inside Claude Code.
+              Codex, Gemini, GitHub Copilot, DeepSeek, a second Claude and local models review your change
+              side by side, race on fixes your tests judge, and take turns in pipelines. From your terminal,
+              or from inside Claude Code.
             </p>
           </motion.div>
 

@@ -59,7 +59,8 @@ const ROWS = [
   { id: "limits", y: 262, title: "limits", sub: "reset times · fallback" },
 ];
 
-const CHIP_Y = [24, 88, 152, 216, 280];
+// one chip per worker, spread down the right-hand side
+const CHIP_Y = WORKERS.map((_, i) => 12 + i * 54);
 
 export default function HowItWorks() {
   const [hover, setHover] = useState<string | null>(null);
@@ -79,7 +80,7 @@ export default function HowItWorks() {
   })();
 
   return (
-    <section id="how" className="border-y border-line bg-surface py-28">
+    <section id="how" className="py-28">
       <div className="mx-auto max-w-6xl px-5">
         <SectionHead eyebrow="How it works" title="Three ways in, one lane per subscription" center>
           You, a coding agent or a git hook hands farmout the work. farmout fans it out to the CLIs you
@@ -92,7 +93,7 @@ export default function HowItWorks() {
               viewBox="0 0 760 340"
               className="mx-auto block w-full min-w-[640px] max-w-[880px]"
               role="img"
-              aria-label="Diagram. On the left, three ways in: the farmout CLI, an MCP head such as Claude Code, and a git hook. They all feed farmout, which holds sessions, worktrees, the review merge and usage limits. From farmout five lanes run to the workers: antigravity, codex, claude, copilot and an OpenAI-compatible api."
+              aria-label="Diagram. On the left, three ways in: the farmout CLI, an MCP head such as Claude Code, and a git hook. They all feed farmout, which holds sessions, worktrees, the review merge and usage limits. From farmout one lane runs to each worker: antigravity, codex, claude, copilot, deepseek and an OpenAI-compatible api."
             >
               <defs>
                 <marker id="hw-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">

@@ -6,6 +6,7 @@ const COLS = [
     title: "Product",
     links: [
       ["Demo", "#demo"],
+      ["Bench", "#bench"],
       ["How it works", "#how"],
       ["Get started", "#get-started"],
       ["Workers", "#workers"],
