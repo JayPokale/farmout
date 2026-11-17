@@ -230,6 +230,9 @@ def cmd_race(a):
 
 
 def cmd_fix_pr(a):
+    if a.dry_run:
+        task = flows.pr_task(a.cwd, a.number)
+        return emit(a, {"number": a.number, "task": task}, task)
     workers = everyone(a.workers)
     group = sessions.new_group(f"pr{a.number}")
     with live.Lanes(group, workers, "working", title=f"farmout fix-pr {a.number} · {len(workers)} workers",
@@ -836,6 +839,7 @@ def parser():
     fp.add_argument("-w", "--workers", metavar="W1,W2", help="only these workers")
     fp.add_argument("--test", metavar="CMD", help="command that must pass in each worktree")
     fp.add_argument("--apply", action="store_true", help="apply the winner's patch to your tree")
+    fp.add_argument("--dry-run", action="store_true", help="print the brief the workers would get, and stop")
 
     ls = add("ls", "list sessions", cmd_ls)
     ls.add_argument("--all", action="store_true", help="every session, not just the newest")

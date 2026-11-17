@@ -176,6 +176,12 @@ def undo(name):
 def fix_pr(cwd, number, workers, test=None, timeout=None, group=None, progress=None):
     """A pull request's review comments and failing checks become a race: every worker attempts them in its own
     worktree, your tests pick the winner. The pull request's head must be checked out (`gh pr checkout N`)."""
+    return race(cwd, pr_task(cwd, number), workers, test=test, timeout=timeout,
+                group=group or sessions.new_group(f"pr{number}"), progress=progress)
+
+
+def pr_task(cwd, number):
+    """The brief fix_pr races on: the pull request's review comments, inline comments and failing checks."""
     top = str(isolate.git(cwd, "rev-parse", "--show-toplevel").strip())
 
     def gh(*args):
@@ -204,8 +210,7 @@ def fix_pr(cwd, number, workers, test=None, timeout=None, group=None, progress=N
     task += "".join(f"\n- review comment: {x}" for x in said)
     task += "".join(f"\n- inline comment at {x}" for x in inline)
     task += "".join(f"\n- failing check: {x}" for x in failing)
-    return race(cwd, task, workers, test=test, timeout=timeout, group=group or sessions.new_group(f"pr{number}"),
-                progress=progress)
+    return task
 
 
 def pull_request(name):

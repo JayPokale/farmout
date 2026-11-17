@@ -1174,6 +1174,10 @@ elif a[:2] == ["pr", "checks"]:
     print(json.dumps([{{"name": "tests", "bucket": "fail", "link": "http://ci/1"}}, {{"name": "lint", "bucket": "pass"}}]))
 """)
         gh.chmod(0o755)
+        runs = len(self.runs())
+        dry = self.fo("fix-pr", "7", "--dry-run", PATH=f"{self.bindir}:/usr/bin:/bin", FARMOUT_CLAUDE_DIR="").stdout
+        self.assertIn("inline comment at a.py:2: y is wrong", dry)
+        self.assertEqual(len(self.runs()), runs, "a dry run starts no worker")
         out = self.json("fix-pr", "7", "-w", "codex", rc=1)
         self.assertEqual(out["winner"], None, "the fake worker changes nothing")
         brief = self.last("codex")["brief"]
