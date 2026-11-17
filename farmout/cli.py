@@ -15,7 +15,7 @@ from pathlib import Path
 from . import VERSION, bench, flows, live, pipeline, proc, review, sessions, skills, store, usage
 from . import hooks as farmout_hooks
 from .config import OUT_DIR, STATE, digest, find, project_root, read, repo_root, settings, trust_file
-from .workers import API_BASE, API_MODEL, ENABLED, SETUP, WORKERS
+from .workers import API_BASE, API_MODEL, ENABLED, SETUP, WORKERS, use_main_claude
 
 HOOK_MARK = "# farmout review gate"
 
@@ -574,7 +574,10 @@ def cmd_tool(a):
 
 
 def cmd_bench(a):
-    workers = check_workers(split(a.workers)) or None
+    asked = split(a.workers)
+    if (not asked or "claude" in asked) and use_main_claude() and not a.json:
+        err("farmout bench: your main Claude login takes part, on its own quota (no second account in FARMOUT_CLAUDE_DIR)")
+    workers = check_workers(asked) or None
     n = len(workers or flows.default_workers())
     if not a.json:
         err(f"farmout bench: up to {a.commits} commit{'s' * (a.commits != 1)} x {n} worker{'s' * (n != 1)}"

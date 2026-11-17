@@ -38,7 +38,7 @@ export const WORKERS = [
     id: "claude",
     product: "Claude Code",
     cli: "claude",
-    account: "a second Claude account",
+    account: "a second Claude account, or your main one",
     good: "General work on separate quota, so your main session keeps its own.",
     readOnly: "claude -p --tools Read,Grep,Glob,WebSearch",
     write: "--permission-mode acceptEdits",

@@ -17,6 +17,9 @@ from pathlib import Path
 from .proc import TIMEOUT, run
 
 CLAUDE_DIR = os.path.expanduser(os.environ.get("FARMOUT_CLAUDE_DIR", ""))
+# One Claude account? FARMOUT_CLAUDE_MAIN=1 makes your main login the claude worker (it spends that account's
+# quota). Never inside Claude Code: there it's the head's own account.
+CLAUDE_MAIN = not CLAUDE_DIR and os.environ.get("FARMOUT_CLAUDE_MAIN") == "1" and not os.environ.get("CLAUDECODE")
 API_BASE, API_MODEL, API_KEY = (os.environ.get(f"FARMOUT_API_{k}") for k in ("BASE", "MODEL", "KEY"))
 AGY_ANSWER = ("\n\nReply with the complete answer itself in this message. "
               "Do not write a plan, create files or ask for approval.")
@@ -89,7 +92,8 @@ def claude(t, key):
     # Drop the head session's CLAUDE*/ANTHROPIC* vars (session ids, effort, API key) so the
     # worker is an independent session on the other account's subscription login.
     env = {k: v for k, v in os.environ.items() if not k.startswith(("CLAUDE", "ANTHROPIC"))}
-    env["CLAUDE_CONFIG_DIR"] = CLAUDE_DIR
+    if CLAUDE_DIR:  # else FARMOUT_CLAUDE_MAIN: the default login
+        env["CLAUDE_CONFIG_DIR"] = CLAUDE_DIR
     cmd = ["claude", "-p", "--output-format", "json", "--model", t.get("model") or "sonnet"]
     if t.get("resume"):
         cmd += ["--resume", t["resume"]] + (["--fork-session", "--session-id", t["session_id"]] if t.get("fork") else [])
@@ -178,7 +182,7 @@ WORKERS = {  # web_off: can farmout turn its web access off when a repo's settin
     "codex": Worker(codex, shutil.which("codex"), True,
                     "Codex CLI on your ChatGPT account, sandboxed shell. For well-specified coding: implement a "
                     "function, write/fix tests, focused refactor, code review."),
-    "claude": Worker(claude, CLAUDE_DIR and shutil.which("claude"), True,
+    "claude": Worker(claude, (CLAUDE_DIR or CLAUDE_MAIN) and shutil.which("claude"), True,
                      "a second Claude Code account (separate quota), Sonnet by default (model: haiku|sonnet|opus). "
                      "For general mid-complexity work."),
     "copilot": Worker(copilot, shutil.which("copilot"), True,
@@ -193,10 +197,25 @@ WORKERS = {  # web_off: can farmout turn its web access off when a repo's settin
                   "pdftotext). For bulk/simple work: extract, classify, reformat, translate, short summaries, boilerplate."),
 }
 ENABLED = {name: w for name, w in WORKERS.items() if w.ready}
+
+
+def use_main_claude():
+    """For `farmout bench`: with no second Claude account, rank your main login too. True if it now takes part."""
+    global CLAUDE_MAIN
+    if "claude" in ENABLED or os.environ.get("CLAUDECODE") or not shutil.which("claude"):
+        return False
+    os.environ["FARMOUT_CLAUDE_MAIN"] = "1"  # the session runners read it when they start
+    CLAUDE_MAIN = True
+    WORKERS["claude"] = WORKERS["claude"]._replace(ready=shutil.which("claude"))
+    ENABLED["claude"] = WORKERS["claude"]
+    return True
+
+
 SETUP = {  # name: (executable, how to enable), for `doctor`
     "antigravity": ("agy", "install the Antigravity CLI (`agy`) and log in"),
     "codex": ("codex", "install the Codex CLI and run `codex login`"),
-    "claude": ("claude", "log in a second account once (`CLAUDE_CONFIG_DIR=<dir> claude`), then set FARMOUT_CLAUDE_DIR=<dir>"),
+    "claude": ("claude", "log a second account in once (`CLAUDE_CONFIG_DIR=<dir> claude`), then set FARMOUT_CLAUDE_DIR=<dir>;"
+                         " or FARMOUT_CLAUDE_MAIN=1 uses your main login (bench does that by itself)"),
     "copilot": ("copilot", "install the GitHub Copilot CLI and run `copilot login`"),
     "deepseek": ("dsh", "install DeepSeek Harness (`npm i -g @deepseek-ai/dsh`) and set DEEPSEEK_API_KEY"),
     "api": (None, "set FARMOUT_API_BASE and FARMOUT_API_MODEL (and FARMOUT_API_KEY if needed)"),

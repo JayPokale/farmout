@@ -19,7 +19,7 @@ const QA = [
   },
   {
     q: "Does a review save Claude's quota?",
-    a: "The CLI's farmout review uses none of it, unless your second Claude account is one of the workers. Inside Claude Code, /farmout:review costs Claude more than reviewing alone, because Claude merges and verifies four reports. Use it for agreement; delegate reading and grunt work to save quota.",
+    a: "The CLI's farmout review uses none of it, unless a Claude login is one of the workers: a second account, or your main one with FARMOUT_CLAUDE_MAIN=1. Inside Claude Code, /farmout:review costs Claude more than reviewing alone, because Claude merges and verifies four reports. Use it for agreement; delegate reading and grunt work to save quota.",
   },
   {
     q: "Is it slower?",

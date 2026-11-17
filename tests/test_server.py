@@ -201,6 +201,8 @@ class ProtocolTest(Base):
             (("codex",), {}, ["codex"]),
             (("copilot",), {}, ["copilot"]),
             (("agy", "claude"), {"FARMOUT_CLAUDE_DIR": None}, ["antigravity"]),  # claude needs its config dir
+            (("claude",), {"FARMOUT_CLAUDE_DIR": None, "FARMOUT_CLAUDE_MAIN": "1"}, ["claude"]),  # or your main login
+            (("claude",), {"FARMOUT_CLAUDE_DIR": None, "FARMOUT_CLAUDE_MAIN": "1", "CLAUDECODE": "1"}, []),  # not for a Claude head
             ((), api, ["api"]),
             (("agy", "codex", "claude"), api, ["antigravity", "codex", "claude", "api"]),
         ]
@@ -482,7 +484,7 @@ class DoctorTest(Base):
                              text=True, timeout=30).stdout
         self.assertRegex(out, r"ready +antigravity +/\S+/agy agy 9\.9\.9\n")
         self.assertRegex(out, r"missing +codex +install the Codex CLI")
-        self.assertRegex(out, r"missing +claude +log in a second account")
+        self.assertRegex(out, r"missing +claude +log a second account in once.*FARMOUT_CLAUDE_MAIN=1 uses your main login")
         self.assertRegex(out, r"ready +copilot +/\S+/copilot copilot 9\.9\.9\n")
         self.assertRegex(out, r"ready +api +some-model at http://127\.0\.0\.1:9/v1\n")
 

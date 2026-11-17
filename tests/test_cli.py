@@ -1098,6 +1098,25 @@ class MoreTest(CliBase):
         self.assertTrue(Path(shared["svg"]).exists())
         self.assertLessEqual(len(shared["text"]), 280, "fits in one post")
 
+    def test_bench_ranks_your_main_claude_login_when_there_is_no_second_account(self):
+        self.repo()
+        (self.work / "m.py").write_text("def ratio(a, b):\n    return a / b\n")
+        self.git("add", "m.py")
+        self.git("commit", "-qm", "add ratio")
+        (self.work / "m.py").write_text("def ratio(a, b):\n    if b == 0:\n        return 0\n    return a / b\n")
+        self.git("commit", "-qam", "fix division by zero in ratio")
+        self.reviewers_say(claude="m.py:2 | high | divides by zero | ratio(1, 0) | guard\n")
+        p = self.fo("bench", "-n", "1", "-w", "claude", FARMOUT_CLAUDE_DIR="")
+        self.assertIn("your main Claude login takes part", p.stderr)
+        self.assertRegex(p.stdout, r"claude\s+1/1")
+        self.assertEqual(self.last("claude")["env"], {}, "the default login: no CLAUDE_CONFIG_DIR")
+        inside = self.fo("bench", "-n", "1", "-w", "claude", rc=1, FARMOUT_CLAUDE_DIR="", CLAUDECODE="1")
+        self.assertIn("unavailable worker(s): claude", inside.stderr, "inside Claude Code it's the head's own account")
+        self.assertIn("unavailable worker(s): claude", self.fo("run", "claude", "x", rc=1, FARMOUT_CLAUDE_DIR="").stderr,
+                      "other commands use it only when asked")
+        self.fo("run", "claude", "say hi", "-n", "m", FARMOUT_CLAUDE_DIR="", FARMOUT_CLAUDE_MAIN="1")
+        self.assertEqual(self.last("claude")["env"], {})
+
     def test_fix_pr_turns_feedback_into_a_race(self):
         self.repo()
         head = self.git("rev-parse", "HEAD").strip()

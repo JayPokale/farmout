@@ -115,7 +115,7 @@ export default function GetStarted() {
 
             <Step n={2} title="Log in to the CLIs you have, once">
               <p className="text-sm leading-relaxed text-dim">
-                Whatever you already pay for. A second Claude account logs in to its own config folder; a
+                Whatever you already pay for. Bench ranks your main Claude login too; a second account logs in to its own folder; a
                 local model is two environment variables. Then ask farmout what it found:
               </p>
               <div className="grid gap-2 font-mono text-[11.5px]">

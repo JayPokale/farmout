@@ -37,7 +37,7 @@ Requirements: Python 3.9+, Linux (tested) or macOS (untested), git, and at least
 |---|---|---|
 | `antigravity` | [Antigravity CLI](https://antigravity.google) (`agy`), logged in | long PDFs, papers, many-file reading, web research; Gemini, plus other models listed by `agy models` |
 | `codex` | [Codex CLI](https://github.com/openai/codex), logged in | well-specified coding, tests, refactors, reviews |
-| `claude` | a second Claude Code account + `FARMOUT_CLAUDE_DIR` | general work on separate quota |
+| `claude` | a second Claude Code account + `FARMOUT_CLAUDE_DIR`, or your main login with `FARMOUT_CLAUDE_MAIN=1` | general work on separate quota |
 | `copilot` | [GitHub Copilot CLI](https://github.com/github/copilot-cli), logged in | code review, focused coding questions, second opinions; models from several vendors |
 | `deepseek` | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`npm i -g @deepseek-ai/dsh`) and `DEEPSEEK_API_KEY` | bulk reading, summaries, routine coding and one more opinion on DeepSeek V4, cheap per token (experimental) |
 | `api` | `FARMOUT_API_BASE` + `FARMOUT_API_MODEL` | bulk or simple work on any OpenAI-compatible model (DeepSeek's API, Ollama, vLLM, OpenRouter) |
@@ -58,7 +58,7 @@ As a Claude Code plugin (adds the slash commands, the MCP tools and the read gua
 claude plugin install farmout --marketplace JayPokale/farmout
 ```
 
-**Second Claude account:** log in once with `CLAUDE_CONFIG_DIR=~/.claude-2 claude`, then `export FARMOUT_CLAUDE_DIR=~/.claude-2` in your shell profile.
+**Second Claude account:** log in once with `CLAUDE_CONFIG_DIR=~/.claude-2 claude`, then `export FARMOUT_CLAUDE_DIR=~/.claude-2` in your shell profile. **Only one Claude account?** `farmout bench` ranks your main login anyway, and `export FARMOUT_CLAUDE_MAIN=1` makes it a worker for every command, on that account's quota. farmout never uses it from inside Claude Code, where it's the head's own account.
 
 **OpenAI-compatible endpoint:** `export FARMOUT_API_BASE=http://localhost:11434/v1 FARMOUT_API_MODEL=qwen3:32b` (and `FARMOUT_API_KEY` if needed); for DeepSeek's API itself, `FARMOUT_API_BASE=https://api.deepseek.com FARMOUT_API_MODEL=deepseek-flash` and your key. The `api` worker has no tools, so file text goes into the prompt; PDFs need `pdftotext`.
 
@@ -350,6 +350,7 @@ Tested with agy 1.4.6, codex-cli 0.163.0, Claude Code 2.1.323, GitHub Copilot CL
 | variable | default | effect |
 |---|---|---|
 | `FARMOUT_CLAUDE_DIR` | unset | config dir of a second Claude Code account; enables `claude` |
+| `FARMOUT_CLAUDE_MAIN` | unset | `1` makes your main Claude login the `claude` worker when there's no second account (never inside Claude Code; `farmout bench` does it by itself) |
 | `FARMOUT_API_BASE` | unset | OpenAI-compatible base URL ending in `/v1`; enables `api` together with `FARMOUT_API_MODEL` |
 | `FARMOUT_API_MODEL` | unset | model name sent to that endpoint |
 | `FARMOUT_API_KEY` | unset | bearer token for that endpoint |
@@ -367,7 +368,7 @@ One-shot `delegate` outputs go to `~/.cache/farmout/` and are safe to delete. `f
 
 **Will it burn my other quotas?** Every task spends the quota of the worker that runs it. `review`, `ask` and `race` send one task per worker; `farmout stats` shows what each did. Use `-w` to pick workers.
 
-**Does a review save Claude's quota?** The CLI's `farmout review` uses none of Claude's (unless your second Claude account is a worker). Inside Claude Code, `/farmout:review` costs Claude more than reviewing alone, because Claude merges and verifies four reports: on our small benchmark change, 59s and $0.122 versus 13s and $0.033. Use it for agreement; delegate reading and grunt work to save quota.
+**Does a review save Claude's quota?** The CLI's `farmout review` uses none of Claude's (unless a Claude login is a worker: a second account, or your main one with `FARMOUT_CLAUDE_MAIN=1`). Inside Claude Code, `/farmout:review` costs Claude more than reviewing alone, because Claude merges and verifies four reports: on our small benchmark change, 59s and $0.122 versus 13s and $0.033. Use it for agreement; delegate reading and grunt work to save quota.
 
 **Is it slower?** A parallel call is as slow as its slowest worker: a four-model review takes about a minute, a race a few. Use `--bg`, `farmout attach` and `farmout wait` to keep working meanwhile.
 
