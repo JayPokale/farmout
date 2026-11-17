@@ -65,7 +65,7 @@ farmout stats
 |---|---|---|
 | `antigravity` | [Antigravity CLI](https://antigravity.google) (`agy`), 로그인 필요 | 긴 PDF, 논문, 대량 파일 읽기, 웹 리서치; Gemini 및 `agy models`에 나열된 기타 모델 |
 | `codex` | [Codex CLI](https://github.com/openai/codex), 로그인 필요 | 명확히 정의된 코딩, 테스트, 리팩터링, 리뷰 |
-| `claude` | 두 번째 Claude Code 계정 + `FARMOUT_CLAUDE_DIR` | 별도 할당량을 활용한 일반 작업 |
+| `claude` | 두 번째 Claude Code 계정 + `FARMOUT_CLAUDE_DIR`, 또는 기본 로그인 + `FARMOUT_CLAUDE_MAIN=1` | 별도 할당량을 활용한 일반 작업 |
 | `copilot` | [GitHub Copilot CLI](https://github.com/github/copilot-cli), 로그인 필요 | 코드 리뷰, 집중적인 코딩 질문, 2차 의견; 여러 벤더의 모델 활용 |
 | `api` | `FARMOUT_API_BASE` + `FARMOUT_API_MODEL` | OpenAI 호환 모델 기반의 대량 또는 단순 작업 |
 

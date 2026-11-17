@@ -37,7 +37,7 @@ cd your-repo && farmout bench --share   # 哪个 AI 订阅最能在你自己的�
 |---|---|---|
 | `antigravity` | 已登录的 [Antigravity CLI](https://antigravity.google)（`agy`） | 长篇 PDF、论文、大量文件阅读、网络调研；Gemini，以及 `agy models` 列出的其他模型 |
 | `codex` | 已登录的 [Codex CLI](https://github.com/openai/codex) | 需求明确的编码、测试、重构、审查 |
-| `claude` | 第二个 Claude Code 账号 + `FARMOUT_CLAUDE_DIR` | 用另一份额度处理常规工作 |
+| `claude` | 第二个 Claude Code 账号 + `FARMOUT_CLAUDE_DIR`，或使用主账号并设置 `FARMOUT_CLAUDE_MAIN=1` | 用另一份额度处理常规工作 |
 | `copilot` | 已登录的 [GitHub Copilot CLI](https://github.com/github/copilot-cli) | 代码审查、有针对性的编码问题、第二意见；可用多家厂商的模型 |
 | `deepseek` | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`npm i -g @deepseek-ai/dsh`）和 `DEEPSEEK_API_KEY` | 用 DeepSeek V4 做批量阅读、摘要、常规编码，或多听一份意见；按 token 计价很便宜（实验性） |
 | `api` | `FARMOUT_API_BASE` + `FARMOUT_API_MODEL` | 在任意兼容 OpenAI 的模型上处理批量或简单的工作（DeepSeek 的 API、Ollama、vLLM、OpenRouter） |
@@ -58,7 +58,7 @@ farmout doctor --live                    # which workers are ready; --live sends
 claude plugin install farmout --marketplace JayPokale/farmout
 ```
 
-**第二个 Claude 账号**：先用 `CLAUDE_CONFIG_DIR=~/.claude-2 claude` 登录一次，然后在 shell 配置文件里加上 `export FARMOUT_CLAUDE_DIR=~/.claude-2`。
+**第二个 Claude 账号**：先用 `CLAUDE_CONFIG_DIR=~/.claude-2 claude` 登录一次，然后在 shell 配置文件里加上 `export FARMOUT_CLAUDE_DIR=~/.claude-2`。**只有一个 Claude 账号？** `farmout bench` 仍会给主账号排名；设置 `export FARMOUT_CLAUDE_MAIN=1` 后，它会用该账号的额度将主账号作为每个命令的 worker。farmout 在 Claude Code 内部绝不会使用它，因为那里是主控自身的账号。
 
 **OpenAI 兼容接口**：`export FARMOUT_API_BASE=http://localhost:11434/v1 FARMOUT_API_MODEL=qwen3:32b`（需要的话再加上 `FARMOUT_API_KEY`）；如果直接用 DeepSeek 官方的 API，就设置 `FARMOUT_API_BASE=https://api.deepseek.com FARMOUT_API_MODEL=deepseek-flash` 并提供你的密钥。`api` worker 没有任何工具，所以文件内容会直接放进 prompt；处理 PDF 需要 `pdftotext`。
 
@@ -325,7 +325,12 @@ farmout 同时也是一个 MCP 服务器（`farmout mcp`，或 `python3 server.p
 
 ## 服务条款
 
-farmout 以你的登录身份，按各厂商文档中说明的非交互模式运行其官方 CLI。它不会提取令牌，不会抓取网页应用，也不会代理 API。遵守各服务商的条款仍然是你自己的责任。不要用它来共享账号或转售访问权限。
+farmout 在你的机器上以你的登录身份，按各厂商文档中说明的非交互模式运行其官方、未经修改的 CLI。它绝不会读取或存储登录令牌，不会抓取网页应用，也不会代理 API。遵守各服务商的条款仍然是你自己的责任。不要用它来共享账号或转售访问权限。截至 2026 年 11 月，条款内容如下：
+
+- **Claude：**Anthropic 的 [Claude Code 法律页面](https://code.claude.com/docs/en/legal-and-compliance)禁止第三方应用通过用户的套餐凭证路由请求。但其中也说，这并不阻止“an end user from signing in to the unmodified Claude Code binary with their own Claude subscription”（最终用户使用自己的 Claude 订阅登录未经修改的 Claude Code 二进制文件），而这正是 farmout 所做的全部。套餐限额以正常的个人使用为前提。
+- **通过 Antigravity 使用 Gemini：**Google 的 [Antigravity 条款](https://antigravity.google/terms)第 6 节将“using the Service in connection with products not provided by us”（将服务与非我们提供的产品一起使用）列为违约行为，可能成为暂停或终止你的 Antigravity 和 Gemini CLI 账号的理由。farmout 调用官方 `agy` 二进制文件，绝不触碰其登录信息，但 Google 尚未说明这是否被允许。若不能承担该账号的风险，请不要使用 Antigravity：在 `~/.config/farmout/settings.toml` 中设置 `workers = ["codex", "claude", "copilot"]`，或每个命令使用 `-w`。
+- **Codex 和 Copilot：**`codex exec` 和 `copilot -p` 分别是两者 CLI 文档说明的非交互模式，且在你的套餐限额内运行；Copilot 会消耗你套餐的 AI 积分。
+- **DeepSeek 和 `api`：**使用你自己的 API 密钥，由服务商按 token 计费。
 
 ## 踩坑笔记
 
@@ -350,6 +355,7 @@ farmout 以你的登录身份，按各厂商文档中说明的非交互模式运
 | 变量 | 默认值 | 作用 |
 |---|---|---|
 | `FARMOUT_CLAUDE_DIR` | 未设置 | 第二个 Claude Code 账号的配置目录；设置后启用 `claude` |
+| `FARMOUT_CLAUDE_MAIN` | 未设置 | 设为 `1` 时，在没有第二个账号的情况下将主 Claude 登录作为 `claude` worker（绝不在 Claude Code 内部使用；`farmout bench` 会自行使用） |
 | `FARMOUT_API_BASE` | 未设置 | 以 `/v1` 结尾的 OpenAI 兼容 base URL；与 `FARMOUT_API_MODEL` 一起设置后启用 `api` |
 | `FARMOUT_API_MODEL` | 未设置 | 发送给该接口的模型名称 |
 | `FARMOUT_API_KEY` | 未设置 | 该接口的 Bearer 令牌 |
@@ -367,7 +373,7 @@ farmout 以你的登录身份，按各厂商文档中说明的非交互模式运
 
 **会不会把我其他订阅的额度烧光？** 每个任务消耗的是执行它的那个 worker 的额度。`review`、`ask` 和 `race` 会给每个 worker 各发一个任务；`farmout stats` 会显示每个 worker 做了什么。用 `-w` 挑选要用的 worker。
 
-**审查能省下 Claude 的额度吗？** 命令行里的 `farmout review` 完全不消耗 Claude 的额度（除非你把第二个 Claude 账号当作 worker）。在 Claude Code 里，`/farmout:review` 反而比让 Claude 自己审查花得更多，因为 Claude 要合并并核实四份报告：在我们那个小型基准改动上，前者用了 59 秒、$0.122，后者是 13 秒、$0.033。用它是为了看多个模型的共识；想省额度，就把阅读和体力活委托出去。
+**审查能省下 Claude 的额度吗？** 命令行里的 `farmout review` 完全不消耗 Claude 的额度（除非某个 Claude 登录是 worker：第二个账号，或设置了 `FARMOUT_CLAUDE_MAIN=1` 的主账号）。在 Claude Code 里，`/farmout:review` 反而比让 Claude 自己审查花得更多，因为 Claude 要合并并核实四份报告：在我们那个小型基准改动上，前者用了 59 秒、$0.122，后者是 13 秒、$0.033。用它是为了看多个模型的共识；想省额度，就把阅读和体力活委托出去。
 
 **会更慢吗？** 并行调用的速度取决于最慢的那个 worker：四个模型的审查大约要一分钟，竞速要几分钟。可以用 `--bg`、`farmout attach` 和 `farmout wait`，在等待的同时继续工作。
 

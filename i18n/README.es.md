@@ -65,7 +65,7 @@ Requisitos: Python 3.9+, Linux (probado) o macOS (sin probar), [Claude Code](htt
 |---|---|---|
 | `antigravity` | [Antigravity CLI](https://antigravity.google) (`agy`), con sesión iniciada | PDF largos, artículos, lectura de muchos archivos, investigación web; Gemini y otros modelos mostrados por `agy models` |
 | `codex` | [Codex CLI](https://github.com/openai/codex), con sesión iniciada | programación bien especificada, pruebas, refactors, revisiones |
-| `claude` | una segunda cuenta de Claude Code + `FARMOUT_CLAUDE_DIR` | trabajo general con cuota independiente |
+| `claude` | una segunda cuenta de Claude Code + `FARMOUT_CLAUDE_DIR`, o tu sesión principal con `FARMOUT_CLAUDE_MAIN=1` | trabajo general con cuota independiente |
 | `copilot` | [GitHub Copilot CLI](https://github.com/github/copilot-cli), con sesión iniciada | revisión de código, preguntas concretas de programación, segundas opiniones; modelos de varios proveedores |
 | `api` | `FARMOUT_API_BASE` + `FARMOUT_API_MODEL` | trabajo masivo o simple con cualquier modelo compatible con OpenAI |
 
