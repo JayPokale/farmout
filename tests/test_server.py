@@ -405,6 +405,10 @@ class DelegateTest(Base):
         self.assertNotIn(".farmout", git("status", "--porcelain"), "worktrees stay out of git status")
         git("apply", str(patch))
         self.assertEqual((repo / "fix.txt").read_text(), "by claude")
+        cleanup = re.search(r"When done with it: (.+)", body).group(1)  # the head can tidy up after itself
+        subprocess.run(cleanup, shell=True, check=True, capture_output=True)
+        self.assertFalse(wt.exists())
+        self.assertEqual(git("branch", "--list", "farmout/*claude*"), "")
 
         plain = self.tmp / "plain"
         plain.mkdir()

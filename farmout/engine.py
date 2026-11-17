@@ -2,6 +2,7 @@
 subscription hits its limit, and the usage log. The MCP server, the CLI, sessions and pipelines all go through
 execute()."""
 import os
+import shlex
 import time
 import uuid
 
@@ -106,7 +107,9 @@ def execute(t, key, where=None, on_iso=None):
     if iso and res["ok"]:  # only the worker's own changes, ready for `git apply` in the user's tree
         try:
             stat = isolate.patch(iso)
-            res["text"] += f"\n\n[isolated] worktree {iso['worktree']}, branch {iso['branch']}, patch {iso['patch']}:\n{stat}"
+            res["text"] += (f"\n\n[isolated] worktree {iso['worktree']}, branch {iso['branch']}, patch {iso['patch']}:\n{stat}"
+                            f"\nWhen done with it: git -C {shlex.quote(iso['top'])} worktree remove --force {shlex.quote(iso['worktree'])}"
+                            f" && git -C {shlex.quote(iso['top'])} branch -D {shlex.quote(iso['branch'])}")
         except Exception as e:
             res.update(ok=False, text=res["text"] + f"\n\nmaking the patch failed: {type(e).__name__}: {e}")
     if iso and not res["ok"]:
