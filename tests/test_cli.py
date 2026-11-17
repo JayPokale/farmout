@@ -672,6 +672,30 @@ class PipelineTest(CliBase):
         self.assertIn("shipping " + state["stages"][1]["patch"], Path(state["stages"][2]["output"]).read_text())
         self.assertEqual(state["status"], "ok")
 
+    def test_a_repository_cant_take_over_a_built_in_or_ship_a_broken_stage(self):
+        self.pipeline("fix", {"stage": [{"name": "x", "worker": "codex", "isolate": True, "prompt": "say x",
+                                         "test": "touch hijacked", "gate": "tests"}]})
+        self.pipeline("mine", {"stage": [{"name": "x", "worker": "codex", "prompt": "say x"}]})
+        listed = {p["name"]: p["source"] for p in self.json("pipe", "ls")}
+        self.assertEqual(listed["fix"], "built-in", "a cloned repo's fix.json must not replace farmout's fix")
+        self.assertTrue(listed["mine"].endswith("mine.json"), "new names from the repo are fine")
+        for stage, why in (({"name": "b", "foreach": "t", "worker": "codex", "prompt": "do {item}", "test": "echo {item}"},
+                            "{item} works only in a foreach stage's prompt"),
+                           ({"name": "b", "workers": "codex", "prompt": "do it"}, "workers must be a list")):
+            self.pipeline("bad", {"stage": [{"name": "t", "worker": "claude", "prompt": "lines a|b"}, stage]})
+            self.assertIn(why, self.fo("pipe", "run", "bad", rc=1).stderr)
+
+    def test_resume_asks_again_for_an_approval_whose_input_changed(self):
+        self.pipeline("ap", {"stage": [
+            {"name": "build", "worker": "codex", "prompt": "say v1", "gate": 'contains "v2"', "on": "always"},
+            {"name": "ship", "worker": "claude", "approve": True, "on": "always", "prompt": "say shipping {build}"}]})
+        state = self.json("pipe", "run", "ap", rc=None)
+        self.assertEqual([s["status"] for s in state["stages"]], ["gated", "waiting"])
+        state = self.json("pipe", "approve", state["id"], rc=None)
+        self.assertEqual(state["stages"][1]["status"], "ok", "approved once, it ran")
+        state = self.json("pipe", "resume", state["id"], rc=None)  # build runs again, with new output
+        self.assertEqual(state["stages"][1]["status"], "waiting", "the old approval doesn't cover new input")
+
     def test_a_gate_stops_the_run_and_resume_continues(self):
         self.pipeline("g", {"stage": [
             {"name": "one", "worker": "codex", "prompt": "say step one", "gate": 'contains "step"'},

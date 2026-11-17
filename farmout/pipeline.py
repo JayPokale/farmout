@@ -70,15 +70,16 @@ BUILTIN = {
 
 
 def locate(name, cwd):
+    """Your own pipeline of that name, else none if it's a built-in, else the project's. A cloned repository's
+    pipelines can add names but never take over `fix`, `spec` or yours: their `test` commands run in your shell."""
     p = Path(os.path.expanduser(name))
     if p.suffix in (".toml", ".json"):
         p = p if p.is_absolute() else Path(cwd, p)
         return p if p.is_file() else None
-    for d in (project_root(cwd) / ".farmout" / "pipelines", CONFIG / "pipelines"):
-        f = find(d, name)
-        if f:
-            return f
-    return None
+    mine = find(CONFIG / "pipelines", name)
+    if mine or name in BUILTIN:
+        return mine
+    return find(project_root(cwd) / ".farmout" / "pipelines", name)
 
 
 def load(name, cwd):
@@ -91,17 +92,21 @@ def load(name, cwd):
 
 
 def available(cwd):
-    """[(name, description, source)] for every pipeline you can run here; your files shadow built-ins."""
+    """[(name, description, source)] for every pipeline you can run here: yours shadow built-ins, which shadow the
+    project's (as `locate` resolves them)."""
     found = {}
-    for name, defn in BUILTIN.items():
-        found[name] = (defn.get("description", ""), "built-in")
-    for d in (CONFIG / "pipelines", project_root(cwd) / ".farmout" / "pipelines"):
+
+    def files(d):
         for f in sorted(Path(d).iterdir()) if Path(d).is_dir() else []:
             if f.suffix in (".toml", ".json"):
                 try:
                     found[f.stem] = (read(f).get("description", ""), str(f))
                 except Exception as e:
                     found[f.stem] = (f"(unreadable: {e})", str(f))
+    files(project_root(cwd) / ".farmout" / "pipelines")
+    for name, defn in BUILTIN.items():
+        found[name] = (defn.get("description", ""), "built-in")
+    files(CONFIG / "pipelines")
     return [(n, *found[n]) for n in sorted(found)]
 
 
@@ -145,8 +150,12 @@ def validate(defn, name, source):
                 raise ValueError(f"{where}: {key} must name an earlier stage")
         if s.get("write") and not s.get("isolate") and (len(s.get("workers") or [1]) > 1 or s.get("foreach")):
             raise ValueError(f"{where}: several writers in one tree collide; use isolate = true")
+        if "workers" in s and not (isinstance(s["workers"], list) and all(isinstance(w, str) for w in s["workers"])):
+            raise ValueError(f"{where}: workers must be a list of names, like [\"codex\", \"claude\"]")
         for key in ("prompt", "test", "worker", "workers", "focus", "model", "files"):
             for r in refs(s.get(key)):
+                if r == "item" and s.get("foreach") and key != "prompt":
+                    raise ValueError(f"{where}: {{item}} works only in a foreach stage's prompt")
                 if r not in seen and r not in params and r != "args" and not (r == "item" and s.get("foreach")):
                     raise ValueError(f"{where}: {{{r}}} is not an earlier stage or a parameter")
         seen.append(n)
@@ -282,7 +291,7 @@ def run_stage(state, s, attempt=1):
         sk = skills.get(s["skill"], state["cwd"])
         mode = str(sk["meta"].get("mode") or "ask")
         text = "" if s.get("foreach") else skills.render(sk, substitute(s.get("prompt") or "", vals))
-        s = {**s, "skill": {"review": "review", "race": "race"}.get(mode), "prompt": text, "focus": text, "raw": True,
+        s = {**s, "skill": {"review": "review", "race": "race", "ask": "ask"}.get(mode), "prompt": text, "focus": text, "raw": True,
              "files": (s.get("files") or []) + [sk["dir"]]}
         if not s.get("worker") and not s.get("workers") and sk["meta"].get("workers"):
             s["workers"] = sk["meta"]["workers"] if isinstance(sk["meta"]["workers"], list) else [sk["meta"]["workers"]]
@@ -298,7 +307,10 @@ def run_stage(state, s, attempt=1):
     files = [substitute(f, vals) for f in s.get("files") or []] + sorted(set(used))
     names = (s.get("workers") or [s.get("worker")]) if (s.get("workers") or s.get("worker")) else flows.default_workers()
     workers, notes = pick([substitute(w, vals) for w in names], distinct=not s.get("foreach"))
-    model, effort, test = sub(s.get("model")), s.get("effort"), sub(s.get("test") or "")
+    # the pipeline file's own test and model always get their placeholders; a skill's own text (raw) never does
+    model = substitute(written["model"], vals) if written.get("model") else sub(s.get("model"))
+    test = substitute(written["test"], vals) if written.get("test") else sub(s.get("test") or "")
+    effort = s.get("effort")
     skill = s.get("skill")
 
     if skill == "review":
@@ -477,7 +489,8 @@ def reset(state):
     for j in range(i, len(state["stages"])):
         old = state["stages"][j]
         state["stages"][j] = {"name": old["name"], "status": "pending", "attempt": old.get("attempt", 0),
-                              **({"approved": True} if old.get("approved") else {})}
+                              # an approval holds only for the stage that stopped; later ones get new input
+                              **({"approved": True} if old.get("approved") and j == i else {})}
     state["status"] = "pending"
     save(state)
     return state
