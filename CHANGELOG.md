@@ -18,6 +18,7 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 - **`farmout hook install`**: a pre-commit (or `--pre-push`) hook that blocks a commit when 2+ models flag a high-severity problem.
 - **`.farmoutinclude`**: ignored files (such as `.env`) copied into isolated worktrees, never into patches.
 - **MCP tools** `send`, `sessions` and `pipeline`, next to `delegate` (which gains `effort`).
+- **The official MCP Registry:** `server.json` (`io.github.JayPokale/farmout`, run as `uvx farmout mcp`); each release is listed there by the release workflow once PyPI has it.
 - `--effort` for every worker (`--effort`, `--reasoning-effort`, `model_reasoning_effort`).
 - **Skills:** `SKILL.md` folders (the format Claude Code, Codex and Copilot share) run on your workers with `farmout <skill>`, in ask, review or race mode, also as pipeline stages. `farmout skill add` installs from a folder, a git repository or a URL; remote skills that contain code are refused.
 - **Hooks** on farmout's events (SessionStart, MessageReceived, TaskStart, TaskEnd, StageEnd, PipelineEnd): JSON on stdin; a TaskStart hook can rewrite or block the brief. A project's own hooks run only after `farmout trust`, pinned to the settings file's SHA-256. `redact = true` strips credentials from briefs and piped input.

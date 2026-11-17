@@ -1,0 +1,64 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.JayPokale/farmout",
+  "title": "farmout",
+  "description": "Hand work to the AI subscriptions you already pay for: Codex, Gemini, Copilot, Claude, local models",
+  "repository": {
+    "url": "https://github.com/JayPokale/farmout",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/JayPokale/farmout/main/assets/logo.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": [
+        "any"
+      ]
+    },
+    {
+      "src": "https://raw.githubusercontent.com/JayPokale/farmout/main/.claude-plugin/icon.png",
+      "mimeType": "image/png",
+      "sizes": [
+        "512x512"
+      ]
+    }
+  ],
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "farmout",
+      "version": "0.1.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "FARMOUT_CLAUDE_DIR",
+          "description": "Config dir of a second Claude Code account (enables the claude worker)"
+        },
+        {
+          "name": "FARMOUT_API_BASE",
+          "description": "OpenAI-compatible base URL ending in /v1 (enables the api worker with FARMOUT_API_MODEL)"
+        },
+        {
+          "name": "FARMOUT_API_MODEL",
+          "description": "Model name sent to FARMOUT_API_BASE"
+        },
+        {
+          "name": "FARMOUT_API_KEY",
+          "description": "Bearer token for FARMOUT_API_BASE, if it needs one",
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

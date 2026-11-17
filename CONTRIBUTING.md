@@ -87,8 +87,8 @@ See [store/README.md](store/README.md): one folder per entry with an `entry.json
 ## Releasing
 
 1. Run `python3 tests/smoke.py` (workers) and `sh tests/plugin_smoke.sh` (slash commands run headless without permission errors); if CLI versions changed, update "Tested with" in README.md.
-2. Bump the version in `farmout/__init__.py`, `pyproject.toml` and `.claude-plugin/plugin.json`. The offline suite fails if they differ.
+2. Bump the version in `farmout/__init__.py`, `pyproject.toml`, `.claude-plugin/plugin.json` and `server.json` (both `version` fields). The offline suite fails if they differ.
 3. Move the Unreleased notes in CHANGELOG.md under `## [X.Y.Z] - YYYY-MM-DD`.
-4. Commit, then `git tag vX.Y.Z && git push --follow-tags`. The release workflow re-runs the tests, checks the tag against `farmout/__init__.py`, publishes a GitHub Release with that version's CHANGELOG notes, and uploads the package to PyPI through trusted publishing (set up once on pypi.org for `release.yml` and the `pypi` environment).
+4. Commit, then `git tag vX.Y.Z && git push --follow-tags`. The release workflow re-runs the tests, checks the tag against `farmout/__init__.py`, publishes a GitHub Release with that version's CHANGELOG notes, uploads the package to PyPI through trusted publishing (set up once on pypi.org for `release.yml` and the `pypi` environment), then lists that version in the official MCP Registry from `server.json`, signed in with the workflow's own GitHub identity.
 
 Security reports go through [SECURITY.md](SECURITY.md), not public issues.

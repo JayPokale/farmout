@@ -683,6 +683,19 @@ class RepoTest(unittest.TestCase):
         self.assertIn(f'VERSION = "{plugin["version"]}"', (self.PACKAGE / "__init__.py").read_text())
         pyproject = (SERVER.parent / "pyproject.toml").read_text()
         self.assertIn(f'version = "{plugin["version"]}"', pyproject)
+        registry = json.loads((SERVER.parent / "server.json").read_text())
+        self.assertEqual({registry["version"], *(p["version"] for p in registry["packages"])}, {plugin["version"]})
+
+    def test_mcp_registry_entry_matches_the_package(self):
+        # The registry accepts a PyPI package only if its README (the PyPI description) names the server
+        registry = json.loads((SERVER.parent / "server.json").read_text())
+        readme = (SERVER.parent / "README.md").read_text()
+        self.assertIn(f"<!-- mcp-name: {registry['name']} -->", readme)
+        self.assertLessEqual(len(registry["description"]), 100)
+        self.assertEqual([p["identifier"] for p in registry["packages"]], ["farmout"])
+        self.assertIn('name = "farmout"', (SERVER.parent / "pyproject.toml").read_text())
+        # PyPI shows the README without the repo around it, so relative links and images would break there
+        self.assertNotRegex(readme, r'\]\((?!https?://|#)|src="(?!https?://)')
 
 
 if __name__ == "__main__":

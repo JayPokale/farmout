@@ -1,6 +1,8 @@
 # farmout
 
-**English** · [简体中文](i18n/README.zh-CN.md) · [日本語](i18n/README.ja.md) · [한국어](i18n/README.ko.md) · [Español](i18n/README.es.md)
+<!-- mcp-name: io.github.JayPokale/farmout -->
+
+**English** · [简体中文](https://github.com/JayPokale/farmout/blob/main/i18n/README.zh-CN.md) · [日本語](https://github.com/JayPokale/farmout/blob/main/i18n/README.ja.md) · [한국어](https://github.com/JayPokale/farmout/blob/main/i18n/README.ko.md) · [Español](https://github.com/JayPokale/farmout/blob/main/i18n/README.es.md)
 
 **Put every AI subscription you pay for to work: Codex, Gemini, GitHub Copilot, DeepSeek, a second Claude account, local models. Conversations that remember, parallel review, races judged by your tests, and pipelines, from your terminal or from inside Claude Code. Read-only by default, no dependencies.**
 
@@ -17,10 +19,10 @@ pipx install git+https://github.com/JayPokale/farmout
 cd your-repo && farmout bench --share   # which of your AI subscriptions finds real bugs in your own code?
 ```
 
-<p align="center"><img src="assets/review-demo.svg" width="900" alt="Animated terminal replay of a real run: a review sends one uncommitted change to antigravity, codex, claude and copilot in parallel, then Claude prints a merged, verified table of nine findings with how many models flagged each"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/JayPokale/farmout/main/assets/review-demo.svg" width="900" alt="Animated terminal replay of a real run: a review sends one uncommitted change to antigravity, codex, claude and copilot in parallel, then Claude prints a merged, verified table of nine findings with how many models flagged each"></p>
 
 - **`farmout bench`**: which AI is best on *your* code? Recent bug fixes from your git history are undone in a scratch worktree, each of your subscriptions is asked to find the bug, and `--share` turns the scores into a post and an image card (scores only, never your code).
-- **`farmout review`**: Codex, Gemini (through Antigravity), GitHub Copilot and a second Claude account review your change at the same time, read-only. Findings are merged across models with agreement counts, and any finding that cites a file or line that doesn't exist is dropped before you see it. In [our benchmark](bench/README.md), each of 32 bugs (23 planted, 9 real regressions from open-source projects) was flagged by at least three of the four models.
+- **`farmout review`**: Codex, Gemini (through Antigravity), GitHub Copilot and a second Claude account review your change at the same time, read-only. Findings are merged across models with agreement counts, and any finding that cites a file or line that doesn't exist is dropped before you see it. In [our benchmark](https://github.com/JayPokale/farmout/blob/main/bench/README.md), each of 32 bugs (23 planted, 9 real regressions from open-source projects) was flagged by at least three of the four models.
 - **`farmout race "<task>" --test "pytest -x"`**: every model attempts the same change in its own git worktree; your tests pick the winner, and nothing touches your tree until you `farmout apply` it.
 - **`farmout run` / `send` / `fork`**: named sessions with any worker that remember the conversation, queue messages while busy, and hand one session's reply to another.
 - **`farmout pipe run fix`**: review your change, fix what two or more models agree on in a worktree, then review the fix. Write your own pipelines with gates, approvals and parallel stages.
@@ -231,7 +233,7 @@ Hooks are code, so farmout runs only yours (`~/.config/farmout/settings`), those
 | `guard-secrets` | hook | refuses a task that would hand a worker `.env`, private keys or credentials |
 | `prune` | tool | deletes sessions idle for more than N days, with their worktrees |
 
-The store is [`store/`](store/) in this repository (`index.json` plus each entry's files); every entry is read line by line before it's merged. Point `store` in your own settings (or `FARMOUT_STORE`) at another index, including a local path, to run your own. Only your settings can name a store, never a project's.
+The store is [`store/`](https://github.com/JayPokale/farmout/tree/main/store) in this repository (`index.json` plus each entry's files); every entry is read line by line before it's merged. Point `store` in your own settings (or `FARMOUT_STORE`) at another index, including a local path, to run your own. Only your settings can name a store, never a project's.
 
 ## Which model is best on your code
 
@@ -287,7 +289,7 @@ farmout is also an MCP server (`farmout mcp`, or `python3 server.py`), so Claude
 | `sessions` | list sessions, or one session's turns and output files |
 | `pipeline` | list, run, status, approve, reject, resume or stop pipeline runs (they run in the background) |
 
-Plugin slash commands: `/farmout:review [--base <ref>] [focus]` (every worker reviews; Claude merges and also verifies each finding against the code), `/farmout:race <task>`, `/farmout:ask <question>` and `/farmout:setup`. The plugin's **read guard** asks Claude, once per file, to delegate a big read (more than 5 pages of a long PDF, or 500+ lines of a 200 KB+ file); on a 16-page deep read that [halved Claude's cost but took minutes instead of seconds](bench/README.md#read-guard-a-deep-read-with-and-without-it). `FARMOUT_READ_GUARD=0` turns it off.
+Plugin slash commands: `/farmout:review [--base <ref>] [focus]` (every worker reviews; Claude merges and also verifies each finding against the code), `/farmout:race <task>`, `/farmout:ask <question>` and `/farmout:setup`. The plugin's **read guard** asks Claude, once per file, to delegate a big read (more than 5 pages of a long PDF, or 500+ lines of a 200 KB+ file); on a 16-page deep read that [halved Claude's cost but took minutes instead of seconds](https://github.com/JayPokale/farmout/blob/main/bench/README.md#read-guard-a-deep-read-with-and-without-it). `FARMOUT_READ_GUARD=0` turns it off.
 
 Other heads: `codex mcp add farmout -- farmout mcp`, `copilot mcp add farmout -- farmout mcp` (Codex asks before each MCP call; for `codex exec`, set `default_tools_approval_mode = "approve"` under `[mcp_servers.farmout]`). Without the plugin, Claude Code takes `claude mcp add -s user farmout -- farmout mcp`.
 
@@ -402,10 +404,10 @@ Good tools exist in this space; choose by what you need:
 
 ## Contributing
 
-Issues and PRs are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Tests: `python3 -m unittest discover -s tests -v` (offline, with fake worker CLIs). The package is standard-library only. A new worker is one function in `farmout/workers.py` plus one `WORKERS` entry; state the CLI version you tested and show that its read-only mode really can't write. Report security issues privately: see [SECURITY.md](SECURITY.md).
+Issues and PRs are welcome; see [CONTRIBUTING.md](https://github.com/JayPokale/farmout/blob/main/CONTRIBUTING.md). Tests: `python3 -m unittest discover -s tests -v` (offline, with fake worker CLIs). The package is standard-library only. A new worker is one function in `farmout/workers.py` plus one `WORKERS` entry; state the CLI version you tested and show that its read-only mode really can't write. Report security issues privately: see [SECURITY.md](https://github.com/JayPokale/farmout/blob/main/SECURITY.md).
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/JayPokale/farmout/blob/main/LICENSE)
 
 If farmout saves you quota, [star the repo](https://github.com/JayPokale/farmout/stargazers): it costs none.
