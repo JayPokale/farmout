@@ -1165,11 +1165,17 @@ class MoreTest(CliBase):
         gh.write_text(f"""#!{sys.executable}
 import json, sys
 a = sys.argv[1:]
+user = lambda login, kind="User": {{"login": login, "type": kind}}
 if a[:2] == ["pr", "view"]:
-    print(json.dumps({{"number": 7, "title": "Speed up", "url": "u", "headRefOid": "{head}",
-                      "reviews": [{{"body": "Handle the empty list"}}], "comments": []}}))
+    print(json.dumps({{"number": 7, "title": "Speed up", "url": "u", "headRefOid": "{head}", "author": {{"login": "me"}}}}))
+elif a[0] == "api" and a[-1].endswith("/reviews"):
+    print(json.dumps([{{"body": "Handle the empty list", "state": "CHANGES_REQUESTED", "user": user("rev")}},
+                      {{"body": "LGTM, ship it", "state": "APPROVED", "user": user("rev2")}}]))
+elif a[0] == "api" and "/issues/" in a[-1]:  # two pages, as `gh api --paginate` prints them
+    print(json.dumps([{{"body": "## Bundle size check", "user": user("github-actions[bot]", "Bot")}}]))
+    print(json.dumps([{{"body": "Will do", "user": user("me")}}, {{"body": "Also check None", "user": user("rev")}}]))
 elif a[0] == "api":
-    print(json.dumps([{{"path": "a.py", "line": 2, "body": "y is wrong"}}]))
+    print(json.dumps([{{"path": "a.py", "line": 2, "body": "y is wrong", "user": user("rev")}}]))
 elif a[:2] == ["pr", "checks"]:
     print(json.dumps([{{"name": "tests", "bucket": "fail", "link": "http://ci/1"}}, {{"name": "lint", "bucket": "pass"}}]))
 """)
@@ -1181,10 +1187,11 @@ elif a[:2] == ["pr", "checks"]:
         out = self.json("fix-pr", "7", "-w", "codex", rc=1)
         self.assertEqual(out["winner"], None, "the fake worker changes nothing")
         brief = self.last("codex")["brief"]
-        for want in ("pull request #7 (Speed up)", "review comment: Handle the empty list",
+        for want in ("pull request #7 (Speed up)", "review comment: Handle the empty list", "review comment: Also check None",
                      "inline comment at a.py:2: y is wrong", "failing check: tests (http://ci/1)"):
             self.assertIn(want, brief)
-        self.assertNotIn("lint", brief)
+        for noise in ("lint", "LGTM", "Bundle size", "Will do"):  # a passing check, an approval, a bot, the PR's author
+            self.assertNotIn(noise, brief)
         self.git("commit", "--allow-empty", "-qm", "moved on")
         self.assertIn("gh pr checkout 7", self.fo("fix-pr", "7", rc=1).stderr)
 

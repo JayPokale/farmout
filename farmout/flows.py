@@ -180,6 +180,19 @@ def fix_pr(cwd, number, workers, test=None, timeout=None, group=None, progress=N
                 group=group or sessions.new_group(f"pr{number}"), progress=progress)
 
 
+def pages(text):
+    """JSON from gh: `gh api --paginate` prints one array per page, back to back; those are joined into one list."""
+    dec, i, out, text = json.JSONDecoder(), 0, [], text.strip()
+    while i < len(text):
+        value, i = dec.raw_decode(text, i)
+        out.append(value)
+        while i < len(text) and text[i].isspace():
+            i += 1
+    if len(out) == 1:
+        return out[0]
+    return [x for page in out for x in (page if isinstance(page, list) else [page])]
+
+
 def pr_task(cwd, number):
     """The brief fix_pr races on: the pull request's review comments, inline comments and failing checks."""
     top = str(isolate.git(cwd, "rev-parse", "--show-toplevel").strip())
@@ -188,19 +201,26 @@ def pr_task(cwd, number):
         p = subprocess.run(["gh", *args], cwd=top, capture_output=True, text=True)
         if p.stdout.strip():  # `gh pr checks` exits 1 when a check failed and 8 while some are pending, JSON or not
             try:
-                return json.loads(p.stdout)
+                return pages(p.stdout)
             except ValueError:
                 pass
         elif p.returncode == 0:
             return []
         raise RuntimeError(f"gh {' '.join(args[:2])}: {(p.stderr or p.stdout).strip()[-400:]}")
-    pr = gh("pr", "view", str(number), "--json", "number,title,url,headRefOid,reviews,comments")
+    pr = gh("pr", "view", str(number), "--json", "number,title,url,headRefOid,author")
     if pr.get("headRefOid") != isolate.git(top, "rev-parse", "HEAD").strip():
         raise ValueError(f"check out the pull request first (`gh pr checkout {number}`): HEAD isn't its head commit")
-    said = [x["body"].strip() for x in (pr.get("reviews") or []) + (pr.get("comments") or []) if (x.get("body") or "").strip()]
+    author = (pr.get("author") or {}).get("login")
+
+    def feedback(path):
+        """Comments by people other than the pull request's author: no bots (size reports, coverage, previews)."""
+        return [x for x in gh("api", "--paginate", f"repos/{{owner}}/{{repo}}/{path}") or []
+                if (x.get("body") or "").strip() and (x.get("user") or {}).get("type") != "Bot"
+                and (x.get("user") or {}).get("login") != author]
+    said = [x["body"].strip() for x in feedback(f"pulls/{number}/reviews") if x.get("state") != "APPROVED"]
+    said += [x["body"].strip() for x in feedback(f"issues/{number}/comments")]
     inline = [f"{c.get('path')}:{c.get('line') or c.get('original_line') or '?'}: {c['body'].strip()}"
-              for c in gh("api", "--paginate", f"repos/{{owner}}/{{repo}}/pulls/{number}/comments") or []
-              if (c.get("body") or "").strip()]
+              for c in feedback(f"pulls/{number}/comments")]
     failing = [f"{c['name']}" + (f" ({c['link']})" if c.get("link") else "")
                for c in gh("pr", "checks", str(number), "--json", "name,bucket,link") or [] if c.get("bucket") == "fail"]
     if not (said or inline or failing):
