@@ -179,7 +179,7 @@ prompt = "Write release notes for the patch in {build.patch}"
 - **`approve = true`**：运行到该阶段之前会暂停，直到执行 `farmout pipe approve <run>`（或 `--reject`）。
 - **运行记录**保存在 `~/.local/state/farmout/runs/<run>/`。失败、被门禁拦下、被停止或被中断的运行，都可以用 `farmout pipe resume <run>` 继续；`--bg` 让它在后台运行。
 
-内置流水线：**`fix`**（审查 → 修复 2 个及以上模型一致指出的问题，`--set worker=codex test="pytest -x"` → 审查这次修复）和 **`spec`**（需求 → 设计 → 拆成相互独立的任务 → 每个任务在各自的 worktree 中并行实现 → 把所有补丁放在一起检查）。如果你的机器上没有某个 worker，会自动换成一个有的。
+内置流水线：**`fix`**（审查 → 修复 2 个及以上模型一致指出的问题，`--set worker=codex test="pytest -x"` → 审查这次修复）和 **`spec`**（需求 → 设计 → 拆成相互独立的任务 → 每个任务在各自的 worktree 中并行实现 → 把所有补丁放在一起检查）。流水线里指定的 worker 如果你的机器上没有，会自动换成一个可用的。
 
 ## 技能
 
