@@ -4,6 +4,7 @@ Only on a terminal, and never with --json, so pipes, scripts and the MCP server 
 colours off; FARMOUT_LIVE=0 turns the lanes off.
 """
 import os
+import re
 import shutil
 import sys
 import threading
@@ -16,6 +17,14 @@ RGB = {"codex": (242, 166, 90), "antigravity": (94, 196, 182), "copilot": (167, 
        "claude": (244, 124, 124), "deepseek": (77, 107, 254), "api": (236, 232, 223)}
 GOOD, BAD = (123, 216, 143), (255, 107, 107)
 SPIN = "◐◓◑◒"
+ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def fit(line, width):
+    """A line that can't wrap: a wrapped row would throw the in-place redraw off by a line. A row that doesn't fit
+    loses its colours rather than half an escape sequence."""
+    plain = ANSI.sub("", line)
+    return line if len(plain) < width else plain[:max(width - 2, 1)] + "…"
 
 
 def enabled(a=None):
@@ -46,9 +55,17 @@ class Lanes:
         self.notes, self.counts, self.drawn, self.seen = {}, {}, 0, False
         self.stop, self.lock, self.thread, self.t0 = threading.Event(), threading.Lock(), None, time.time()
 
+    def write(self, text):
+        """Write to the terminal; a terminal that has gone away mustn't take the command with it."""
+        try:
+            self.out.write(text)
+            self.out.flush()
+        except (OSError, ValueError):
+            pass
+
     def __enter__(self):
         if self.on:
-            self.out.write("\x1b[?25l")  # hide the cursor while redrawing
+            self.write("\x1b[?25l")  # hide the cursor while redrawing
             self.thread = threading.Thread(target=self.loop, daemon=True)
             self.thread.start()
         return self
@@ -59,15 +76,19 @@ class Lanes:
             self.thread.join(2)
             try:
                 self.draw()
+            except Exception:  # the command's own result matters more than the last frame
+                pass
             finally:
-                self.out.write("\x1b[?25h")
-                self.out.flush()
+                self.write("\x1b[?25h")
         return False
 
     def note(self, name, text):
         self.notes[name] = text
         if self.on:
-            self.draw()
+            try:
+                self.draw()
+            except Exception:
+                pass
 
     def loop(self):
         while not self.stop.wait(0.2):
@@ -119,8 +140,8 @@ class Lanes:
             rows = [self.row(w, tick) for w in self.workers]
             if not self.seen:  # nothing started (say, nothing to review): draw nothing at all
                 return
-            lines = ([paint(self.title, dim=True)] if self.title else []) + rows
+            width = shutil.get_terminal_size((80, 24)).columns
+            lines = [fit(line, width) for line in ([paint(self.title, dim=True)] if self.title else []) + rows]
             up = f"\x1b[{self.drawn}A\r" if self.drawn else ""
-            self.out.write(up + "".join(f"\x1b[2K{line}\n" for line in lines))
-            self.out.flush()
+            self.write(up + "".join(f"\x1b[2K{line}\n" for line in lines))
             self.drawn = len(lines)

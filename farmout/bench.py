@@ -125,7 +125,7 @@ def display(worker):
 def card_text(board, commits):
     """A post that fits on X: one bar per worker."""
     width = max(1, min(commits, 10))
-    pad = max(len(display(w)) for w, *_ in board)
+    pad = max([len(display(w)) for w, *_ in board] or [0])
     lines = []
     for w, found, of, failed in board:
         filled = round(width * found / of) if of else 0

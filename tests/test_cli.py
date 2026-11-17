@@ -1335,5 +1335,19 @@ class LiveLanesTest(unittest.TestCase):
         self.assertEqual(buf.getvalue(), "", "an empty review never shows lanes")
         self.assertFalse(live.enabled(type("A", (), {"json": True})()))
 
+    def test_rows_never_wrap_and_drawing_never_breaks_the_command(self):
+        import io
+        from farmout import bench, live
+        line = live.paint("[1/3] 1234567 " + "fix a very long commit subject " * 6, dim=True)
+        self.assertLess(len(live.fit(line, 50)), 50, "a row wider than the terminal is cut, not wrapped")
+        self.turn("review-7-codex", status="running", worker="codex")
+
+        class Broken(io.StringIO):
+            def write(self, text):
+                raise OSError("terminal went away")
+        with live.Lanes("review-7", ["codex"], "reviewing", out=Broken()) as lanes:
+            lanes.note("review-7-codex", "tests pass")  # no exception escapes, here or on exit
+        self.assertIn("I replayed 2 real bug fixes", bench.card_text([], 2), "an empty scoreboard still makes a card")
+
 if __name__ == "__main__":
     unittest.main()
