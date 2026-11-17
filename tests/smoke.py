@@ -23,7 +23,7 @@ from pathlib import Path
 from test_server import SERVER, Server
 
 VERSION = {"antigravity": ["agy", "--version"], "codex": ["codex", "--version"], "claude": ["claude", "--version"],
-           "copilot": ["copilot", "--version"]}
+           "copilot": ["copilot", "--version"], "deepseek": ["dsh", "--version"]}
 
 
 def version(worker):
