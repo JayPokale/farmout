@@ -325,7 +325,12 @@ Other heads: `codex mcp add farmout -- farmout mcp`, `copilot mcp add farmout --
 
 ## Terms of service
 
-farmout runs each vendor's official CLI in its documented non-interactive mode, logged in as you. It does not extract tokens, scrape web apps or proxy APIs. You are still responsible for following each provider's terms. Don't use it to share accounts or resell access.
+farmout runs each vendor's official, unmodified CLI in its documented non-interactive mode, on your machine, logged in as you. It never reads or stores a login token, scrapes a web app or proxies an API. You are still responsible for following each provider's terms. Don't use it to share accounts or resell access. What the terms say, as of November 2026:
+
+- **Claude:** Anthropic's [Claude Code legal page](https://code.claude.com/docs/en/legal-and-compliance) bars third-party apps from routing requests through users' plan credentials. It also says that doesn't prevent "an end user from signing in to the unmodified Claude Code binary with their own Claude subscription", which is all farmout does. Plan limits assume ordinary, individual use.
+- **Gemini through Antigravity:** Google's [Antigravity terms](https://antigravity.google/terms), section 6, count "using the Service in connection with products not provided by us" as a breach that may be grounds to suspend or terminate your Antigravity and Gemini CLI accounts. farmout calls the official `agy` binary and never touches its login, but Google hasn't said whether that's allowed. If you can't risk that account, leave Antigravity out: `workers = ["codex", "claude", "copilot"]` in `~/.config/farmout/settings.toml`, or `-w` per command.
+- **Codex and Copilot:** `codex exec` and `copilot -p` are each CLI's documented non-interactive mode, and run within your plan's limits; Copilot spends your plan's AI credits.
+- **DeepSeek and `api`:** your own API key, billed per token by the provider.
 
 ## Field notes
 

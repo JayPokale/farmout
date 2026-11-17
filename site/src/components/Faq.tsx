@@ -7,7 +7,7 @@ import SectionHead from "./SectionHead";
 const QA = [
   {
     q: "Is this allowed by the providers' terms?",
-    a: "farmout runs each vendor's official CLI in its documented non-interactive mode, logged in as you, exactly as you could from a script. It doesn't extract tokens, scrape web apps or proxy APIs. You're still responsible for each provider's terms: don't use it to share accounts or resell access.",
+    a: "farmout runs each vendor's official CLI in its documented non-interactive mode, logged in as you, exactly as you could from a script. It doesn't extract tokens, scrape web apps or proxy APIs. You're still responsible for each provider's terms: don't use it to share accounts or resell access. One caveat: Google's Antigravity terms (section 6) count use \"in connection with products not provided by us\" as grounds for suspending the account, and Google hasn't said whether calling the official agy CLI counts. If you can't risk that account, leave Antigravity out with a workers setting. The README's Terms of service section has the details for each provider.",
   },
   {
     q: "Will it burn my other quotas?",

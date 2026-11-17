@@ -485,6 +485,7 @@ class DoctorTest(Base):
         self.assertRegex(out, r"ready +antigravity +/\S+/agy agy 9\.9\.9\n")
         self.assertRegex(out, r"missing +codex +install the Codex CLI")
         self.assertRegex(out, r"missing +claude +log a second account in once.*FARMOUT_CLAUDE_MAIN=1 uses your main login")
+        self.assertRegex(out, r"ready +antigravity .*\n  note +Google's terms \(section 6\)")
         self.assertRegex(out, r"ready +copilot +/\S+/copilot copilot 9\.9\.9\n")
         self.assertRegex(out, r"ready +api +some-model at http://127\.0\.0\.1:9/v1\n")
 

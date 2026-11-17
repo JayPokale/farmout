@@ -747,6 +747,9 @@ def cmd_doctor(a):
             except Exception as e:
                 detail = f"{shutil.which(exe)} (--version failed: {e})"
         print(f"  {'ready  ' if w.ready else 'missing'}  {name:<12} {detail}")
+        if name == "antigravity" and w.ready:
+            print(f"  note     {'':<12} Google's terms (section 6) may forbid using Antigravity with other tools;"
+                  " see Terms of service in the README")
     if not a.live:
         print("Logins are not checked. `farmout doctor --live` sends each ready worker one tiny prompt.")
         return 0
