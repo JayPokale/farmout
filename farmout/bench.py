@@ -138,7 +138,9 @@ def run(cwd, n=3, workers=None, scan=400, progress=print, lanes=None):
         raise ValueError("farmout bench works on a git repository; run it inside one")
     picks = candidates(str(top), n, scan)
     if not picks:
-        raise ValueError(f"no small bug-fix commits in the last {scan} (subjects like 'fix ...', at most 80 changed lines)")
+        raise ValueError(f"no small bug-fix commits in the last {scan}: bench needs a subject like 'fix ...', 1-80 changed "
+                         f"lines in at most 4 source files, and nothing else changed but tests and docs. Look further back "
+                         f"with --scan {scan * 5}")
     group, rows = sessions.new_group("bench"), []
     for i, c in enumerate(picks, 1):
         title = f"[{i}/{len(picks)}] {c['sha'][:9]} {c['subject'][:70]}"

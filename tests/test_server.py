@@ -687,6 +687,11 @@ class RepoTest(unittest.TestCase):
             self.assertRegex(head, r"\ndescription: \S", p)
             self.assertIn("disable-model-invocation: true", head, f"{p}: fan-out commands must be typed, not auto-run")
 
+    def test_windows_gets_a_sentence_not_a_traceback(self):
+        p = subprocess.run([sys.executable, "-c", "import os, sys; os.name = 'nt'; sys.path.insert(0, sys.argv[1]); import farmout",
+                            str(SERVER.parent)], capture_output=True, text=True)
+        self.assertEqual((p.returncode, p.stderr.strip()), (1, "farmout runs on Linux and macOS. On Windows, run it inside WSL."))
+
     def test_versions_match(self):
         plugin = json.loads((SERVER.parent / ".claude-plugin" / "plugin.json").read_text())
         self.assertIn(f'VERSION = "{plugin["version"]}"', (self.PACKAGE / "__init__.py").read_text())
