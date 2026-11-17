@@ -7,11 +7,11 @@ import CopyCmd from "./CopyCmd";
 const STEPS = [
   {
     t: "Finds your bug fixes",
-    b: "Recent commits whose subject says fix, bug, crash or regression, small enough to judge: at most 4 files and 80 changed lines.",
+    b: "Recent commits whose subject says fix, bug, crash or regression, small enough to judge: at most 4 source files and 80 changed lines, plus any tests and docs.",
   },
   {
     t: "Puts each bug back",
-    b: "In a scratch git worktree the fix is undone, so the bug is an uncommitted change in its real codebase. Your own tree isn't touched.",
+    b: "In a scratch git worktree the fix's code is undone, so the bug is an uncommitted change in its real codebase. Its tests and changelog stay, and the copy's history doesn't name the fix, so nothing gives the bug away. Your own tree isn't touched.",
   },
   {
     t: "Asks every subscription",
