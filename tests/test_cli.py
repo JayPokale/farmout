@@ -230,6 +230,19 @@ class SessionTest(CliBase):
 
 
 class ReviewTest(CliBase):
+    def test_a_finding_that_copies_the_placeholder_path_means_the_changed_file(self):
+        self.repo()
+        (self.work / "a.py").write_text("x = 1\ny = 3\n")
+        self.reviewers_say(claude="path:2 | high | y is wrong | always | y = 2\n")  # Sonnet did this on a real fix
+        [c] = self.json("review", "-w", "claude", rc=0)["clusters"]
+        self.assertEqual((c["path"], c["line"], c["valid"]), ("a.py", 2, True))
+        (self.work / "b.py").write_text("z = 1\n")
+        self.git("add", "b.py")
+        self.git("commit", "-qm", "b")
+        (self.work / "b.py").write_text("z = 2\n")
+        [c] = self.json("review", "-w", "claude", rc=0)["clusters"]
+        self.assertFalse(c["valid"], "two changed files: no guessing which one")
+
     def test_findings_are_merged_checked_and_gated(self):
         self.repo()
         (self.work / "b.py").write_text("def f(x):\n    return x / 0\n")

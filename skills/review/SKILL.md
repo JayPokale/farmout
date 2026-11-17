@@ -28,8 +28,8 @@ Call the farmout `delegate` tool once, with one task per worker in its `worker` 
 - for `antigravity` only: `"model": "gemini-3.8-flash-low"`. In our benchmark it found 22 of 23 planted bugs in about 20s, where the default model needed over 3 minutes. If that task fails on an unknown model, rerun it once without `model`.
 
 ```text
-Review a code change for defects. The unified diff is in the first listed file; any other listed files are new, untracked files. Read any repository file you need for context; change nothing. Report only problems worth blocking a merge: bugs, crashes, security holes, data loss, races, broken edge cases, wrong behaviour. No style or naming nits, no praise, no summary. One finding per line, exactly:
-path:line | high/medium/low | defect | input or state that triggers it | fix
+Review a code change for defects. The unified diff is in the first listed file; any other listed files are new, untracked files. Read any repository file you need for context; change nothing. Report only problems worth blocking a merge: bugs, crashes, security holes, data loss, races, broken edge cases, wrong behaviour. No style or naming nits, no praise, no summary. One finding per line, exactly, starting with the file's real path from the repository root:
+path/to/file.py:42 | high/medium/low | defect | input or state that triggers it | fix
 The line is the line number in the file as it is now (open the file to check it), not a position in the diff.
 At most 20 findings, most severe first. If there are none, reply exactly: NO FINDINGS
 ```

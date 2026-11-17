@@ -10,8 +10,8 @@ from .config import repo_root
 from .isolate import git
 
 # The same brief as skills/review/SKILL.md (a test keeps them identical).
-BRIEF = """Review a code change for defects. The unified diff is in the first listed file; any other listed files are new, untracked files. Read any repository file you need for context; change nothing. Report only problems worth blocking a merge: bugs, crashes, security holes, data loss, races, broken edge cases, wrong behaviour. No style or naming nits, no praise, no summary. One finding per line, exactly:
-path:line | high/medium/low | defect | input or state that triggers it | fix
+BRIEF = """Review a code change for defects. The unified diff is in the first listed file; any other listed files are new, untracked files. Read any repository file you need for context; change nothing. Report only problems worth blocking a merge: bugs, crashes, security holes, data loss, races, broken edge cases, wrong behaviour. No style or naming nits, no praise, no summary. One finding per line, exactly, starting with the file's real path from the repository root:
+path/to/file.py:42 | high/medium/low | defect | input or state that triggers it | fix
 The line is the line number in the file as it is now (open the file to check it), not a position in the diff.
 At most 20 findings, most severe first. If there are none, reply exactly: NO FINDINGS"""
 MODELS = {"antigravity": "gemini-3.8-flash-low"}  # 22 of 23 planted bugs in ~20s, vs 3+ minutes on the default
@@ -55,10 +55,16 @@ def parse(text, worker):
     return out
 
 
+PLACEHOLDER = {"path", "file", "filename", "path/to/file", "path/to/file.py", "<path>", "<file>"}
+
+
 def resolve(root, p, changed=(), known=()):
     """The repo-relative path a finding cites, if it names a file inside root; else None. Models also cite paths
     relative to a subdirectory (`cli.py` for `pkg/cli.py`): a unique suffix match among the changed files, then
-    among all of the repository's files, counts."""
+    among all of the repository's files, counts. A model that copies the brief's placeholder (`path:163`) means the
+    changed file, when there's only one."""
+    if p.lower() in PLACEHOLDER:
+        return changed[0] if len(set(changed)) == 1 else None
     root = Path(root).resolve()
     for cand in [p] + ([p[2:]] if p.startswith(("a/", "b/")) else []):
         q = Path(cand) if os.path.isabs(cand) else root / cand
