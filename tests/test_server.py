@@ -223,6 +223,8 @@ class ProtocolTest(Base):
     def test_ignores_junk_and_client_replies(self):
         s = self.start()
         s.p.stdin.write('not json\n[]\n42\n"text"\n{}\n{"jsonrpc": "2.0", "id": 99, "result": {}}\n')
+        for params in ('"req-1"', '{"requestId": [1]}', '{"requestId": {"a": 1}}', 'null'):  # bad cancels crashed the server
+            s.p.stdin.write('{"jsonrpc": "2.0", "method": "notifications/cancelled", "params": %s}\n' % params)
         s.p.stdin.flush()
         self.assertEqual(s.call("ping", timeout=10)["result"], {})
 

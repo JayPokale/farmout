@@ -240,10 +240,12 @@ def main():
             if "id" in msg and "method" in msg:
                 threading.Thread(target=handle, args=(msg,), daemon=True).start()
             elif msg.get("method") == "notifications/cancelled":
-                rid = (msg.get("params") or {}).get("requestId")
-                proc.cancel(rid)
-                if rid in waiting:
-                    sessions.stop(waiting[rid])
+                params = msg.get("params")
+                rid = params.get("requestId") if isinstance(params, dict) else None
+                if isinstance(rid, (str, int)) and not isinstance(rid, bool):  # anything else would crash the loop
+                    proc.cancel(rid)
+                    if rid in waiting:
+                        sessions.stop(waiting[rid])
     except KeyboardInterrupt:
         pass
     proc.kill_all()  # EOF or SIGTERM: the client went away, so stop every one-shot worker still burning quota
