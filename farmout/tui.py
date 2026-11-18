@@ -305,8 +305,11 @@ class App:
         if not (isinstance(data, dict) and isinstance(data.get("since"), (int, float))
                 and isinstance(data.get("read"), list)):  # missing, or not what this file holds: start afresh
             data = {"since": time.time(), "read": []}
-            path.parent.mkdir(parents=True, exist_ok=True)
-            sessions.write_json(path, data)
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                sessions.write_json(path, data)
+            except OSError:  # a state folder it can't write: no marks kept, nothing else lost
+                pass
         return {"since": data["since"], "read": {x for x in data["read"] if isinstance(x, str)}}
 
     @staticmethod
