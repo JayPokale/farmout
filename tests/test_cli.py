@@ -2174,6 +2174,23 @@ class LiveLanesTest(unittest.TestCase):
         self.assertEqual(buf.getvalue(), "", "an empty review never shows lanes")
         self.assertFalse(live.enabled(type("A", (), {"json": True})()))
 
+    def test_a_waiting_row_for_one_session_that_goes_when_done(self):
+        import io
+        from farmout import live
+        self.turn("cache", status="ok", worker="claude", secs=9)
+        buf = io.StringIO()
+        lanes = live.Lanes(None, None, "working", lanes=[("claude", "claude", "cache")], after={"cache": 1}, keep=False,
+                           out=buf)
+        lanes.draw()
+        self.assertEqual(buf.getvalue(), "", "the turn it already had isn't this one")
+        (self.root / "cache" / "turns" / "0002.json").write_text(json.dumps(
+            {"n": 2, "started": time.time() - 4, "status": "running", "worker": "codex"}))
+        with lanes:
+            lanes.draw()
+        text = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", buf.getvalue())
+        self.assertRegex(text, r"claude\s+working… → codex\s+4s", "a fallback shows where the turn went")
+        self.assertTrue(buf.getvalue().endswith("\x1b[1A\r\x1b[J\x1b[?25h"), "the row is erased at the end")
+
     def test_rows_never_wrap_and_drawing_never_breaks_the_command(self):
         import io
         from farmout import bench, live

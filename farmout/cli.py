@@ -145,7 +145,11 @@ def send_and_show(a, name, prompt, files, attach=(), switch=None, note=None):
              f"{name}: queued; `farmout attach {name}` to watch, `farmout log {name}` to read")
         return 0
     flows.ACTIVE.add(name)
-    rec = sessions.deliver(name, prompt, files, attach, cwd=a.cwd, switch=switch, note=note)
+    worker = (switch or {}).get("worker") or sessions.load(name)["worker"]
+    after = {name: max((r["n"] for r in sessions.turns(name)), default=0)}
+    with live.Lanes(None, None, "working", lanes=[(worker, worker, name)], after=after, keep=False,
+                    on=live.enabled(a)):  # a waiting row, so a long answer doesn't look like a hang
+        rec = sessions.deliver(name, prompt, files, attach, cwd=a.cwd, switch=switch, note=note)
     flows.ACTIVE.discard(name)
     return show_turn(a, name, rec)
 

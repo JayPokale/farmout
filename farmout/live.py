@@ -47,11 +47,15 @@ def paint(text, rgb=None, bold=False, dim=False):
 class Lanes:
     """`with Lanes(group, workers, "reviewing", on=enabled(a)):` draws a row for each lane's session (named as
     flows.lanes names them) until the block ends, then leaves the final state on screen. `note(name, text)` replaces
-    a finished row's summary (a race's "testing…", then "tests pass")."""
+    a finished row's summary (a race's "testing…", then "tests pass"). lanes=[(label, worker, session)] names the
+    sessions instead, after={session: n} skips the turns they already had, and keep=False erases the rows at the end
+    (`farmout run` and `send` print the answer instead)."""
 
-    def __init__(self, group, workers, verb, title=None, findings=False, on=True, out=None):
+    def __init__(self, group, workers, verb, title=None, findings=False, on=True, out=None, lanes=None, after=None,
+                 keep=True):
         self.group, self.verb, self.title, self.findings = group, verb, title, findings
-        self.lanes = [(label, w, name) for label, w, _, name in flows.lanes(group, list(workers))]
+        self.lanes = lanes or [(label, w, name) for label, w, _, name in flows.lanes(group, list(workers))]
+        self.after, self.keep = after or {}, keep  # turns already there per session; keep: leave the last frame
         self.on, self.out = on and bool(self.lanes), out or sys.stderr
         self.notes, self.counts, self.drawn, self.seen = {}, {}, 0, False
         self.stop, self.lock, self.thread, self.t0 = threading.Event(), threading.Lock(), None, time.time()
@@ -76,7 +80,7 @@ class Lanes:
             self.stop.set()
             self.thread.join(2)
             try:
-                self.draw()
+                self.draw() if self.keep else self.erase()
             except Exception:  # the command's own result matters more than the last frame
                 pass
             finally:
@@ -102,7 +106,7 @@ class Lanes:
         if not sessions.path(name).exists():
             return None
         recs = sessions.turns(name)
-        return recs[-1] if recs else None
+        return recs[-1] if recs and recs[-1]["n"] > self.after.get(name, 0) else None
 
     def row(self, lane, w, name, tick):
         rec = self.turn(name)
@@ -134,6 +138,12 @@ class Lanes:
                 return "done"
         n = self.counts[key]
         return f"{n} finding{'s' * (n != 1)}"
+
+    def erase(self):
+        with self.lock:
+            if self.drawn:
+                self.write(f"\x1b[{self.drawn}A\r\x1b[J")
+                self.drawn = 0
 
     def draw(self):
         with self.lock:
