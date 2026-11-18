@@ -445,7 +445,8 @@ def cmd_stop(a):
 
 def cmd_rm(a):
     names = [n for n in sessions.names() if not sessions.busy(n) and not sessions.pending(n)] if a.idle else a.sessions
-    for n in names:
+    created = {n: i for i, n in enumerate(sessions.names())}
+    for n in sorted(names, key=lambda n: created.get(n, -1), reverse=True):  # branches before what they branch off
         sessions.remove(n)
         print(f"removed {n}")
 
@@ -679,7 +680,7 @@ def apply_bench(a, rows):
 
 def show_applied(applied):
     models = ", ".join(f"{w} → {m}" for w, m in applied["models"].items())
-    print(f"Wrote {applied['settings']}:")
+    print(f"Wrote {short(str(applied['settings']))}:")
     if models:
         print(f"  default models: {models}")
     print(f"  fallback and `farmout run auto` order: {', '.join(applied['fallback'])}")
@@ -699,7 +700,7 @@ def cmd_bench(a):
         applied = apply_bench(a, rows)
         if a.json:
             return emit(a, {"report": str(report), "applied": applied})
-        print(f"From {report}:")
+        print(f"From {short(str(report))}:")
         return show_applied(applied)
     asked = list(dict.fromkeys(split(a.workers)))  # lanes: codex, or claude:opus to name a model
     if (not asked or "claude" in [lane(x)[0] for x in asked]) and use_main_claude() and not a.json:
@@ -733,10 +734,10 @@ def cmd_bench(a):
     print(table([("COMMIT", "SUBJECT", *ws)] + [(r["commit"][:9], r["subject"][:48],
                                                  *("✓" if r["found"].get(w) else "x" if w in r["failed"] else "·" for w in ws))
                                                 for r in rows]))
-    print(f"\n✓ found the bug   · missed it   x failed.  Report: {report}")
+    print(f"\n✓ found the bug   · missed it   x failed.  Report: {short(str(report))}")
     if card:
         print("\n" + card["text"] + "\n")
-        print(f"Image: {card['png'] or card['svg']}" + ("" if card["png"] else "  (install librsvg or ImageMagick for a PNG)"))
+        print(f"Image: {short(str(card['png'] or card['svg']))}" + ("" if card["png"] else "  (install librsvg or ImageMagick for a PNG)"))
         print(f"Post it: {card['url']}")
         print("Scores only: no repository name, file names or code.")
     elif rows:
@@ -912,9 +913,17 @@ def cmd_doctor(a):
 
 
 def parser():
-    p = argparse.ArgumentParser(prog="farmout", description=(
-        "Hand work to the AI subscriptions you already pay for (Codex, Gemini via Antigravity, GitHub Copilot, a "
-        "second Claude account, local models): one at a time, all at once, or in pipelines."))
+    p = argparse.ArgumentParser(prog="farmout", formatter_class=argparse.RawDescriptionHelpFormatter, description=(
+        "Hand work to the AI subscriptions you already pay for (Codex, Gemini via\n"
+        "Antigravity, GitHub Copilot, a second Claude account, local models): one at a\n"
+        "time, all at once, or in pipelines. When one hits its usage limit, the task\n"
+        "moves to the next, with the conversation."), epilog=(
+        "start here:\n"
+        "  farmout doctor                    which of your subscriptions are ready\n"
+        "  farmout run codex \"...\" -n plan   a conversation; farmout send plan \"...\" goes on with it\n"
+        "  farmout review                    every worker reviews your uncommitted change\n"
+        "  farmout ui                        every conversation as a graph, in your terminal\n"
+        "  farmout <command> -h              that command's options"))
     p.add_argument("--version", action="version", version=f"farmout {VERSION}")
     sub = p.add_subparsers(dest="cmd", metavar="<command>")
     common = argparse.ArgumentParser(add_help=False)

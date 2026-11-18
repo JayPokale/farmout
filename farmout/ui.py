@@ -14,7 +14,7 @@ import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import flows, sessions
+from . import flows, sessions, usage
 from .bench import COLOURS
 from .workers import ENABLED, lane
 
@@ -35,7 +35,9 @@ def snapshot(here, preview=PREVIEW):
                      "history": [{"n": r["n"], "id": r.get("id"), "prompt": r["prompt"][:preview], "worker": r.get("worker"),
                                   "model": r.get("model"), "status": r["status"], "secs": r.get("secs"),
                                   "started": r.get("started")} for r in recs]})
-    return {"sessions": rows, "workers": list(ENABLED), "here": here, "colours": COLOURS}
+    why = usage.reasons()
+    held = {k: {"until": until, "why": why.get(k)} for k, until in usage.limits().items()}  # at a limit, or logged out
+    return {"sessions": rows, "workers": list(ENABLED), "here": here, "colours": COLOURS, "held": held}
 
 
 def detail(name, n):
@@ -236,6 +238,8 @@ h3{margin:18px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.06e
 .question{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;max-height:40vh;overflow:auto}
 pre.code{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:10px 12px;overflow:auto;font:12.5px/1.5 var(--mono)}
 .notes{color:var(--dim);font-size:12px;padding-left:18px}
+.prose code{font:12.5px var(--mono);background:var(--code);border:1px solid var(--line);border-radius:5px;padding:0 4px}
+#held{background:var(--hover);color:var(--bad);padding:5px 16px;font-size:13px;border-bottom:1px solid var(--line)}
 .composer{margin-top:22px;padding-top:16px;border-top:1px solid var(--line)}
 .modes{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
 .modes .btn[aria-pressed=true]{border-color:var(--accent);color:var(--accent);font-weight:600}
@@ -265,6 +269,7 @@ textarea{width:100%;min-height:96px;resize:vertical;padding:9px 11px;border:1px 
   </div>
 </header>
 <div id="offline" hidden>farmout ui has stopped. Run <code>farmout ui --web</code> again.</div>
+<div id="held" hidden></div>
 <main>
   <nav id="tree" aria-label="Conversations"></nav>
   <section id="detail"><div id="view"></div><div id="compose"></div></section>
@@ -426,8 +431,18 @@ function fill(box, text) {
   box.replaceChildren();
   (text || "").split(/^```[^\n]*\n?/m).forEach((part, i) => {
     if (!part.trim() && i % 2 === 0) return;
-    box.append(i % 2 ? el("pre", {class: "code"}, part.replace(/\n$/, "")) : el("div", {class: "prose"}, part));
+    box.append(i % 2 ? el("pre", {class: "code"}, part.replace(/\n$/, "")) : prose(part));
   });
+}
+function prose(text) {  // **bold** and `code` as elements, never as HTML
+  const box = el("div", {class: "prose"});
+  let at = 0;
+  for (const m of text.matchAll(/\*\*(.+?)\*\*|`([^`\n]+)`/g)) {
+    box.append(text.slice(at, m.index), m[1] !== undefined ? el("strong", null, m[1]) : el("code", null, m[2]));
+    at = m.index + m[0].length;
+  }
+  box.append(text.slice(at));
+  return box;
 }
 async function load(s, t) {
   const key = s.name + "/" + t.n, mine = ++ticket;
@@ -557,6 +572,11 @@ async function refresh() {
     const now = JSON.stringify(data.sessions);
     const changed = now !== sig;
     sig = now; state = data; index();
+    const held = Object.entries(data.held || {});
+    $("#held").hidden = !held.length;
+    $("#held").textContent = held.map(([k, v]) => k + (v.why === "login" ? " is logged out" : " is at its usage limit") +
+      " until " + new Date(v.until * 1000).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}) +
+      ": farmout gives its tasks to the next worker").join(" · ");
     if (wanted) {
       const s = by.get(wanted.s), t = s && s.history.find(x => x.id === wanted.id);
       if (t) { wanted = null; select(s.name, t.n); }
