@@ -622,7 +622,52 @@ def cmd_tool(a):
     raise ValueError("tool needs an action: ls or run")
 
 
+def apply_bench(a, rows):
+    """`farmout bench --apply`: the measured best model per worker and a best-first fallback order go into this
+    repository's .farmout/settings.json (JSON: TOML can't be written without a dependency). Returns what changed."""
+    want = bench.advice(rows, [w for w in ENABLED if w != "api"])
+    if not want:
+        raise ValueError("nothing to apply: no lane finished a review in that run")
+    root = project_root(a.cwd)
+    toml, path = root / ".farmout" / "settings.toml", root / ".farmout" / "settings.json"
+    if toml.exists():
+        lines = [f"fallback = {json.dumps(want['fallback'])}"] + (
+            ["[models]"] + [f"{w} = {json.dumps(m)}" for w, m in want["models"].items()] if want["models"] else [])
+        raise ValueError(f"{toml} is TOML, which farmout doesn't rewrite; add these lines yourself:\n" + "\n".join(lines))
+    data = read(path) if path.exists() else {}
+    hooks = bool(data.get("hooks"))
+    data["fallback"] = want["fallback"]
+    if want["models"]:
+        data["models"] = {**(data.get("models") or {}), **want["models"]}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=1) + "\n")
+    return {"settings": str(path), **want, "retrust": hooks}
+
+
+def show_applied(applied):
+    models = ", ".join(f"{w} → {m}" for w, m in applied["models"].items())
+    print(f"Wrote {applied['settings']}:")
+    if models:
+        print(f"  default models: {models}")
+    print(f"  fallback and `farmout run auto` order: {', '.join(applied['fallback'])}")
+    if applied["retrust"]:
+        print("  That file defines hooks, and it changed: `farmout trust` runs them again.")
+
+
 def cmd_bench(a):
+    if a.last:
+        if not a.apply:
+            raise ValueError("--last goes with --apply: it applies your newest saved bench of this repository")
+        top = repo_root(a.cwd)
+        found = bench.last_report(top) if top else None
+        if not found:
+            raise ValueError("no saved bench of this repository yet: run `farmout bench --apply`")
+        rows, report = found
+        applied = apply_bench(a, rows)
+        if a.json:
+            return emit(a, {"report": str(report), "applied": applied})
+        print(f"From {report}:")
+        return show_applied(applied)
     asked = list(dict.fromkeys(split(a.workers)))  # lanes: codex, or claude:opus to name a model
     if (not asked or "claude" in [lane(x)[0] for x in asked]) and use_main_claude() and not a.json:
         err("farmout bench: your main Claude login takes part, on its own quota (no second account in FARMOUT_CLAUDE_DIR)")
@@ -638,9 +683,11 @@ def cmd_bench(a):
                              lanes=lanes)
     board = bench.scoreboard(rows)
     card = bench.share(board, rows, report) if a.share else None
+    applied = apply_bench(a, rows) if a.apply else None
     if a.json:
         return emit(a, {"commits": rows, "scoreboard": [{"worker": w, "found": f, "of": o, "failed": x} for w, f, o, x in board],
-                        "report": str(report), **({"share": card} if card else {})})
+                        "report": str(report), **({"share": card} if card else {}),
+                        **({"applied": applied} if applied else {})})
     print(table([("WORKER", "FOUND", "FAILED")] + [(w, f"{f}/{o}", x) for w, f, o, x in board]))
     print()
     ws = [w for w, *_ in board]
@@ -655,6 +702,11 @@ def cmd_bench(a):
         print("Scores only: no repository name, file names or code.")
     elif rows:
         err("Share it: farmout bench --share")
+    if applied:
+        print()
+        show_applied(applied)
+    elif rows:
+        err("Use the winners here (best model per worker, fallback order): farmout bench --apply --last")
 
 
 def progress(st):
@@ -951,6 +1003,9 @@ def parser():
                     "worker on several models compares them (claude:opus,claude:sonnet)")
     bn.add_argument("--scan", type=int, default=400, help="how far back to look for them (default 400 commits)")
     bn.add_argument("--share", action="store_true", help="also make a post and an image card of the scores (no code)")
+    bn.add_argument("--apply", action="store_true", help="then use the results in this repo: each worker's best model "
+                    "and a best-first fallback order go into .farmout/settings.json")
+    bn.add_argument("--last", action="store_true", help="with --apply: apply your newest saved bench instead of running one")
 
     sk = add("skill", "skills: SKILL.md folders run on your workers (`farmout <skill>` for short)", cmd_skill, ())
     ssub = sk.add_subparsers(dest="scmd", metavar="<action>")

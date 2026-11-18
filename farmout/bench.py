@@ -23,6 +23,7 @@ from xml.sax.saxutils import escape
 from . import flows, review, sessions
 from .config import STATE, repo_root
 from .isolate import git
+from .workers import lane
 
 FIX = re.compile(r"\b(fix(e[sd])?|bug|regression|crash(es)?|broken|wrong|leak|race)\b", re.I)
 CODE = {".py", ".js", ".mjs", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt", ".rb", ".php", ".c", ".cc", ".cpp",
@@ -168,6 +169,43 @@ def scoreboard(rows):
     board = [(w, sum(r["found"].get(w, False) for r in rows), sum(w in r["found"] for r in rows),
               sum(w in r["failed"] for r in rows)) for w in workers]
     return sorted(board, key=lambda b: (-b[1], b[3], b[0]))
+
+
+def ranking(rows):
+    """[(lane, found, out of, failed, median seconds)] best first: most bugs found, then fewest failures, then the
+    fastest typical review (a tie on bugs goes to the quicker, usually cheaper, model)."""
+    out = []
+    for w, found, of, failed in scoreboard(rows):
+        secs = sorted(r["worker_secs"][w] for r in rows if (r.get("worker_secs") or {}).get(w) is not None)
+        out.append((w, found, of, failed, secs[len(secs) // 2] if secs else None))
+    return sorted(out, key=lambda b: (-b[1], b[3], b[4] if b[4] is not None else float("inf"), b[0]))
+
+
+def advice(rows, ready=()):
+    """What `farmout bench --apply` writes: fallback, the lanes that reviewed, best first, then the other ready
+    workers (so a bench of one subscription's models doesn't take the others out of the fallback); and models, the
+    best model of each worker that was compared on two or more lanes."""
+    ranked = [b for b in ranking(rows) if b[2]]
+    order, models, best = [b[0] for b in ranked], {}, set()
+    for w, *_ in ranked:
+        worker, model = lane(w)
+        if worker not in best and sum(lane(x)[0] == worker for x in order) > 1 and model:
+            models[worker] = model
+        best.add(worker)
+    rest = [w for w in ready if w not in {lane(x)[0] for x in order}]
+    return {"fallback": order + rest, "models": models} if order else {}
+
+
+def last_report(top):
+    """The newest saved bench report for this repository, or None."""
+    for p in sorted((STATE / "bench").glob("*.json"), reverse=True):
+        try:
+            data = json.loads(p.read_text())
+        except (OSError, ValueError):
+            continue
+        if data.get("repo") == str(top):
+            return data["commits"], p
+    return None
 
 
 # `farmout bench --share`: the result as something people can post. Scores only: no repository name, file names,
