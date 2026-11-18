@@ -15,7 +15,7 @@ import sys
 import tempfile
 import time
 
-from . import flows, graph, sessions, ui, usage
+from . import config, flows, graph, sessions, ui, usage
 from .graph import ago, clean, clip, cols, lane, short, take
 
 SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -30,7 +30,8 @@ HELP = [("↑↓ j k", "move"), ("← → h l", "fold, unfold; ← also goes up 
         ("e", "ask this turn differently: a branch from the turn before"), ("n", "new conversation"),
         ("x", "stop a running turn"), ("o O", "open the turn, or its whole conversation, in your pager"), ("y", "copy the turn's answer"),
         ("d", "an isolated session's patch, in your pager"), ("D", "delete a conversation or branch, with the branches off it"),
-        ("a", "show review, ask and race runs too"), ("r q", "reload; quit")]
+        ("a", "show review, ask and race runs too"), ("f", "only this project's conversations, or all"),
+        ("r q", "reload; quit")]
 
 
 class Canvas:
@@ -238,7 +239,7 @@ class App:
 
     def __init__(self, here, focus=None):
         self.here = here
-        self.folded, self.everything = set(), False
+        self.folded, self.everything, self.only = set(), False, False
         self.sel, self.i, self.top, self.rtop, self.rpage = None, 0, 0, 0, 10
         self.pane, self.box, self.note, self.help, self.done = "graph", None, None, False, False
         self.external = None  # ("pager" | "editor", text): run() leaves the screen for it
@@ -253,6 +254,9 @@ class App:
         snap = ui.snapshot(self.here)
         self.workers = list(snap["workers"])
         self.roots = graph.forest(snap["sessions"], self.everything)
+        if self.only:  # this project's conversations: started in it, or in a worktree inside it
+            top = str(config.project_root(self.here))
+            self.roots = [r for r in self.roots if (os.path.realpath(r["cwd"]) + os.sep).startswith(top + os.sep)]
         self.by = {}
 
         def index(node):
@@ -341,7 +345,7 @@ class App:
         return 120 if self.busy() else 1000
 
     def detail(self, name, n, status):
-        k = (name, n, status)
+        k = (name, (self.by.get(name) or {}).get("created"), n, status)  # a deleted name can come back
         if k not in self.answers:
             try:
                 self.answers[k] = ui.detail(name, n)
@@ -377,9 +381,9 @@ class App:
                "enter": self.enter, " ": self.enter, "tab": self.swap, "btab": self.swap,
                "c": lambda: self.compose("continue"), "b": lambda: self.compose("branch"),
                "e": lambda: self.compose("edit"), "n": lambda: self.compose("new"), "x": self.stop,
-               "/": self.find, "o": self.page, "O": self.whole, "y": self.yank, "d": self.patch, "D": self.delete, "a": self.all_runs,
-               "r": self.load, "?": self.open_help, "q": self.quit}.get(k)
-        if act and (node or k in ("n", "a", "r", "?", "q")):
+               "/": self.find, "o": self.page, "O": self.whole, "y": self.yank, "d": self.patch, "D": self.delete,
+               "a": self.all_runs, "f": self.here_only, "r": self.load, "?": self.open_help, "q": self.quit}.get(k)
+        if act and (node or k in ("n", "a", "f", "r", "?", "q")):
             act()
 
     def move(self, d):
@@ -456,6 +460,12 @@ class App:
                  "dim")
         self.load()
 
+    def here_only(self):
+        self.only = not self.only
+        self.say(f"Only conversations in {short(str(config.project_root(self.here)))}" if self.only else
+                 "Every conversation, from every folder", "dim")
+        self.load()
+
     def open_help(self):
         self.help = True
 
@@ -509,6 +519,7 @@ class App:
             if late:
                 return self.say(f"{', '.join(late)} has a message to answer now: x stops it first", "err")
             gone = 0
+            self.drafts = {k: v for k, v in self.drafts.items() if k[1] not in names}
             try:
                 for n in reversed(names):  # branches before what they branch off
                     sessions.remove(n)
@@ -714,7 +725,8 @@ class App:
     def draw_graph(self, c, x, y, w, h, focus):
         style = "acc" if focus else "dim"
         busy, n = len(self.busy()), len(self.roots)
-        info = f" {n} conversation{'s' * (n != 1)}" + (f" · {busy} running" if busy else "") + " "
+        info = (f" {n} conversation{'s' * (n != 1)}" + (" in this project" if self.only else "")
+                + (f" · {busy} running" if busy else "") + " ")
         foot = [p for k in sorted(self.held) for p in ((f" {self.out(k)} ", "err" if self.held[k][1] == "login" else "run"),
                                                        ("─", style))][:-1]
         self.border(c, x, y, w, h, style, [(" farmout ", "bold acc"), ("─", style), (info, "dim")], foot=foot)
@@ -760,7 +772,8 @@ class App:
         if not k:
             return ""
         until, why = self.held[k]
-        return f"{k} {'logged out' if why == 'login' else 'at its limit'} till {time.strftime('%H:%M', time.localtime(until))}"
+        at = time.strftime("%H:%M" if until - time.time() < 86400 else "%a %H:%M", time.localtime(until))
+        return f"{k} {'logged out' if why == 'login' else 'at its limit'} till {at}"
 
     def draw_reader(self, c, x, y, w, h, focus):
         style = "acc" if focus else "dim"
@@ -790,7 +803,8 @@ class App:
         """The selected row's text, as lines of (text, style) pieces in w columns."""
         node = row["node"]
         t = row.get("turn")
-        key = (self.key_of(row), t["status"] if t else (node.get("state"), len(node["turns"]), len(node["branches"])), w)
+        key = (self.key_of(row), node.get("created"),
+               t["status"] if t else (node.get("state"), len(node["turns"]), len(node["branches"])), w)
         if self.cache[0] == key:
             return self.cache[1]
         out = []

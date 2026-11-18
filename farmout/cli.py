@@ -146,10 +146,10 @@ def send_and_show(a, name, prompt, files, attach=(), switch=None, note=None):
         return 0
     flows.ACTIVE.add(name)
     worker = (switch or {}).get("worker") or sessions.load(name)["worker"]
-    after = {name: max((r["n"] for r in sessions.turns(name)), default=0)}
-    with live.Lanes(None, None, "working", lanes=[(worker, worker, name)], after=after, keep=False,
+    msg = sessions.deliver(name, prompt, files, attach, cwd=a.cwd, wait=False, switch=switch, note=note)
+    with live.Lanes(None, None, "working", lanes=[(worker, worker, name)], ids={name: msg["id"]}, keep=False,
                     on=live.enabled(a)):  # a waiting row, so a long answer doesn't look like a hang
-        rec = sessions.deliver(name, prompt, files, attach, cwd=a.cwd, switch=switch, note=note)
+        rec = sessions.wait_msg(name, msg["id"])
     flows.ACTIVE.discard(name)
     return show_turn(a, name, rec)
 
@@ -445,10 +445,15 @@ def cmd_stop(a):
 
 def cmd_rm(a):
     names = [n for n in sessions.names() if not sessions.busy(n) and not sessions.pending(n)] if a.idle else a.sessions
-    created = {n: i for i, n in enumerate(sessions.names())}
+    created, rc = {n: i for i, n in enumerate(sessions.names())}, 0
     for n in sorted(names, key=lambda n: created.get(n, -1), reverse=True):  # branches before what they branch off
-        sessions.remove(n)
-        print(f"removed {n}")
+        try:
+            sessions.remove(n)
+            print(f"removed {n}")
+        except (KeyError, RuntimeError, ValueError) as e:  # say so, and go on with the rest
+            err(f"{n}: {e.args[0] if isinstance(e, KeyError) and e.args else e}")
+            rc = 1
+    return rc
 
 
 def cmd_diff(a):

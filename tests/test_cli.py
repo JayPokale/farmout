@@ -231,6 +231,17 @@ class SessionTest(CliBase):
         self.fo("rm", "iso", "iso-1")  # branches go first, whatever order they're given in
         self.assertEqual(self.json("ls"), [])
 
+    def test_rm_idle_goes_on_past_one_it_cant_remove(self):
+        self.repo()
+        self.fo("run", "codex", "say idle", "-n", "plain")  # oldest: removed after the one that can't be
+        self.fo("run", "codex", "write f.txt hi", "--isolate", "-n", "iso")
+        self.fo("fork", "iso", "nap 20", "--bg")
+        self.assertTrue(wait_until(lambda: any(r["state"] == "running" for r in self.json("ls")), 20))
+        p = self.fo("rm", "--idle", rc=1)
+        self.assertIn("iso-1 works in iso's worktree", p.stderr)
+        self.assertIn("removed plain", p.stdout, "the rest are removed anyway")
+        self.fo("stop", "iso-1")
+
     def test_rm_removes_the_session_and_its_worktree(self):
         self.repo()
         self.fo("run", "codex", "write f.txt hi", "--isolate", "-n", "gone")
@@ -2052,6 +2063,19 @@ class TerminalUiTest(CliBase):
         self.assertIn("1 of 1", xs, "words only the answer has count too")
         self.assertIn("x · turn 1", xs)
 
+    def test_f_shows_this_projects_conversations_only(self):
+        self.repo()
+        away = self.tmp / "elsewhere"
+        away.mkdir()
+        self.fo("run", "codex", "say away", "-n", "away", cwd=away)
+        self.fo("run", "codex", "say home", "-n", "home")
+        every, only, back = self.ui(["screen"], "f", ["screen"], "f", ["screen"])
+        self.assertIn("2 conversations", every)
+        self.assertIn("1 conversation in this project", only)
+        self.assertIn("▾ home", only)
+        self.assertNotIn("away", only.split("\n ")[0], "the other folder's conversation is hidden")
+        self.assertIn("2 conversations", back)
+
     def test_a_whole_conversation_opens_in_the_pager(self):
         self.fo("run", "codex", "say one", "-n", "t")
         self.fo("send", "t", "say two")
@@ -2062,6 +2086,23 @@ class TerminalUiTest(CliBase):
         for seen in ("say one", "say other", "other"):
             self.assertIn(seen, text, "the turns before the branch come too")
         self.assertNotIn("say two", text, "but not the ones after it")
+
+    def test_a_deleted_name_that_comes_back_shows_its_own_answers(self):
+        self.fo("run", "codex", "say one", "-n", "t")
+        self.fo("fork", "t", "say other")
+        _, gone, back = self.ui(["screen"], "D", "y", ["screen"], "g", "j", "b", ["type", "say fresh"], "enter",
+                                ["idle"], ["screen"])
+        self.assertIn("Deleted t-1", gone)
+        self.assertIn("t-1 · turn 2", back, "the new branch took the free name")
+        self.assertIn("│ fresh", back)
+        self.assertNotIn("│ other", back, "not the deleted branch's answer, cached under the same name")
+
+    def test_a_limit_days_away_says_the_day(self):
+        self.fo("run", "codex", "say one", "-n", "t")
+        later = time.time() + 3 * 86400
+        (self.state / "limits.json").write_text(json.dumps({"codex": {"until": later, "why": "limit"}}))
+        screen, = self.ui(["screen"])
+        self.assertIn(f"codex at its limit till {time.strftime('%a %H:%M', time.localtime(later))}", screen)
 
     def test_a_running_patch_waits_until_its_turn_is_done(self):
         self.repo()
@@ -2306,15 +2347,17 @@ class LiveLanesTest(unittest.TestCase):
     def test_a_waiting_row_for_one_session_that_goes_when_done(self):
         import io
         from farmout import live
-        self.turn("cache", status="ok", worker="claude", secs=9)
+        self.turn("cache", status="ok", worker="claude", secs=9, id="m1")
         buf = io.StringIO()
-        lanes = live.Lanes(None, None, "working", lanes=[("claude", "claude", "cache")], after={"cache": 1}, keep=False,
+        lanes = live.Lanes(None, None, "working", lanes=[("claude", "claude", "cache")], ids={"cache": "m3"}, keep=False,
                            out=buf)
+        (self.root / "cache" / "turns" / "0002.json").write_text(json.dumps(
+            {"n": 2, "id": "m2", "started": time.time() - 30, "status": "running", "worker": "claude"}))
         lanes.draw()
         self.assertRegex(re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", buf.getvalue()), r"claude\s+waiting…",
-                         "the turn it already had isn't this one, and the row shows while the new one waits")
-        (self.root / "cache" / "turns" / "0002.json").write_text(json.dumps(
-            {"n": 2, "started": time.time() - 4, "status": "running", "worker": "codex"}))
+                         "neither the turn it had nor one queued before this message is this one's; it waits")
+        (self.root / "cache" / "turns" / "0003.json").write_text(json.dumps(
+            {"n": 3, "id": "m3", "started": time.time() - 4, "status": "running", "worker": "codex"}))
         with lanes:
             lanes.draw()
         text = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", buf.getvalue())

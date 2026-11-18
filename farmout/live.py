@@ -48,14 +48,14 @@ class Lanes:
     """`with Lanes(group, workers, "reviewing", on=enabled(a)):` draws a row for each lane's session (named as
     flows.lanes names them) until the block ends, then leaves the final state on screen. `note(name, text)` replaces
     a finished row's summary (a race's "testing…", then "tests pass"). lanes=[(label, worker, session)] names the
-    sessions instead, after={session: n} skips the turns they already had, and keep=False erases the rows at the end
-    (`farmout run` and `send` print the answer instead)."""
+    sessions instead, ids={session: message id} follows the turn that answers that message, and keep=False erases the
+    rows at the end (`farmout run` and `send` print the answer instead)."""
 
-    def __init__(self, group, workers, verb, title=None, findings=False, on=True, out=None, lanes=None, after=None,
+    def __init__(self, group, workers, verb, title=None, findings=False, on=True, out=None, lanes=None, ids=None,
                  keep=True):
         self.group, self.verb, self.title, self.findings = group, verb, title, findings
         self.lanes = lanes or [(label, w, name) for label, w, _, name in flows.lanes(group, list(workers))]
-        self.after, self.keep = after or {}, keep  # turns already there per session; keep: leave the last frame
+        self.ids, self.keep = ids or {}, keep  # the message each session's row waits for; keep: leave the last frame
         self.on, self.out = on and bool(self.lanes), out or sys.stderr
         self.notes, self.counts, self.drawn, self.seen = {}, {}, 0, bool(lanes)  # a session asked for shows at once
         self.stop, self.lock, self.thread, self.t0 = threading.Event(), threading.Lock(), None, time.time()
@@ -105,14 +105,16 @@ class Lanes:
     def turn(self, name):
         if not sessions.path(name).exists():
             return None
+        if name in self.ids:  # the turn that answers this message, not one queued before it
+            return sessions.find(name, self.ids[name])
         recs = sessions.turns(name)
-        return recs[-1] if recs and recs[-1]["n"] > self.after.get(name, 0) else None
+        return recs[-1] if recs else None
 
     def row(self, lane, w, name, tick):
         rec = self.turn(name)
         label = paint(f"{lane:<{max(12, self.pad)}}", RGB.get(w), bold=True)
         if rec is None:
-            return f"  {paint('·', dim=True)} {label}{paint('waiting…' if self.after else 'starting…', dim=True)}"
+            return f"  {paint('·', dim=True)} {label}{paint('waiting…' if self.ids else 'starting…', dim=True)}"
         self.seen = True
         status, via = rec["status"], rec.get("worker") or w
         secs = rec.get("secs") if status != "running" else time.time() - rec["started"]
