@@ -173,9 +173,20 @@ dates · claude · 2m ago
 ● 3  Now do the same for parse_time
 ```
 
-`farmout ui` opens that graph full-screen in your terminal, every conversation in it, with the turn you're on beside it to read. Move with the arrow keys (or `j`/`k`, or the mouse), fold a branch with `←`, find a question or words in an answer with `/`, then press `c` to continue, `b` to branch from that turn or `e` to ask it again differently, on the same worker or another. Paste a long message or press Ctrl+G to write it in your editor. A worker at its usage limit or logged out shows at the bottom, until when, and in the message box before you send it there. Questions and answers are shown with escape sequences and control characters removed, so a worker's output can't rewrite your terminal. `farmout ui --web` shows the same in your browser: that page listens on 127.0.0.1 only and needs the key in the address it prints, so other sites you visit can't use it.
+`farmout ui` opens that graph full-screen in your terminal, every conversation in it, with the turn you're on beside it to read. Answers show their **bold** and `code`; a worker at its usage limit or logged out shows at the bottom, until when, and in the message box before you send to it. Paste a long message, or press Ctrl+G to write it in your editor.
 
 <p align="center"><img src="https://raw.githubusercontent.com/JayPokale/farmout/main/assets/graph-demo.gif" width="900" alt="A real run of farmout ui: a conversation that began on Claude and went on on Codex; the user branches off turn 1 onto Copilot, and its answer lands in a lane of its own beside the others"></p>
+
+| key | what it does |
+|---|---|
+| `↑` `↓` (`j` `k`, the mouse) | move; `←` `→` fold and unfold a branch; `⏎` reads a turn |
+| `c` · `b` · `e` | continue from the newest turn · branch off this one · ask this one again differently, on the same worker or another |
+| `n` · `x` | a new conversation · stop a running turn |
+| `/` | find a question, a name, or words in an answer |
+| `o` · `O` | this turn · its whole conversation, in your pager |
+| `y` · `d` · `D` | copy the answer · an isolated session's patch · delete the conversation or branch, with the branches off it |
+
+Questions and answers are shown with escape sequences and control characters removed, so a worker's output can't rewrite your terminal. `farmout ui --web` shows the same in your browser: that page listens on 127.0.0.1 only and needs the key in the address it prints, so other sites you visit can't use it.
 
 **Moved or renamed folders.** Sessions are found by name, not by folder, and each remembers where its folder sits in its git repository. Rename or move the project, then `send` from anywhere inside it: the session follows, each worker resumes its own conversation by id, and its next message says where the folder went. An isolated session's worktree moves with the repository (farmout re-links it with `git worktree repair`). Outside a git repository, `farmout send <session> --here "..."` continues in the current folder. If a worker's CLI can't find its own conversation any more (a cleared session store, or an older Claude Code, which looked for a conversation only in its original folder), farmout gives it the conversation so far as a file instead of failing.
 
