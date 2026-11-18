@@ -270,13 +270,16 @@ class App:
         self.held = {k: (until, why.get(k)) for k, until in usage.limits().items()}  # out of quota, or logged out
         self.loaded = time.time()
         fresh = {self.mark(n, t): (n, t) for n, t in self.news()}
-        came = [fresh[k] for k in fresh if k not in getattr(self, "known", fresh)  # answered since the last load,
+        if not hasattr(self, "known"):  # what was already there when farmout ui started isn't news
+            self.known = set(fresh)
+        came = [fresh[k] for k in fresh if k not in self.known  # answered since it was last looked at,
                 and self.sel != ("turn", fresh[k][0]["name"], fresh[k][1]["n"])]  # and not the one you're on
-        self.known = set(fresh)
-        if came and not first and not self.box:
+        if came and not self.box:  # with a box open it waits, and is said once the box closes
             n, t = came[-1]
             self.say(f"{n['name']} answered turn {t['num']}" + (f", and {len(came) - 1} more" if len(came) > 1 else "")
                      + ": u goes there", "acc")
+        if not came or not self.box:
+            self.known |= set(fresh)  # kept across f and a, so hiding and showing an answer doesn't announce it again
         if first:
             self.folded.update(r["name"] for r in self.roots[3:])  # the three most recent conversations open
             start = self.by.get(focus) or (self.roots[0] if self.roots else None)

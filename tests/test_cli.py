@@ -2217,6 +2217,9 @@ class TerminalUiTest(CliBase):
         self.fo("run", "codex", "say one", "-n", "t")
         screen, = self.ui("c", ["type", "nap 1"], "enter", ["running"], "g", ["idle"], ["screen"], size=(90, 30))
         self.assertIn("t answered turn 2: u goes there", screen)
+        later, = self.ui("c", ["type", "nap 1"], "enter", ["running"], "g", "c", ["idle"], "esc", ["idle"], ["screen"],
+                         size=(90, 30))
+        self.assertIn("t answered turn 3: u goes there", later, "said once the message box closes")
 
     def test_r_sends_a_failed_turn_again(self):
         self.fo("run", "codex", "fail boom", "-n", "t", rc=1)
