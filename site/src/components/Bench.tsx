@@ -47,7 +47,8 @@ export default function Bench() {
             </div>
             <p className="mt-3 max-w-md text-xs leading-relaxed text-dim">
               <code className="font-mono">--share</code> writes a post that fits on X, an image card and a one-click post
-              link. The card carries scores only: no repository name, file names or code.
+              link. The card carries scores only: no repository name, file names or code. To compare models rather than
+              subscriptions, name them: <code className="font-mono">-w claude:opus,claude:sonnet,codex</code>.
             </p>
           </Reveal>
         </div>
