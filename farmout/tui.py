@@ -877,7 +877,13 @@ class App:
                      (f" · turn {row['turn']['num']} " if row["kind"] == "turn" else " ", "bold")]
         self.border(c, x, y, w, h, style, title)
         self.geo["reader"] = (x, y, w, h)
-        if not row:
+        if not row:  # nothing yet: what to do first
+            guide = [("Start here", "bold"), ("", ""), ("n · start a conversation (Tab picks the worker)", ""),
+                     ("? · every key", ""), ("", ""), ("From a shell, these show up here too:", "dim"),
+                     ('farmout run codex "..." -n plan', "code"), ('farmout fork plan --at 1 -w claude "..."', "code")]
+            lines = [(part, st) for text, st in guide for part in (wrap(text, w - 4) if text else [""])]
+            for k, (text, st) in enumerate(lines[:h - 2]):
+                c.put(y + 1 + k, x + 2, text, st, x + w - 2)
             return
         lines = self.reading(row, w - 4)
         self.rw = w - 4

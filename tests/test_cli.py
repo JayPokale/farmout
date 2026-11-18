@@ -2221,6 +2221,12 @@ class TerminalUiTest(CliBase):
                          size=(90, 30))
         self.assertIn("t answered turn 3: u goes there", later, "said once the message box closes")
 
+    def test_an_empty_ui_says_where_to_start(self):
+        screen, = self.ui(["screen"])
+        self.assertIn("Start here", screen)
+        self.assertIn("n · start a conversation", screen)
+        self.assertIn("No conversations yet.", screen)
+
     def test_r_sends_a_failed_turn_again(self):
         self.fo("run", "codex", "fail boom", "-n", "t", rc=1)
         nope, again, done = self.ui("g", "R", ["screen"], "G", "R", ["screen"], "^U", ["type", "say fixed"], "enter",
