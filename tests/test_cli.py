@@ -221,6 +221,16 @@ class SessionTest(CliBase):
         self.assertEqual([m["role"] for m in api.seen[1]["body"]["messages"]], ["user", "assistant", "user"])
         self.assertEqual(api.seen[1]["body"]["messages"][0]["content"], "first")
 
+    def test_rm_keeps_a_worktree_its_branches_work_in(self):
+        self.repo()
+        self.fo("run", "codex", "write f.txt hi", "--isolate", "-n", "iso")
+        self.fo("fork", "iso", "say branch")
+        p = self.fo("rm", "iso", rc=1)
+        self.assertIn("iso-1 works in iso's worktree; remove it first (`farmout rm iso-1 iso`)", p.stdout + p.stderr)
+        self.assertTrue(Path(self.meta("iso")["iso"]["worktree"]).is_dir(), "nothing was removed")
+        self.fo("rm", "iso", "iso-1")  # branches go first, whatever order they're given in
+        self.assertEqual(self.json("ls"), [])
+
     def test_rm_removes_the_session_and_its_worktree(self):
         self.repo()
         self.fo("run", "codex", "write f.txt hi", "--isolate", "-n", "gone")
@@ -1394,7 +1404,8 @@ class MoreTest(CliBase):
         self.assertRegex(p.stdout, r"Codex\s+█ 1/1")
         self.assertIn("https://x.com/intent/tweet?text=", p.stdout)
         card = re.search(r"^Image: (\S+)", p.stdout, re.M).group(1)
-        svg = Path(card).with_suffix(".svg").read_text()
+        self.assertTrue(card.startswith("~/"), "paths under your home print as ~/...")
+        svg = Path(str(self.home) + card[1:]).with_suffix(".svg").read_text()
         self.assertIn("Which AI reviews my code best?", svg)
         for private in ("ratio", "m.py", "division", self.work.name):
             self.assertNotIn(private, p.stdout.split("Report:")[1], private)
@@ -1668,6 +1679,18 @@ class HistoryTest(CliBase):
                          "then claude resumes natively again, from the new folder")
         self.assertEqual(flag(self.last("claude")["argv"], "--resume"), self.meta("k")["native_id"])
 
+
+    def test_an_empty_login_folder_reads_as_logged_out_with_other_notes_too(self):
+        cfg = self.home / ".config" / "farmout"
+        cfg.mkdir(parents=True, exist_ok=True)
+        (cfg / "settings.json").write_text(json.dumps({"redact": True}))
+        self.fo("run", "claude", "say uno", "-n", "k")
+        empty = self.tmp / "empty-login"
+        empty.mkdir()
+        p = self.fo("send", "k", "say tres password=hunter2hunter2", FARMOUT_CLAUDE_DIR=str(empty),
+                    FAKE_EMPTY_LOGIN=str(empty))
+        self.assertIn("redacted 1 secret", p.stderr)
+        self.assertNotIn("couldn't find its own conversation", p.stderr)
 
     def test_an_empty_login_folder_reads_as_logged_out(self):
         self.fo("run", "claude", "say uno", "-n", "k")
@@ -2002,6 +2025,12 @@ class TerminalUiTest(CliBase):
         self.assertEqual([r["name"] for r in self.json("ls")], ["t"])
         self.assertIn("t has no worktree", self.ui("d", ["screen"])[0], "a session that isn't isolated says so")
 
+    def test_a_running_patch_waits_until_its_turn_is_done(self):
+        self.repo()
+        self.fo("run", "codex", "nap 20", "--isolate", "-n", "busy", "--bg")
+        screen, = self.ui(["running"], "d", ["screen"], "x", "y")
+        self.assertIn("busy is still working: its patch is ready when it's done", screen)
+
     def test_copy_uses_the_clipboard_tool_or_the_terminal(self):
         from farmout import tui
         bin_ = self.tmp / "clip-bin"
@@ -2034,8 +2063,8 @@ class TerminalUiTest(CliBase):
         self.assertNotRegex(reader[at] + reader[at + 1], r"\*\*|`", "the marks are styles now, not text")
 
     def test_emoji_and_accents_keep_the_borders_straight(self):
-        self.fo("run", "codex", "say ⚠️ careful, café ‮turned", "-n", "t")
-        self.assertIn("● 1  say ⚠️ careful, café turned", self.fo("tree").stdout, "no override")
+        self.fo("run", "codex", "say \u26a0\ufe0f careful,\u200f cafe\u0301 \u202eturned", "-n", "t")
+        self.assertIn("\u25cf 1  say \u26a0\ufe0f careful, cafe\u0301 turned", self.fo("tree").stdout, "no bidi controls")
         screen, = self.ui(["screen"])
         rows = [line for line in screen.split("\n") if line.endswith("│")]
         self.assertGreater(len(rows), 10)
@@ -2244,7 +2273,8 @@ class LiveLanesTest(unittest.TestCase):
         lanes = live.Lanes(None, None, "working", lanes=[("claude", "claude", "cache")], after={"cache": 1}, keep=False,
                            out=buf)
         lanes.draw()
-        self.assertEqual(buf.getvalue(), "", "the turn it already had isn't this one")
+        self.assertRegex(re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", buf.getvalue()), r"claude\s+waiting…",
+                         "the turn it already had isn't this one, and the row shows while the new one waits")
         (self.root / "cache" / "turns" / "0002.json").write_text(json.dumps(
             {"n": 2, "started": time.time() - 4, "status": "running", "worker": "codex"}))
         with lanes:

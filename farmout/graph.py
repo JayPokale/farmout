@@ -17,13 +17,13 @@ PALETTE = {"err": "#f37b72", "run": "#f2c04f", "ok": "#5bd38a", "acc": "#f2a65a"
            "w:deepseek": "#4d6bfe"}  # the workers' colours are bench.COLOURS, as on the leaderboard
 ESCAPES = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)?|[ -/]+[0-~]|[@-Z\\-_])"  # 7-bit
                      r"|\x9b[0-?]*[ -/]*[@-~]|\x9d[^\x07\x1b\x9c]*(?:\x07|\x9c|\x1b\\)?")  # and 8-bit CSI and OSC
-CONTROL = re.compile(r"[\x00-\x09\x0b-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]")  # and bidirectional overrides
+CONTROL = re.compile(r"[\x00-\x09\x0b-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]")  # and bidi controls
 
 
 def clean(text):
     """Text from a prompt or a worker, safe for a terminal: no escape sequences or other control characters, which a
-    worker's output could use to rewrite the screen, the clipboard or the window title, and no bidirectional overrides,
-    which could show text in another order than it has."""
+    worker's output could use to rewrite the screen, the clipboard or the window title, and no bidirectional
+    controls, which could show text in another order than it has."""
     text = ESCAPES.sub("", str(text or "")).replace("\r\n", "\n").replace("\r", "\n")
     return CONTROL.sub("", text.expandtabs(4))
 

@@ -517,6 +517,12 @@ def remove(name):
     if busy(name):
         raise RuntimeError(f"{name} is running; `farmout stop {name}` first")
     if meta.get("iso"):
+        top = os.path.realpath(meta["iso"]["worktree"])
+        inside = [m["name"] for m in (read_json(path(n) / "meta.json") for n in names() if n != name)
+                  if m and (os.path.realpath(m["cwd"]) + os.sep).startswith(top + os.sep)]
+        if inside:  # its branches work in its worktree, which goes with it
+            raise RuntimeError(f"{', '.join(inside)} work{'s' * (len(inside) == 1)} in {name}'s worktree; remove "
+                               f"{'it' if len(inside) == 1 else 'them'} first (`farmout rm {' '.join(inside)} {name}`)")
         isolate.remove(meta["iso"])
     shutil.rmtree(path(name))
 

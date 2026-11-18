@@ -160,8 +160,8 @@ def execute(t, key, where=None, on_iso=None):
             continue
         if res["ok"] or not res.get("limited"):
             break
-        if res["why"] == "login" and notes[-1:] == [LOST_NOTE.format(w)]:
-            notes.pop()  # it found no conversation because it isn't logged in (an empty login folder): say only that
+        if res["why"] == "login" and LOST_NOTE.format(w) in notes:
+            notes.remove(LOST_NOTE.format(w))  # it found none because it isn't logged in (an empty login folder)
         tried.append(k)
         held, why = usage.limits(), usage.reasons()
         nxt = next(((fw, fm) for fw, fm in order if lane_key(fw, fm, s0) not in tried

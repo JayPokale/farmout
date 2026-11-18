@@ -261,7 +261,8 @@ class App:
                 index(b)
         for r in self.roots:
             index(r)
-        self.held = {k: (until, usage.reasons().get(k)) for k, until in usage.limits().items()}  # out of quota, or login
+        why = usage.reasons()
+        self.held = {k: (until, why.get(k)) for k, until in usage.limits().items()}  # out of quota, or logged out
         self.loaded = time.time()
         if first:
             self.folded.update(r["name"] for r in self.roots[3:])  # the three most recent conversations open
@@ -476,7 +477,10 @@ class App:
         self.external = ("copy", text, f"turn {t['num']}'s answer ({len(text):,} characters)")
 
     def patch(self):
-        name = self.row()["node"]["name"]
+        node = self.row()["node"]
+        name = node["name"]
+        if node.get("state") in ("running", "queued"):  # its worker is still editing that worktree
+            return self.say(f"{name} is still working: its patch is ready when it's done", "dim")
         try:
             path, stat, _ = flows.current_patch(name)
             self.external = ("pager", clean(stat) + "\n\n" + clean(path.read_text(errors="replace")))
@@ -489,6 +493,8 @@ class App:
             return self.say(f"{node['name']} is running: x stops it first", "err")
 
         def yes():
+            if sessions.busy(node["name"]) or sessions.pending(node["name"]):  # a message came in meanwhile
+                return self.say(f"{node['name']} has a message to answer now: x stops it first", "err")
             try:
                 sessions.remove(node["name"])
                 self.say(f"Deleted {node['name']}", "ok")

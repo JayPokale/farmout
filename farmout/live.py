@@ -57,7 +57,7 @@ class Lanes:
         self.lanes = lanes or [(label, w, name) for label, w, _, name in flows.lanes(group, list(workers))]
         self.after, self.keep = after or {}, keep  # turns already there per session; keep: leave the last frame
         self.on, self.out = on and bool(self.lanes), out or sys.stderr
-        self.notes, self.counts, self.drawn, self.seen = {}, {}, 0, False
+        self.notes, self.counts, self.drawn, self.seen = {}, {}, 0, bool(lanes)  # a session asked for shows at once
         self.stop, self.lock, self.thread, self.t0 = threading.Event(), threading.Lock(), None, time.time()
 
     def write(self, text):
@@ -112,7 +112,7 @@ class Lanes:
         rec = self.turn(name)
         label = paint(f"{lane:<{max(12, self.pad)}}", RGB.get(w), bold=True)
         if rec is None:
-            return f"  {paint('·', dim=True)} {label}{paint('starting…', dim=True)}"
+            return f"  {paint('·', dim=True)} {label}{paint('waiting…' if self.after else 'starting…', dim=True)}"
         self.seen = True
         status, via = rec["status"], rec.get("worker") or w
         secs = rec.get("secs") if status != "running" else time.time() - rec["started"]
