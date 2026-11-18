@@ -465,7 +465,8 @@ class App:
     def jump(self, d):
         """To the next (d=1) or previous (d=-1) conversation's head row."""
         heads = [i for i, r in enumerate(self.rows) if r["kind"] == "head"]
-        later = [i for i in heads if (i > self.i if d > 0 else i < self.i)]
+        mine = max([i for i in heads if i <= self.i], default=-1)  # the head of the conversation you're in
+        later = [i for i in heads if (i > self.i if d > 0 else i < mine)]
         if later:
             self.move((later[0] if d > 0 else later[-1]) - self.i)
 
@@ -730,8 +731,8 @@ class App:
             return self.say(str(e.args[0] if isinstance(e, KeyError) and e.args else e) or type(e).__name__, "err")
         self.drafts.pop(b["key"], None)
         self.box, self.pane, self.wanted = None, "graph", (r["session"], r["message"])
+        self.load()  # first: an answer that came in while you typed is noted, then this note replaces it
         self.say(f"Sent to {r['session']}" + (f" (its folder moved to {r['moved']})" if r.get("moved") else ""), "ok")
-        self.load()
 
     # Finding
 

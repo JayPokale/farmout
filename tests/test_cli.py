@@ -2244,6 +2244,9 @@ class TerminalUiTest(CliBase):
         later, = self.ui("c", ["type", "nap 1"], "enter", ["running"], "g", "c", ["idle"], "esc", ["idle"], ["screen"],
                          size=(90, 30))
         self.assertIn("t answered turn 3: u goes there", later, "said once the message box closes")
+        sent, = self.ui("c", ["type", "nap 1"], "enter", ["running"], "g", "c", ["idle"], ["type", "say more"], "enter",
+                        ["screen"], size=(90, 30))
+        self.assertIn("Sent to t", sent, "sending says so, even with an answer noted at that moment")
 
     def test_s_shows_what_each_subscription_did(self):
         self.fo("run", "codex", "say one", "-n", "t")
@@ -2255,9 +2258,10 @@ class TerminalUiTest(CliBase):
     def test_j_and_k_jump_between_conversations(self):
         for name in "abc":
             self.fo("run", "codex", f"say {name}", "-n", name)
-        screens = self.ui("g", "J", ["screen"], "J", ["screen"], "J", ["screen"], "K", ["screen"])
+        screens = self.ui("g", "J", ["screen"], "J", ["screen"], "J", ["screen"], "K", ["screen"], "j", "K", ["screen"])
         titles = [re.search(r"╭─ (\w) ", sc.split("\n")[0][60:]).group(1) for sc in screens]
-        self.assertEqual(titles, ["b", "a", "a", "b"], "c is the newest, so first; J stops at the last one")
+        self.assertEqual(titles, ["b", "a", "a", "b", "c"], "c is the newest, so first; J stops at the last one; "
+                         "K from inside b goes to c, not to b's own head")
 
     def test_an_empty_ui_says_where_to_start(self):
         screen, = self.ui(["screen"])
@@ -2473,10 +2477,12 @@ class SessionGuardTest(unittest.TestCase):
             old = getattr(sessions, attr)
             setattr(sessions, attr, value)
             self.addCleanup(setattr, sessions, attr, old)
-        d = self.tmp / "sessions" / "s"
-        (d / "inbox").mkdir(parents=True)
-        (d / "turns").mkdir()
-        (d / "meta.json").write_text(json.dumps({"name": "s", "worker": "codex", "cwd": str(self.tmp), "turns": 0}))
+        old_event, old_enabled = sessions.event, sessions.ENABLED
+        sessions.event = lambda *a, **k: None  # no hooks from the real settings in an in-process test
+        sessions.ENABLED = {**sessions.ENABLED, "codex": None}
+        self.addCleanup(setattr, sessions, "event", old_event)
+        self.addCleanup(setattr, sessions, "ENABLED", old_enabled)
+        self.make("s")
 
     def test_a_message_queued_during_a_removal_waits_then_finds_it_gone(self):
         from farmout import sessions
@@ -2496,6 +2502,53 @@ class SessionGuardTest(unittest.TestCase):
         t.join(10)
         self.assertIsInstance(result[0], KeyError, result)
         self.assertEqual(list((self.tmp / "gone" / "inbox").iterdir()), [], "nothing was queued into the removed one")
+
+    def test_a_message_waiting_through_a_removal_doesnt_land_in_a_new_session_of_that_name(self):
+        from farmout import sessions
+        result = []
+        t = threading.Thread(target=lambda: result.append(self.attempt(sessions.post, "s", "say hi")))
+        with sessions.guarded("s"):
+            t.start()
+            time.sleep(0.3)
+            os.replace(self.tmp / "sessions" / "s", self.tmp / "gone")
+            self.make("s")  # a new session under the same name, before the waiting message wakes
+        t.join(10)
+        self.assertIsInstance(result[0], KeyError, result)
+        self.assertEqual(list((self.tmp / "sessions" / "s" / "inbox").iterdir()), [], "not into the new one")
+
+    def test_a_branch_inside_a_worktree_waits_for_a_removal_of_its_owner(self):
+        from farmout import sessions
+        wt = self.tmp / "wt"
+        wt.mkdir()
+        self.make("a", iso={"worktree": str(wt), "rel": ".", "top": str(self.tmp), "branch": "b", "patch": None})
+        self.make("b", cwd=str(wt), parent="a", base=1)
+        result = []
+        t = threading.Thread(target=lambda: result.append(self.attempt(sessions.fork, "b")))
+        with sessions.guarded("a"):  # what removing a holds while it checks for branches in its worktree
+            t.start()
+            time.sleep(0.3)
+            self.assertTrue(t.is_alive(), "branching off b waits: it would work in a's worktree")
+        t.join(10)
+        self.assertEqual(result[0][0]["parent"], "b", result)
+
+    def make(self, name, **meta):
+        d = self.tmp / "sessions" / name
+        (d / "inbox").mkdir(parents=True)
+        (d / "turns").mkdir()
+        out = d / "turns" / "0001.md"
+        out.write_text("one")
+        (d / "turns" / "0001.json").write_text(json.dumps({"n": 1, "id": "m1", "prompt": "say one", "status": "ok",
+                                                          "worker": "codex", "output": str(out)}))
+        (d / "meta.json").write_text(json.dumps({"name": name, "worker": "codex", "cwd": str(self.tmp), "turns": 1,
+                                                 "model": None, "effort": None, "native_id": None, "base": 0,
+                                                 "created": time.time(), **meta}))
+
+    @staticmethod
+    def attempt(fn, *args):
+        try:
+            return fn(*args)
+        except Exception as e:
+            return e
 
 
 class LiveLanesTest(unittest.TestCase):

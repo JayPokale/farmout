@@ -9,6 +9,7 @@ Sessions are found by name, never by folder, and each remembers where its folder
 renamed or moved project keeps its conversations (rehome). A fork branches off any turn and keeps the conversation
 up to there; the branches of a conversation form a tree (`farmout tree`, `farmout ui`).
 """
+import contextlib
 import fcntl
 import json
 import os
@@ -314,6 +315,8 @@ def guarded(name):
     with open(path(name) / "guard.lock", "a") as f:  # a session removed meanwhile: FileNotFoundError
         fcntl.flock(f, fcntl.LOCK_EX)
         try:
+            if os.fstat(f.fileno()).st_ino != os.stat(path(name) / "guard.lock").st_ino:
+                raise FileNotFoundError(name)  # removed while this waited (and maybe made again under its name)
             yield
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)
@@ -600,8 +603,15 @@ def fork(name, new_name=None, worker=None, at=None, model=None):
                          + (f"; its turns are {base + 1} to {base + done[-1]}" if done else "; it has none yet"))
     worker = worker or parent["worker"]
     native = worker == parent["worker"] == "claude" and parent["native_id"] and at == parent["turns"]
+    owner = parent
+    while not owner.get("iso") and owner.get("parent"):  # whose worktree, if any, the branch will work in
+        try:
+            owner = load(owner["parent"])
+        except KeyError:
+            break
+    owner = owner["name"] if owner.get("iso") and owner["name"] != name else None
     try:
-        with guarded(name):  # a removal of this session either finished first or waits for the branch
+        with guarded(name), (guarded(owner) if owner else contextlib.nullcontext()):  # removals wait, or went first
             parent = load(name)
             iso = parent.get("iso")
             cwd = os.path.join(iso["worktree"], iso.get("rel", ".")) if iso else parent["cwd"]
