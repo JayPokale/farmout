@@ -2139,6 +2139,19 @@ class TerminalUiTest(CliBase):
         self.assertNotIn(" on codex ", out, "not one at its limit")
         self.assertRegex(out, r" on (antigravity|claude|copilot) ")
 
+    def test_new_answers_are_marked_until_you_read_them(self):
+        self.fo("run", "codex", "say one", "-n", "t")
+        self.ui(["screen"])  # the first run counts everything already there as read
+        self.fo("send", "t", "say two")
+        before, after = self.ui(["screen"], "g", "u", "enter", ["screen"], size=(90, 30))  # narrow: no reader yet
+        self.assertIn("1 conversation · 1 new", before)
+        self.assertRegex(before, r"2  say two\s+new")
+        self.assertNotRegex(before, r"1  say one\s+new")
+        self.assertIn("t · turn 2", after, "u went to it, and ⏎ read it")
+        again, = self.ui(["screen"], size=(90, 30))
+        self.assertNotIn("1 new", again)
+        self.assertNotRegex(again, r"say two\s+new")
+
     def test_a_limit_days_away_says_the_day(self):
         self.fo("run", "codex", "say one", "-n", "t")
         later = time.time() + 3 * 86400

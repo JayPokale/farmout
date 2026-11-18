@@ -148,10 +148,11 @@ def count(node):
     return len(node["turns"]) + sum(t for t, _ in sub), len(node["branches"]) + sum(b for _, b in sub)
 
 
-def pieces(row, width, mark=None, fold="", glyph=None, now=None, shut=False, here=None):
+def pieces(row, width, mark=None, fold="", glyph=None, now=None, shut=False, here=None, new=False):
     """One row as (text, style) pieces in at most width columns: its lanes, then the conversation, branch or turn it
     shows. A conversation names its folder unless it is here. `farmout ui` passes a head's fold arrow, a turn's node
-    glyph (a spinner while it runs), now (to show how long a turn has run) and shut (a folded row says what it holds)."""
+    glyph (a spinner while it runs), now (to show how long a turn has run), shut (a folded row says what it holds)
+    and new (an answer not read yet)."""
     node, kind = row["node"], row["kind"]
     out = [(t, "w:" + str(w)) for t, w in row["graph"]]
     used = sum(cols(t) for t, _ in out)
@@ -194,13 +195,14 @@ def pieces(row, width, mark=None, fold="", glyph=None, now=None, shut=False, her
         bits.append(f"running {now - t['started']:.0f}s")
     elif status != "ok":
         bits.append(status)
+    bits = ["new"] * new + bits  # an answer you haven't read yet (farmout ui)
     meta = " · ".join(bits)
     first = next((x.strip() for x in clean(t["prompt"]).splitlines() if x.strip()), "")
     room = width - used - 2
     if meta and cols(meta) + 14 <= room:  # right-aligned, if the question keeps some room
         q = clip(first, room - cols(meta) - 2)
         add("  " + q + " " * (room - cols(q) - cols(meta)))
-        add(meta, "err" if status == "failed" else "dim")
+        add(meta, "err" if status == "failed" else "acc" if new else "dim")
     else:
         add("  " + first)
     return out

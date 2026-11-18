@@ -24,14 +24,14 @@ LONGEST = 200_000  # characters of an answer the reader shows
 BASIC = {"err": 1, "ok": 2, "run": 3, "acc": 3, "code": 6, "w:claude": 1, "w:codex": 3, "w:antigravity": 6,
          "w:copilot": 5, "w:deepseek": 4}  # the 8-colour terminal's stand-ins for graph.PALETTE
 HELP = [("↑↓ j k", "move"), ("← → h l", "fold, unfold; ← also goes up to the branch"),
-        ("⏎ space", "read a turn; fold a branch"), ("Tab", "between the graph and the reader"), ("g G", "first, last"),
-        ("/", "find a question, a name, or words in an answer"),
+        ("⏎ space", "read a turn; fold a branch"), ("Tab · g G", "graph or reader; first, last"),
+        ("/ · u", "find in questions, names and answers; the next unread answer"),
         ("c", "continue from the newest turn"), ("b", "branch from this turn"),
-        ("e", "ask this turn differently: a branch from the turn before"), ("n", "new conversation"),
-        ("x", "stop a running turn"), ("o O", "open the turn, or its whole conversation, in your pager"), ("y", "copy the turn's answer"),
-        ("d", "an isolated session's patch, in your pager"), ("D", "delete a conversation or branch, with the branches off it"),
-        ("a", "show review, ask and race runs too"), ("f", "only this project's conversations, or all"),
-        ("r q", "reload; quit")]
+        ("e", "ask this turn differently: a branch from the turn before"), ("n · x", "new conversation; stop a running turn"),
+        ("o O", "open the turn, or its whole conversation, in your pager"),
+        ("y · d", "copy the answer; an isolated session's patch in your pager"),
+        ("D", "delete a conversation or branch, with the branches off it"),
+        ("a · f", "review, ask and race runs too; only this project's"), ("r · q", "reload; quit")]
 
 
 class Canvas:
@@ -246,6 +246,7 @@ class App:
         self.wanted = None  # (session, message id): select that turn once it shows up
         self.drafts, self.answers, self.cache = {}, {}, (None, None)
         self.hit, self.geo, self.rw = {}, {}, 0
+        self.seen = self.read_marks()
         self.load(first=True, focus=focus)
 
     # The conversations
@@ -281,6 +282,50 @@ class App:
                 self.wanted = None
                 return self.show(name, t["n"])
         self.relayout()
+
+    @staticmethod
+    def read_marks():
+        """{"since": when farmout ui first ran here, "read": [turn keys]}: answers that finished later and haven't
+        been shown yet are new. The first run counts everything already there as read."""
+        path = sessions.STATE / "ui-read.json"
+        data = sessions.read_json(path) or {}
+        if not isinstance(data.get("since"), (int, float)) or not isinstance(data.get("read"), list):
+            data = {"since": time.time(), "read": []}
+            path.parent.mkdir(parents=True, exist_ok=True)
+            sessions.write_json(path, data)
+        return {"since": data["since"], "read": set(data["read"])}
+
+    @staticmethod
+    def mark(node, t):
+        return f"{node['name']}@{node.get('created')}#{t['n']}"
+
+    def new(self, node, t):
+        """A finished answer that came in after farmout ui first ran here, and hasn't been shown since."""
+        return (t["status"] not in ("running",) and (t.get("started") or 0) + (t.get("secs") or 0) > self.seen["since"]
+                and self.mark(node, t) not in self.seen["read"])
+
+    def read(self, node, t):
+        k = self.mark(node, t)
+        if t["status"] != "running" and k not in self.seen["read"]:
+            self.seen["read"].add(k)
+            try:
+                sessions.write_json(sessions.STATE / "ui-read.json",
+                                    {"since": self.seen["since"], "read": sorted(self.seen["read"])[-5000:]})
+            except OSError:
+                pass
+
+    def news(self):
+        return [(n, t) for n in self.by.values() for t in n["turns"] if self.new(n, t)]
+
+    def next_new(self):
+        news = [(n["name"], t["n"]) for n, t in self.news()]
+        if not news:
+            return self.say("No new answers", "dim")
+        keys = [(r["node"]["name"], r["turn"]["n"]) for r in graph.layout(self.roots) if r["kind"] == "turn"]
+        here = keys.index(self.sel[1:]) if self.sel and self.sel[0] == "turn" and self.sel[1:] in keys else -1
+        later = [k for k in keys[here + 1:] + keys[:here + 1] if k in news]
+        self.show(*later[0])
+        self.pane = "graph"
 
     def newest(self, node, deep=True):
         """(session, turn) of the newest turn in node, or with deep, anywhere in its tree."""
@@ -381,8 +426,9 @@ class App:
                "c": lambda: self.compose("continue"), "b": lambda: self.compose("branch"),
                "e": lambda: self.compose("edit"), "n": lambda: self.compose("new"), "x": self.stop,
                "/": self.find, "o": self.page, "O": self.whole, "y": self.yank, "d": self.patch, "D": self.delete,
-               "a": self.all_runs, "f": self.here_only, "r": self.load, "?": self.open_help, "q": self.quit}.get(k)
-        if act and (node or k in ("n", "a", "f", "r", "?", "q")):
+               "a": self.all_runs, "f": self.here_only, "u": self.next_new, "r": self.load, "?": self.open_help,
+               "q": self.quit}.get(k)
+        if act and (node or k in ("n", "a", "f", "u", "r", "?", "q")):
             act()
 
     def move(self, d):
@@ -687,6 +733,9 @@ class App:
             c.put(0, 0, clip("farmout ui needs at least 40×10", w), "bold")
             return c
         ph = h - (self.composer_rows(w, h) + 2 if self.box and self.box["kind"] == "compose" else 1)
+        row = self.row()
+        if row and row["kind"] == "turn" and (w >= WIDE or self.pane == "reader"):  # on screen now: read
+            self.read(row["node"], row["turn"])
         if w >= WIDE:
             gw = max(44, min(w - 40, w * 11 // 20))
             self.draw_graph(c, 0, 0, gw, ph, self.pane == "graph")
@@ -730,8 +779,9 @@ class App:
     def draw_graph(self, c, x, y, w, h, focus):
         style = "acc" if focus else "dim"
         busy, n = len(self.busy()), len(self.roots)
+        fresh = len(self.news())
         info = (f" {n} conversation{'s' * (n != 1)}" + (" in this project" if self.only else "")
-                + (f" · {busy} running" if busy else "") + " ")
+                + (f" · {busy} running" if busy else "") + (f" · {fresh} new" if fresh else "") + " ")
         foot = [p for k in sorted(self.held) for p in ((f" {self.out(k)} ", "err" if self.held[k][1] == "login" else "run"),
                                                        ("─", style))][:-1]
         self.border(c, x, y, w, h, style, [(" farmout ", "bold acc"), ("─", style), (info, "dim")], foot=foot)
@@ -761,7 +811,7 @@ class App:
                 glyph = SPIN[int(time.time() * 8) % len(SPIN)] if st == "running" else "◉" if sel and st == "ok" else None
             fold = ("▸ " if node["name"] in self.folded else "▾ ") if row["kind"] == "head" else ""
             pieces = graph.pieces(row, iw, fold=fold, glyph=glyph, now=time.time(), shut=node["name"] in self.folded,
-                                  here=self.here)
+                                  here=self.here, new=row["kind"] == "turn" and self.new(node, row["turn"]))
             for m, (t, s) in enumerate(pieces):
                 if m >= len(row["graph"]):
                     s += (" sel" if sel else "") + (" ul" if self.key_of(row) in hits else "")
