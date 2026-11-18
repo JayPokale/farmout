@@ -193,8 +193,13 @@ def pipeline_tool(a, rid):
 TOOL_FNS = {"delegate": delegate, "send": send_tool, "sessions": sessions_tool, "pipeline": pipeline_tool}
 
 
+closing = threading.Event()  # set at EOF or SIGTERM: the client is gone, so a worker stopped for it gets no reply
+
+
 def reply(msg):
     with out_lock:
+        if closing.is_set():
+            return
         sys.stdout.write(json.dumps(msg) + "\n")
         sys.stdout.flush()
 
@@ -248,5 +253,6 @@ def main():
                         sessions.stop(waiting[rid])
     except KeyboardInterrupt:
         pass
+    closing.set()
     proc.kill_all()  # EOF or SIGTERM: the client went away, so stop every one-shot worker still burning quota
     os._exit(0)  # don't wait for worker threads still blocked in HTTP calls
