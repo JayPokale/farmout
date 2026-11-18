@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 import re
+import select
 import shutil
 import signal
 import socket
@@ -1744,14 +1745,19 @@ class HistoryTest(CliBase):
         self.assertNotIn("say two", export)
         self.assertIn("no finished turn 9 to branch from; its turns are 1 to 3", self.fo("fork", "t", "--at", "9", "x", rc=1).stderr)
 
-        out = self.fo("tree", "d")
-        lines = [re.sub(r"\s{2,}(\S+( · \S+)?|◀)$", "", x) for x in out.stdout.splitlines()]  # without the lane column
-        where = str(self.work)
-        self.assertTrue(lines[0].startswith(f"t · codex · {where} · "), lines[0])
-        self.assertEqual(lines[1:], ["├─ 1 say one", "├─ ⑂ b · copilot", "│  ├─ 2 say other", "│  ├─ 3 say more",
-                                     "│  └─ ⑂ d · copilot", "│     └─ 4 say deeper", "├─ ⑂ c · codex",
-                                     "│  └─ 2 say sibling", "├─ 2 say two", "└─ 3 say three"])
-        self.assertIn("d · copilot", [x for x in out.stdout.splitlines() if x.endswith("◀")][0])
+        lines = self.fo("tree", "d").stdout.splitlines()
+        self.assertRegex(lines[0], r"^t · codex · \d+s ago$", "a conversation in this folder doesn't name it")
+        self.assertEqual(lines[1:], ["● 1  say one",
+                                     "├─╮ ⑂ b · copilot",
+                                     "│ ● 2  say other",
+                                     "│ ● 3  say more",
+                                     "│ ╰─╮ ⑂ d · copilot  ◀",
+                                     "│   ● 4  say deeper",
+                                     "├─╮ ⑂ c · codex",
+                                     "│ ● 2  say sibling",
+                                     "● 2  say two",
+                                     "● 3  say three"])
+        self.assertIn(f"t · codex · {self.work} · ", self.fo("tree", "d", cwd=self.tmp).stdout, "elsewhere it does")
         [root] = self.json("tree")
         self.assertEqual([(b["name"], b["fork_at"]) for b in root["branches"]], [("b", 1), ("c", 1)])
         self.assertEqual([t["num"] for t in root["branches"][0]["branches"][0]["turns"]], [4])
@@ -1770,7 +1776,7 @@ class HistoryTest(CliBase):
 
 
 class UiTest(CliBase):
-    """`farmout ui`: a local page that needs its key, and continues or branches conversations."""
+    """`farmout ui --web`: a local page that needs its key, and continues or branches conversations."""
 
     def start_ui(self):
         p = subprocess.Popen([sys.executable, str(SERVER), "ui", "--no-open"], cwd=self.work, env=self.env, text=True,
@@ -1829,6 +1835,197 @@ class UiTest(CliBase):
         new = json.loads(self.call(port, "/api/send", key=key, body=send)[2])["session"]
         self.assertTrue(wait_until(lambda: [x["text"] for x in self.json("log", new)] == ["x"], 30))
         self.assertEqual(self.meta(new)["cwd"], str(self.work), "a new conversation starts where farmout ui runs")
+
+
+DRIVER = r"""
+import json, sys, time
+sys.path.insert(0, sys.argv[1])
+from farmout import tui
+steps, w, h = json.loads(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
+app, screens = tui.App(sys.argv[5]), []
+for s in steps:
+    if s == ["screen"]:
+        screens.append(app.frame(w, h).text())
+    elif s == ["idle"]:  # until the message sent has its turn, and nothing runs
+        deadline = time.time() + 60
+        app.load()
+        while app.busy() or app.wanted:
+            assert time.time() < deadline, "still running"
+            time.sleep(0.1)
+            app.load()
+    elif s[0] == "running":
+        deadline = time.time() + 30
+        while not any(t["status"] == "running" for n in app.by.values() for t in n["turns"]):
+            assert time.time() < deadline, "never started"
+            time.sleep(0.1)
+            app.load()
+    elif s[0] == "type":
+        for c in s[1]:
+            app.key(c)
+    elif s[0] in ("paste", "mouse"):
+        app.key(tuple(s))
+    else:
+        app.key(s)
+print("\f".join(screens))
+"""
+
+
+class TerminalUiTest(CliBase):
+    """`farmout ui` in the terminal: every conversation as a graph; read, continue, branch or ask again from any turn."""
+
+    def ui(self, *steps, size=(120, 30)):
+        """Drive the screen without a terminal. A step is a key name, ["type", text], ["paste", text],
+        ["mouse", x, y, kind], ["idle"] (until what was sent has its turn and nothing runs), ["running"] or ["screen"]
+        (keep the screen). Returns the screens kept."""
+        p = subprocess.run([sys.executable, "-c", DRIVER, str(SERVER.parent), json.dumps(steps), *map(str, size),
+                            str(self.work)], cwd=self.work, env=self.env, capture_output=True, text=True, timeout=180)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return p.stdout.rstrip("\n").split("\f")
+
+    @staticmethod
+    def graph(screen, width=66):
+        """The graph pane's lines (it is the left 66 columns of a 120-column screen), ages and times as N."""
+        return [re.sub(r"\d+s\b", "Ns", line[2:width - 2].rstrip()) for line in screen.splitlines()[1:]]
+
+    def conversation(self):
+        self.fo("run", "codex", "say one", "-n", "t")
+        self.fo("send", "t", "say two")
+        self.fo("send", "t", "say three")
+        self.fo("fork", "t", "--at", "1", "-w", "copilot", "say other", "-n", "b")
+
+    def test_the_graph_draws_every_branch_off_its_turn(self):
+        self.conversation()
+        self.fo("run", "claude", "lines a|b", "-n", "older")
+        self.fo("send", "b", "say more")
+        first, find, narrow, back, shut, helped = self.ui(
+            ["screen"], "/", ["type", "TWO"], ["screen"], "enter", "enter", ["screen"], "esc", ["screen"],
+            "g", "j", "j", "j", "j", "j", "j", "j", "h", ["screen"], "?", ["screen"], size=(80, 24))
+        self.assertEqual(self.graph(first, 80)[:9], ["▾ t · codex · Ns ago", "● 1  say one", "├─╮ ⑂ b · copilot",
+                                                     "│ ● 2  say other", "│ ◉ 3  say more", "● 2  say two",
+                                                     "● 3  say three", "", "▾ older · claude · Ns ago"],
+                         "the newest turn of the newest conversation is selected")
+        self.assertIn("● 1  lines a|b", self.graph(first, 80))
+        self.assertRegex(find.splitlines()[-1], r"^ / TWO +1 of 1 · ↑↓ next")
+        self.assertIn("◉ 2  say two", find, "find jumps to the question")
+        self.assertIn("▌You", narrow, "⏎ reads it: on a narrow screen the reader fills it")
+        self.assertIn("╭─ t · turn 2", narrow)
+        self.assertNotIn("● 1  say one", narrow)
+        self.assertIn("◉ 2  say two", back, "Esc goes back to the graph")
+        self.assertIn("▸ older · claude · Ns ago · 1 turn", self.graph(shut, 80), "← folds it and says what it holds")
+        self.assertIn("╭─ Keys", helped)
+
+        wide, = self.ui(["screen"])
+        self.assertIn("╭─ b · turn 3", wide, "the reader sits beside the graph")
+        self.assertEqual([re.sub(r"\d+s\b", "Ns", x[66:].strip("│ ")) for x in wide.splitlines()[1:8]],
+                         ["copilot · Ns · ok · Ns ago", "⑂ a branch of t, after its turn 1", "", "▌You", "say more",
+                          "", "▌copilot"])
+        self.assertIn("│ more", "\n".join(x[66:] for x in wide.splitlines()))
+        _, clicked = self.ui(["screen"], ["mouse", 5, 2, "press"], ["screen"])
+        self.assertIn("╭─ t · turn 1", clicked, "a click picks a turn")
+
+    def test_continue_branch_or_ask_again_from_any_turn(self):
+        self.conversation()
+        screens = self.ui(
+            "g", "j", "c", ["screen"],  # turn 1 isn't the newest
+            "b", ["type", "say forked"], "enter", ["idle"], ["screen"],
+            "e", ["screen"], "^U", ["type", "say autre"], "tab", ["type", "copilot"], "enter", ["idle"],
+            "/", ["type", "three"], "enter", "c", ["paste", "say four\nand more"], ["screen"], "enter", ["idle"],
+            ["screen"])
+        refused, forked, asking, pasted, went_on = screens
+        self.assertIn("Turn 1 isn't the newest in t: b branches from it, or continue from turn 3", refused)
+        self.assertEqual(self.graph(forked)[1:6], ["● 1  say one", "├─╮ ⑂ b · copilot", "│ ● 2  say other",
+                                                   "├─╮ ⑂ t-1 · codex", "│ ◉ 2  say forked"])
+        self.assertEqual([self.meta("t-1")[k] for k in ("parent", "base", "worker")], ["t", 1, "codex"])
+        self.assertIn("Ask turn 2 differently: a branch after turn 1", asking)
+        self.assertIn("│ say forked", asking, "its question to start from")
+        self.assertEqual([self.meta("t-2")[k] for k in ("parent", "base", "worker")], ["t", 1, "copilot"],
+                         "asking t-1's first turn again branches off t, where that turn began")
+        self.assertEqual(self.json("log", "t-2")[0]["prompt"], "say autre")
+        self.assertIn("│ say four", pasted, "a pasted newline doesn't send it")
+        self.assertIn("│ and more", pasted)
+        self.assertEqual([x["prompt"] for x in self.json("log", "t")][-1], "say four\nand more")
+        self.assertIn("◉ 4  say four", went_on)
+
+    def test_a_new_conversation_and_stopping_a_turn(self):
+        self.fo("run", "codex", "say one", "-n", "t")
+        drafted, new, stopped = self.ui("c", ["type", "keep me"], "^C", "c", ["screen"], "esc",
+                                        "n", ["type", "say fresh"], "enter", ["idle"], ["screen"],
+                                        "c", ["type", "nap 30"], "enter", ["running"], "x", "y", ["idle"], ["screen"])
+        self.assertIn("│ keep me", drafted, "Ctrl+C closed the composer and kept what was written")
+        name = re.search(r"▾ (\S+) · codex", new).group(1)
+        self.assertNotEqual(name, "t")
+        self.assertIn("◉ 1  say fresh", new)
+        self.assertEqual(self.meta(name)["cwd"], str(self.work), "a new conversation starts where farmout ui runs")
+        self.assertIn("○ 2  nap 30", stopped)
+        self.assertEqual([x["status"] for x in self.json("log", name)], ["ok", "stopped"])
+
+    def test_escape_sequences_never_reach_the_terminal(self):
+        sneaky = "say \x1b]52;c;cHduZWQ=\x07hi\x1b[2J there\x9b31m"  # sets the clipboard, clears the screen
+        self.fo("run", "codex", sneaky, "-n", "t")
+        out = self.fo("tree").stdout
+        self.assertIn("● 1  say hi there", out)
+        self.assertNotRegex(out, "[\x1b\x07\x9b]")
+        screen, = self.ui(["screen"])
+        self.assertIn("◉ 1  say hi there", screen)
+        self.assertIn("│ hi there", screen, "the answer too")
+        self.assertNotRegex(screen, "[\x00-\x09\x0b-\x1f\x7f-\x9f]")
+
+    def test_a_turn_recorded_without_times_still_draws(self):
+        self.fo("run", "codex", "say one", "-n", "t")
+        rec = self.state / "sessions" / "t" / "turns" / "0001.json"
+        rec.write_text(json.dumps({k: v for k, v in json.loads(rec.read_text()).items() if k not in ("started", "secs")}))
+        screen, = self.ui(["screen"])
+        self.assertIn("◉ 1  say one", screen)
+        self.assertIn("│ codex · ok", screen)
+
+    def test_it_runs_in_a_terminal(self):
+        if not importlib.util.find_spec("_curses"):
+            self.skipTest("no curses here")
+        import pty
+        self.fo("run", "codex", "say one", "-n", "t")
+        p = self.fo("ui", rc=2)
+        self.assertIn("farmout ui --web", p.stderr, "without a terminal it says what to use")
+        env = {**self.env, "TERM": "xterm-256color", "COLUMNS": "120", "LINES": "30"}
+        pid, fd = pty.fork()
+        if pid == 0:  # the child: become `farmout ui`, and never run the rest of the test
+            try:
+                os.chdir(self.work)
+                os.execve(sys.executable, [sys.executable, str(SERVER), "ui"], env)
+            finally:
+                os._exit(127)
+        self.addCleanup(os.close, fd)
+        seen = b""
+
+        def read():
+            nonlocal seen
+            if select.select([fd], [], [], 0.2)[0]:
+                try:
+                    seen += os.read(fd, 65536)
+                except OSError:  # the program has exited
+                    return False
+            return True
+
+        def until(text, since=0):
+            deadline = time.monotonic() + 20
+            while text not in seen[since:].decode("utf-8", "replace"):
+                self.assertLess(time.monotonic(), deadline, seen[-800:])
+                read()
+        until("say one")
+        for keys, expect in ((b"c", "Continue t after turn 1"), (b"\x1b[200~say two\rmore\x1b[201~", "more"),
+                             (b"\x1b", "differently")):
+            since = len(seen)
+            os.write(fd, keys)
+            until(expect, since)
+        os.write(fd, b"q")
+        deadline = time.monotonic() + 20
+        while True:
+            done, status = os.waitpid(pid, os.WNOHANG)
+            if done:
+                break
+            self.assertLess(time.monotonic(), deadline, "q didn't quit")
+            read() or time.sleep(0.1)
+        self.assertEqual(os.waitstatus_to_exitcode(status), 0, seen[-800:])
+        self.assertEqual([x["prompt"] for x in self.json("log", "t")], ["say one"], "nothing was sent")
 
 
 class McpSessionTest(Base):

@@ -1,5 +1,6 @@
-"""`farmout ui`: every conversation as a tree in your browser. Read any turn, continue a conversation from its newest
-turn, or branch off any turn, on any worker or model.
+"""`farmout ui --web`: every conversation as a tree in your browser (`farmout ui` alone draws it in the terminal).
+Read any turn, continue a conversation from its newest turn, or branch off any turn, on any worker or model. The
+terminal one (tui.py) uses snapshot(), detail() and send() from here too.
 
 The page is served on 127.0.0.1 by Python's own web server, and it can start workers, so each run makes a fresh key.
 The page's address carries it and the page's requests send it back in a header. Another site's page can't add that
@@ -21,8 +22,8 @@ BODY = 1 << 20  # the largest request taken
 PREVIEW = 600  # characters of each question in the tree; the whole turn comes with /api/turn
 
 
-def snapshot(here):
-    """Every session and its turns, for the tree."""
+def snapshot(here, preview=PREVIEW):
+    """Every session and its turns (each question cut to preview characters), for the tree."""
     rows = []
     for name in sessions.names():
         try:
@@ -31,7 +32,7 @@ def snapshot(here):
         except (KeyError, OSError):  # removed meanwhile
             continue
         rows.append({**sessions.summary(meta), "gone": not os.path.isdir(meta["cwd"]),
-                     "history": [{"n": r["n"], "id": r.get("id"), "prompt": r["prompt"][:PREVIEW], "worker": r.get("worker"),
+                     "history": [{"n": r["n"], "id": r.get("id"), "prompt": r["prompt"][:preview], "worker": r.get("worker"),
                                   "model": r.get("model"), "status": r["status"], "secs": r.get("secs"),
                                   "started": r.get("started")} for r in recs]})
     return {"sessions": rows, "workers": list(ENABLED), "here": here, "colours": COLOURS}
@@ -110,7 +111,7 @@ class Handler(BaseHTTPRequestHandler):
         q = urllib.parse.parse_qs(url.query)
         if url.path == "/":
             if not self.allowed((q.get("key") or [""])[0]):
-                return self.reply(403, b"Open the address `farmout ui` printed: it holds this run's key.\n", "text/plain")
+                return self.reply(403, b"Open the address `farmout ui --web` printed: it holds this run's key.\n", "text/plain")
             nonce = secrets.token_urlsafe(16)
             csp = (f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; connect-src 'self'; "
                    "img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
@@ -263,7 +264,7 @@ textarea{width:100%;min-height:96px;resize:vertical;padding:9px 11px;border:1px 
     <button class="btn primary" id="new" type="button">New conversation</button>
   </div>
 </header>
-<div id="offline" hidden>farmout ui has stopped. Run <code>farmout ui</code> again.</div>
+<div id="offline" hidden>farmout ui has stopped. Run <code>farmout ui --web</code> again.</div>
 <main>
   <nav id="tree" aria-label="Conversations"></nav>
   <section id="detail"><div id="view"></div><div id="compose"></div></section>

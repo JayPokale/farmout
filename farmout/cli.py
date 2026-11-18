@@ -12,9 +12,10 @@ import tempfile
 import time
 from pathlib import Path
 
-from . import VERSION, bench, engine, flows, live, pipeline, proc, review, sessions, skills, store, usage
+from . import VERSION, bench, engine, flows, graph, live, pipeline, proc, review, sessions, skills, store, usage
 from . import hooks as farmout_hooks
 from .config import OUT_DIR, STATE, digest, find, project_root, read, repo_root, settings, trust_file
+from .graph import ago, short
 from .workers import API_BASE, API_MODEL, ENABLED, SETUP, WORKERS, lane, use_main_claude
 
 HOOK_MARK = "# farmout review gate"
@@ -33,16 +34,6 @@ def emit(a, data, text=None):
 
 def split(value):
     return [w.strip() for w in value.split(",") if w.strip()] if value else []
-
-
-def ago(ts):
-    s = max(0, time.time() - (ts or time.time()))
-    return f"{s:.0f}s" if s < 60 else f"{s / 60:.0f}m" if s < 3600 else f"{s / 3600:.0f}h" if s < 86400 else f"{s / 86400:.0f}d"
-
-
-def short(p):
-    home = os.path.expanduser("~")
-    return "~" + p[len(home):] if p and p.startswith(home) else p
 
 
 def table(rows):
@@ -205,88 +196,28 @@ def cmd_fork(a):
     return send_and_show(a, meta["name"], prompt, files + a.file + extra, note=note)
 
 
-def tree_node(m, kids):
-    """A session, its turns (numbered along the whole conversation) and the branches off it, for `farmout tree`."""
-    base = m.get("base") or 0
-    return {"name": m["name"], "worker": m["worker"], "model": m.get("model"), "cwd": m["cwd"],
-            "gone": not os.path.isdir(m["cwd"]), "state": sessions.summary(m)["state"], "group": m.get("group"),
-            "fork_at": m.get("fork_at"), "updated": (m.get("last") or {}).get("ended") or m.get("created"),
-            "turns": [{"n": r["n"], "num": base + r["n"], "prompt": r["prompt"], "worker": r.get("worker"),
-                       "model": r.get("model"), "status": r["status"], "secs": r.get("secs")}
-                      for r in sessions.turns(m["name"])],
-            "branches": [tree_node(k, kids) for k in kids.get(m["name"], [])]}
-
-
-def tree_text(node, width, mark=None, prefix=""):
-    """The lines under a session: its turns, with each branch hung after the turn it continues from."""
-    def lane_of(x):
-        return f"{x['worker']}:{x['model']}" if x.get("model") else str(x.get("worker"))
-    ns = [t["n"] for t in node["turns"]]
-    after = {}
-    for b in node["branches"]:  # an older fork recorded no turn: it hangs at the end
-        after.setdefault(b["fork_at"] if b["fork_at"] == 0 or b["fork_at"] in ns else (ns[-1] if ns else 0), []).append(b)
-    items = [("b", b) for b in after.get(0, [])]
-    for t in node["turns"]:
-        items += [("t", t)] + [("b", b) for b in after.get(t["n"], [])]
-    lines = []
-    for i, (kind, x) in enumerate(items):
-        lead, more = (prefix + "└─ ", prefix + "   ") if i == len(items) - 1 else (prefix + "├─ ", prefix + "│  ")
-        if kind == "b":
-            lines.append(lead + "⑂ " + tree_head(x, mark, node["cwd"]))
-            lines += tree_text(x, width, mark, more)
-            continue
-        tail = "  " + lane_of(x) + ("" if x["status"] == "ok" else f" · {x['status']}")
-        room = max(12, width - len(lead) - len(str(x["num"])) - 1 - len(tail))
-        first = (x["prompt"].strip().splitlines() or [""])[0]
-        first = first if len(first) <= room else first[:room - 1] + "…"
-        lines.append(f"{lead}{x['num']} {first.ljust(room)}{tail}".rstrip())
-    return lines
-
-
-def tree_head(node, mark=None, parent_cwd=None):
-    bits = [node["name"], f"{node['worker']}:{node['model']}" if node.get("model") else node["worker"]]
-    if node["cwd"] != parent_cwd or node["gone"]:  # a branch usually works where its parent does
-        bits.append(short(node["cwd"]) + (" (folder gone)" if node["gone"] else ""))
-    if node["state"] not in ("ok", "new"):
-        bits.append(node["state"])
-    return " · ".join(bits) + ("  ◀" if node["name"] == mark else "")
-
-
 def cmd_tree(a):
-    metas = {}
-    for n in sessions.names():
-        try:
-            metas[n] = sessions.load(n)
-        except KeyError:  # removed meanwhile
-            pass
-    kids = {}
-    for m in metas.values():
-        if m.get("parent") in metas:
-            kids.setdefault(m["parent"], []).append(m)
+    from . import ui
     if a.session:
-        root = sessions.load(a.session)
-        while root.get("parent") in metas:
-            root = metas[root["parent"]]
-        roots = [root]
-    else:  # whole conversations, the most recently active last (next to your prompt, as in `farmout ls`)
-        def active(m):
-            return max([(m.get("last") or {}).get("ended") or m.get("created") or 0] + [active(k) for k in kids.get(m["name"], [])])
-        roots = sorted((m for m in metas.values() if m.get("parent") not in metas and (a.all or not m.get("group"))),
-                       key=active)[-a.limit:]
-    nodes = [tree_node(m, kids) for m in roots]
+        sessions.load(a.session)  # an unknown name stops here
+    roots = graph.forest(ui.snapshot(a.cwd, None)["sessions"], everything=a.all or bool(a.session))
+    roots = [r for r in roots if a.session in [x["name"] for x in graph.nodes(r)]] if a.session else roots[:a.limit]
+    roots.reverse()  # the most recently active last, next to your prompt, as in `farmout ls`
     if a.json:
-        return emit(a, nodes)
-    if not nodes:
+        return emit(a, roots)
+    if not roots:
         return print("No conversations yet. Start one: farmout run <worker> \"<prompt>\"")
-    width = shutil.get_terminal_size((100, 24)).columns
-    print("\n\n".join("\n".join([tree_head(n, a.session) + f" · {ago(n['updated'])} ago"] + tree_text(n, width, a.session))
-                      for n in nodes), flush=True)
-    err("\nContinue from any turn: farmout fork <session> --at <turn> \"...\", or browse it all with farmout ui")
+    colour = sys.stdout.isatty() and not os.environ.get("NO_COLOR") and os.environ.get("TERM") != "dumb"
+    print(graph.text(roots, shutil.get_terminal_size((100, 24)).columns, a.session, colour, a.cwd), flush=True)
+    err("\nContinue from any turn: farmout fork <session> --at <turn> \"...\", or browse them all with farmout ui")
 
 
 def cmd_ui(a):
-    from . import ui
-    return ui.serve(a.cwd, a.port, not a.no_open)
+    if a.web or a.port or a.no_open:
+        from . import ui
+        return ui.serve(a.cwd, a.port, not a.no_open)
+    from . import tui
+    return tui.run(a.cwd, a.session)
 
 
 def answers(rounds):
@@ -1034,9 +965,12 @@ def parser():
     tr.add_argument("session", nargs="?", help="only the tree this session belongs to")
     tr.add_argument("-n", dest="limit", type=int, default=10, help="how many conversations (default 10)")
     tr.add_argument("--all", action="store_true", help="also review, ask, race and pipeline runs")
-    ui = add("ui", "browse every conversation in your browser, and continue or branch from any turn", cmd_ui)
-    ui.add_argument("--port", type=int, default=0, help="port on 127.0.0.1 (default: any free one)")
-    ui.add_argument("--no-open", action="store_true", help="print the address instead of opening a browser")
+    ui = add("ui", "every conversation as a graph in the terminal: read any turn, continue a conversation or branch "
+             "off any turn", cmd_ui)
+    ui.add_argument("session", nargs="?", help="start at this session's newest turn")
+    ui.add_argument("--web", action="store_true", help="the same in your browser instead")
+    ui.add_argument("--port", type=int, default=0, help="with --web: port on 127.0.0.1 (default: any free one)")
+    ui.add_argument("--no-open", action="store_true", help="with --web: print the address instead of opening a browser")
 
     k = add("ask", "ask every worker the same question in parallel", cmd_ask, (common, files))
     k.add_argument("prompt", nargs="*", help="the question; or pipe it in")

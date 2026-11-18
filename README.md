@@ -92,9 +92,9 @@ farmout send dates --attach review-1-claude "Fix what this review found"
 farmout fork review-1-codex "Why do you think line 42 races?"     # a side question, same context
 
 # Every conversation is a tree: branch off any turn, on any model
-farmout tree dates                                   # its turns, and the branches off each one
+farmout tree dates                                   # its turns as a graph, each branch off the turn it came from
 farmout fork dates --at 2 -w claude:opus "Try it with a lookup table instead"
-farmout ui                                           # all of it in your browser: read, continue, branch
+farmout ui                                           # all of it full-screen in your terminal: read, continue, branch
 
 # Pipelines: each stage starts when the previous one ends
 farmout pipe run fix --set test="pytest -x"      # review → fix what 2+ models agree on → check the fix
@@ -128,8 +128,8 @@ farmout hook install          # review every commit; block it when 2+ models fla
 | `run <worker> "<prompt>"` | start a session: `-n name`, `--write` (edit the current directory), `--isolate` (edit a private worktree, make a patch), `--model` (or `claude:opus` as the worker), `--effort`, `--fallback w1,w2` (who takes over at a limit or a lost login; default: every other ready worker, `""` for none), `--bg`, `-f file`. `auto` picks the first allowed worker that isn't at a usage limit |
 | `send <session> "<msg>"` | the next message; a busy session queues it. `--attach <session>` hands over that session's last reply, `-f` adds files, `--bg` returns at once. `--model opus` continues on another model, `-w codex[:model]` on another worker (it gets the conversation so far as a file). `--here` continues in the current folder after you moved the project (inside the same git repository farmout finds it without that) |
 | `fork <session> "<msg>"` | branch a conversation: a new session that keeps its turns up to `--at N` (default: the newest; `0` keeps none) and goes on from there, on `-w worker[:model]` or `--model` if you like. Turns are numbered as `farmout tree` shows them |
-| `tree [session]` | conversations as trees: each turn's question, and the branches off each turn (`--all` adds review, ask and race runs; `--json`) |
-| `ui` | every conversation in your browser, on 127.0.0.1 with a key made for each run: search your questions, read any turn, continue from the newest turn or branch off any turn, on any worker or model, or start a new conversation |
+| `tree [session]` | every conversation as a graph: each turn's question, and each branch in a lane of its own off the turn it came from, as `git log --graph` draws branches (`--all` adds review, ask and race runs; `--json`) |
+| `ui [session]` | the same graph full-screen in your terminal: move through every conversation with the keys or the mouse, read any turn beside it, find a question (`/`), continue from the newest turn (`c`), branch off any turn (`b`) or ask one again differently (`e`) on any worker or model, start a conversation (`n`) or stop one (`x`). `--web` shows it in your browser instead, on 127.0.0.1 with a key made for each run |
 | `ask "<question>"` | the same question to every worker (`-w` to choose, `-w claude:opus,codex` to pick a model too, `-w claude:opus,claude:sonnet` for two models of one subscription), answers side by side; `--debate` lets each read the others and answer again |
 | `review [focus]` | every worker reviews `--staged`, `--base <ref>` or your uncommitted change; `-w` takes the same lanes as `ask`, and `codex,codex` reviews twice with one model; `--min-agree N`, `--fail-on high\|medium\|low` for exit codes |
 | `race "<task>"` | every worker attempts the task in its own worktree; `--test <cmd>` picks the winner, `--apply` lands it |
@@ -155,7 +155,18 @@ A session is a named conversation with one worker, saved in `~/.local/state/farm
 
 Messages go through an inbox. The session's runner, a background process that holds the session's lock, answers them in order, which is why `send` to a busy session queues instead of failing, why `farmout attach` works from any terminal, and why `farmout stop` stops exactly one session's worker. Review, ask, race and pipeline stages all create sessions too, so you can follow up with any reviewer: `farmout send review-3-codex "Show me the input that breaks line 42"`.
 
-**Branches.** `farmout fork <session> --at 3` starts a new session that keeps the conversation up to turn 3 and goes on from there, so one conversation becomes a tree: try Opus on one branch and Codex on another, or ask question 4 a different way, and keep both. Branching Claude off the end of its own conversation uses Claude's native fork; anything else gets the conversation so far as a file. A branch works in the same folder, read-only, and sees the files as they are now: the conversation branches, your files don't. `farmout tree` draws the tree, and `farmout ui` opens it in your browser, where you can search every question you've asked, read any turn, and continue or branch from it. That page listens on 127.0.0.1 only and needs the key in the address it prints, so other sites you visit can't use it.
+**Branches.** `farmout fork <session> --at 3` starts a new session that keeps the conversation up to turn 3 and goes on from there, so one conversation becomes a tree: try Opus on one branch and Codex on another, or ask question 4 a different way, and keep both. Branching Claude off the end of its own conversation uses Claude's native fork; anything else gets the conversation so far as a file. A branch works in the same folder, read-only, and sees the files as they are now: the conversation branches, your files don't. `farmout tree` draws it as a graph:
+
+```
+dates · claude · 2m ago
+● 1  Why does parse_date fail on 2024-02-30?
+├─╮ ⑂ dates-1 · claude:opus
+│ ● 2  Try it with a lookup table instead
+● 2  Fix it and add a test for leap years
+● 3  Now do the same for parse_time
+```
+
+`farmout ui` opens that graph full-screen in your terminal, every conversation in it, with the turn you're on beside it to read. Move with the arrow keys (or `j`/`k`, or the mouse), fold a branch with `←`, find a question with `/`, then press `c` to continue, `b` to branch from that turn or `e` to ask it again differently, on the same worker or another. Paste a long message or press Ctrl+G to write it in your editor. Questions and answers are shown with escape sequences and control characters removed, so a worker's output can't rewrite your terminal. `farmout ui --web` shows the same in your browser: that page listens on 127.0.0.1 only and needs the key in the address it prints, so other sites you visit can't use it.
 
 **Moved or renamed folders.** Sessions are found by name, not by folder, and each remembers where its folder sits in its git repository. Rename or move the project, then `send` from anywhere inside it: the session follows, each worker resumes its own conversation by id, and its next message says where the folder went. An isolated session's worktree moves with the repository (farmout re-links it with `git worktree repair`). Outside a git repository, `farmout send <session> --here "..."` continues in the current folder. If a worker's CLI can't find its own conversation any more (a cleared session store, or an older Claude Code, which looked for a conversation only in its original folder), farmout gives it the conversation so far as a file instead of failing.
 
