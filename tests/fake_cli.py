@@ -78,6 +78,13 @@ elif cmd == "limit" or (cmd == "limited" and reply.split()[0] == name):
     sys.exit("Error: you've hit your usage limit. Try again in 2 minutes.")
 elif cmd == "limited":
     reply = reply.split(" ", 2)[2]  # limited <cli> say <text>
+elif cmd == "halfway":  # halfway <cli> <file> <text>: that CLI edits a file, then hits its usage limit
+    who, fname, content = reply.split(" ", 2)
+    if who == name:
+        with open(fname, "w") as f:
+            f.write(content)
+        sys.exit("Error: you've hit your usage limit. Try again in 2 minutes.")
+    reply = "finished cleanly"
 elif cmd == "nap":
     time.sleep(float(reply))
     reply = "napped"

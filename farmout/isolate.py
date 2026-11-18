@@ -148,6 +148,12 @@ def shortstat(info):
     return len(rows), sum(int(a) for a, *_ in rows if a.isdigit()), sum(int(r[1]) for r in rows if r[1].isdigit())
 
 
+def reset(info):
+    """Back to the worktree's base commit, untracked files gone (ignored ones, such as .farmoutinclude copies, stay)."""
+    git(info["worktree"], *NO_HOOKS, "reset", "-q", "--hard", info["base"])
+    git(info["worktree"], "clean", "-fdq")
+
+
 def remove(info):
     with repo_lock(info["top"]):
         for args in (["worktree", "remove", "--force", info["worktree"]], ["branch", "-D", info["branch"]]):

@@ -601,6 +601,12 @@ class SettingsAndLimitsTest(CliBase):
         (self.work / ".farmout" / "settings.toml").write_text('workers = ["codex"]\n')
         self.assertIn("don't allow claude", self.fo("run", "claude", "say x", rc=1).stdout)
 
+    def test_a_fallback_in_a_new_worktree_starts_clean(self):
+        self.repo()
+        p = self.fo("run", "codex", "halfway codex junk.txt half done", "--isolate", "--fallback", "claude", "-n", "hw")
+        self.assertIn("codex hit a usage limit; retried on claude", p.stderr)
+        self.assertNotIn("junk.txt", self.fo("diff", "hw").stdout, "the limited worker's half-done edit is gone")
+
     def test_a_worker_at_its_limit_falls_back_and_is_skipped(self):
         p = self.fo("run", "codex", "limited codex say rescued", "--fallback", "claude", "-n", "fb")
         self.assertEqual(p.stdout, "rescued\n")
