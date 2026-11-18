@@ -116,7 +116,7 @@ farmout hook install          # review every commit; block it when 2+ models fla
 | `run <worker> "<prompt>"` | start a session: `-n name`, `--write` (edit the current directory), `--isolate` (edit a private worktree, make a patch), `--model`, `--effort`, `--fallback w1,w2`, `--bg`, `-f file`. `auto` picks the first allowed worker that isn't at a usage limit |
 | `send <session> "<msg>"` | the next message; a busy session queues it. `--attach <session>` hands over that session's last reply, `-f` adds files, `--bg` returns at once |
 | `fork <session> "<msg>"` | a new session that starts from this one's conversation; `--worker` continues with a different model |
-| `ask "<question>"` | the same question to every worker (`-w` to choose), answers side by side; `--debate` lets each read the others and answer again |
+| `ask "<question>"` | the same question to every worker (`-w` to choose, `-w claude:opus,codex` to pick a model too), answers side by side; `--debate` lets each read the others and answer again |
 | `review [focus]` | every worker reviews `--staged`, `--base <ref>` or your uncommitted change; `--min-agree N`, `--fail-on high\|medium\|low` for exit codes |
 | `race "<task>"` | every worker attempts the task in its own worktree; `--test <cmd>` picks the winner, `--apply` lands it |
 | `fix-pr <number>` | a pull request's review comments and failing checks (via `gh`; bots, the author's own replies and approvals left out) become a race; check the PR out first. `--dry-run` prints the brief and stops |

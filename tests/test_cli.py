@@ -1190,6 +1190,18 @@ class MoreTest(CliBase):
         self.assertTrue(Path(shared["svg"]).exists())
         self.assertLessEqual(len(shared["text"]), 280, "fits in one post")
 
+    def test_workers_can_name_their_model(self):
+        self.repo()
+        self.fo("ask", "say hi", "-w", "claude:opus,codex")
+        claude = self.last("claude")["argv"]
+        self.assertEqual(claude[claude.index("--model") + 1], "opus")
+        self.assertNotIn("-m", self.last("codex")["argv"], "codex keeps its own default")
+        (self.work / "a.py").write_text("x = 2\n")
+        self.fo("review", "-w", "codex:gpt-x")
+        codex = self.last("codex")["argv"]
+        self.assertEqual(codex[codex.index("-m") + 1], "gpt-x")
+        self.assertIn("one model per worker here", self.fo("ask", "x", "-w", "claude:opus,claude:sonnet", rc=1).stderr)
+
     def test_bench_compares_models_of_one_worker(self):
         self.repo()
         (self.work / "m.py").write_text("def ratio(a, b):\n    return a / b\n")

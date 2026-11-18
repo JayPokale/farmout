@@ -48,9 +48,9 @@ def text(rec):
     return rec.get("error") or rec["status"]
 
 
-def ask(cwd, prompt, workers, files=(), group=None):
+def ask(cwd, prompt, workers, files=(), group=None, models=None):
     group = group or sessions.new_group("ask")
-    return group, fan(group, workers, cwd, prompt, files)
+    return group, fan(group, workers, cwd, prompt, files, models=models)
 
 
 DEBATE = ("The other models answered the same question; their answers are in the listed files ({names}). Where they "
@@ -58,10 +58,10 @@ DEBATE = ("The other models answered the same question; their answers are in the
           "first line: FINAL: <one-line answer>.")
 
 
-def debate(cwd, prompt, workers, files=(), rounds=2, group=None):
+def debate(cwd, prompt, workers, files=(), rounds=2, group=None, models=None):
     """ask, then each model reads the others' answers and revises or defends its own, `rounds` times in all.
     Returns (group, [round results]); every round continues each model's own conversation."""
-    group, results = ask(cwd, prompt, workers, files, group=group or sessions.new_group("debate"))
+    group, results = ask(cwd, prompt, workers, files, group=group or sessions.new_group("debate"), models=models)
     history = [results]
     for _ in range(rounds - 1):
         ok = [(n, rec) for n, rec in results if rec["status"] == "ok"]
@@ -82,7 +82,7 @@ def debate(cwd, prompt, workers, files=(), rounds=2, group=None):
     return group, history
 
 
-def race(cwd, task, workers, test=None, timeout=None, group=None, files=(), progress=None):
+def race(cwd, task, workers, test=None, timeout=None, group=None, files=(), progress=None, models=None):
     """Every worker attempts the task in its own worktree; your test command picks the winner (then the smallest
     diff, then the fastest). Returns (group, rows, winner row or None). progress(session, text), if given, hears
     about the test runs."""
@@ -91,7 +91,7 @@ def race(cwd, task, workers, test=None, timeout=None, group=None, files=(), prog
     group = group or sessions.new_group("race")
     brief = task + (f"\n\nSuccess means this command passes: {test}" if test else "") + RACE
     rows = []
-    for name, rec in fan(group, workers, cwd, brief, files, isolate=True, timeout=timeout):
+    for name, rec in fan(group, workers, cwd, brief, files, isolate=True, timeout=timeout, models=models):
         iso = sessions.load(name).get("iso")
         row = {"session": name, "worker": rec.get("worker"), "ok": rec["status"] == "ok", "secs": rec.get("secs"),
                "files": 0, "added": 0, "removed": 0, "tests": None, "test_output": "", "patch": rec.get("patch"),
@@ -173,11 +173,11 @@ def undo(name):
     return f"took {name}'s patch back out of {top}"
 
 
-def fix_pr(cwd, number, workers, test=None, timeout=None, group=None, progress=None):
+def fix_pr(cwd, number, workers, test=None, timeout=None, group=None, progress=None, models=None):
     """A pull request's review comments and failing checks become a race: every worker attempts them in its own
     worktree, your tests pick the winner. The pull request's head must be checked out (`gh pr checkout N`)."""
     return race(cwd, pr_task(cwd, number), workers, test=test, timeout=timeout,
-                group=group or sessions.new_group(f"pr{number}"), progress=progress)
+                group=group or sessions.new_group(f"pr{number}"), progress=progress, models=models)
 
 
 def pages(text):

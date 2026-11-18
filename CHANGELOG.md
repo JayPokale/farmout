@@ -21,6 +21,7 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 - **The official MCP Registry:** `server.json` (`io.github.JayPokale/farmout`, run as `uvx farmout mcp`); each release is listed there by the release workflow once PyPI has it.
 - **`farmout fix-pr --dry-run`** prints the brief the workers would get from a pull request's feedback, and starts nothing.
 - **Model lanes in `farmout bench`:** `-w claude:opus,claude:sonnet,codex` (or `copilot:<model>` for a model your Copilot plan has enabled) names a model per lane, and one worker on several models compares them (separate review rounds); the card names each model. Cards also name the models farmout picks by default (Gemini Flash low, Claude Sonnet).
+- `-w claude:opus,codex` picks a worker's model in `ask`, `review`, `race` and `fix-pr` too (one model per worker there).
 - `farmout review --json` (and `bench`'s report) include each worker's raw reply, next to the parsed findings.
 - **Bug-Finding Leaderboard tooling** (`bench/leaderboard.py`, in the repository): 41 recent real fixes from 10 well-known projects, each screened by hand and by two models, reviewed per lane (a worker on its default model or a named one, such as `claude:opus`), with resumable runs, a no-quota `check`, `rescore` after a parser fix, and a Markdown table, JSON and card from `render`.
 - `--effort` for every worker (`--effort`, `--reasoning-effort`, `model_reasoning_effort`).

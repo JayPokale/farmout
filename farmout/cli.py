@@ -102,6 +102,16 @@ def everyone(asked):
     return workers
 
 
+def picked(asked):
+    """-w for ask, review, race and fix-pr: workers, each optionally `worker:model`, one model per worker (`farmout
+    bench` is the one that compares several). Returns (workers, {worker: model})."""
+    lanes = [bench.lane(x) for x in split(asked)]
+    names = [w for w, _ in lanes]
+    if len(set(names)) < len(names):
+        raise ValueError("one model per worker here; `farmout bench -w` compares several models of one worker")
+    return everyone(",".join(names) or None), {w: m for w, m in lanes if m}
+
+
 def auto_worker(cwd):
     """The first allowed worker that isn't at a usage limit: your fallback order first, then the rest."""
     s, limited = settings(cwd), usage.limits()
@@ -183,14 +193,15 @@ def show_answers(a, group, rounds):
 
 def cmd_ask(a):
     prompt, extra = read_prompt(a.prompt, cwd=a.cwd)
-    workers = everyone(a.workers)
+    workers, models = picked(a.workers)
     group = sessions.new_group("debate" if a.debate else "ask")
     title = f"farmout ask{' --debate' if a.debate else ''} · {len(workers)} workers · read-only"
     with live.Lanes(group, workers, "answering", title=title, on=live.enabled(a)):
         if a.debate:
-            group, rounds = flows.debate(a.cwd, prompt, workers, a.file + extra, rounds=max(2, a.rounds), group=group)
+            group, rounds = flows.debate(a.cwd, prompt, workers, a.file + extra, rounds=max(2, a.rounds), group=group,
+                                         models=models)
         else:
-            group, results = flows.ask(a.cwd, prompt, workers, a.file + extra, group=group)
+            group, results = flows.ask(a.cwd, prompt, workers, a.file + extra, group=group, models=models)
             rounds = [results]
     return show_answers(a, group, rounds)
 
@@ -209,23 +220,23 @@ def show_review(a, r, min_agree=1, fail_on="never"):
 
 
 def cmd_review(a):
-    workers = everyone(a.workers)
+    workers, models = picked(a.workers)
     group = sessions.new_group("review")
     with live.Lanes(group, workers, "reviewing", title=f"farmout review · {len(workers)} workers · read-only",
                     findings=True, on=live.enabled(a)):
         r = review.review(a.cwd, workers=workers, base=a.base, staged=a.staged, focus=" ".join(a.focus) or None,
-                          group=group)
+                          group=group, models=models)
     return show_review(a, r, a.min_agree, a.fail_on)
 
 
 def cmd_race(a):
     task, extra = read_prompt(a.task, cwd=a.cwd)
-    workers = everyone(a.workers)
+    workers, models = picked(a.workers)
     group = sessions.new_group("race")
     with live.Lanes(group, workers, "working", title=f"farmout race · {len(workers)} workers · one worktree each",
                     on=live.enabled(a)) as lanes:
         group, rows, winner = flows.race(a.cwd, task, workers, test=a.test, files=a.file + extra, group=group,
-                                         progress=lanes.note)
+                                         progress=lanes.note, models=models)
     return show_race(a, group, rows, winner)
 
 
@@ -233,11 +244,12 @@ def cmd_fix_pr(a):
     if a.dry_run:
         task = flows.pr_task(a.cwd, a.number)
         return emit(a, {"number": a.number, "task": task}, task)
-    workers = everyone(a.workers)
+    workers, models = picked(a.workers)
     group = sessions.new_group(f"pr{a.number}")
     with live.Lanes(group, workers, "working", title=f"farmout fix-pr {a.number} · {len(workers)} workers",
                     on=live.enabled(a)) as lanes:
-        group, rows, winner = flows.fix_pr(a.cwd, a.number, workers, test=a.test, group=group, progress=lanes.note)
+        group, rows, winner = flows.fix_pr(a.cwd, a.number, workers, test=a.test, group=group, progress=lanes.note,
+                                           models=models)
     return show_race(a, group, rows, winner)
 
 
@@ -816,7 +828,7 @@ def parser():
 
     k = add("ask", "ask every worker the same question in parallel", cmd_ask, (common, files))
     k.add_argument("prompt", nargs="*", help="the question; or pipe it in")
-    k.add_argument("-w", "--workers", metavar="W1,W2", help="only these workers")
+    k.add_argument("-w", "--workers", metavar="W1,W2", help="only these workers; worker:model picks its model (claude:opus)")
     k.add_argument("--debate", action="store_true", help="then each reads the others' answers and revises or defends its own")
     k.add_argument("--rounds", type=int, default=2, help="debate rounds, counting the first answer (default 2)")
 
@@ -825,20 +837,20 @@ def parser():
     g = v.add_mutually_exclusive_group()
     g.add_argument("--base", metavar="REF", help="review the branch since REF instead of uncommitted changes")
     g.add_argument("--staged", action="store_true", help="review only the staged changes")
-    v.add_argument("-w", "--workers", metavar="W1,W2", help="only these workers")
+    v.add_argument("-w", "--workers", metavar="W1,W2", help="only these workers; worker:model picks its model (claude:opus)")
     v.add_argument("--min-agree", type=int, default=1, metavar="N", help="show findings flagged by N+ models (default 1)")
     v.add_argument("--fail-on", choices=["high", "medium", "low", "never"], default="never",
                    help="exit 1 if a finding at this severity or worse is flagged by --min-agree models")
 
     c = add("race", "every worker attempts the same task in its own worktree; your tests pick the winner", cmd_race, (common, files))
     c.add_argument("task", nargs="*", help="the task; or pipe it in")
-    c.add_argument("-w", "--workers", metavar="W1,W2", help="only these workers")
+    c.add_argument("-w", "--workers", metavar="W1,W2", help="only these workers; worker:model picks its model (claude:opus)")
     c.add_argument("--test", metavar="CMD", help="command that must pass, run in each worktree, e.g. 'pytest -x'")
     c.add_argument("--apply", action="store_true", help="apply the winner's patch to your tree")
 
     fp = add("fix-pr", "a pull request's review comments and failing checks become a race (check it out first)", cmd_fix_pr)
     fp.add_argument("number", type=int)
-    fp.add_argument("-w", "--workers", metavar="W1,W2", help="only these workers")
+    fp.add_argument("-w", "--workers", metavar="W1,W2", help="only these workers; worker:model picks its model (claude:opus)")
     fp.add_argument("--test", metavar="CMD", help="command that must pass in each worktree")
     fp.add_argument("--apply", action="store_true", help="apply the winner's patch to your tree")
     fp.add_argument("--dry-run", action="store_true", help="print the brief the workers would get, and stop")
