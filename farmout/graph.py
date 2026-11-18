@@ -31,6 +31,8 @@ def clean(text):
 def cols(text):
     """The columns text takes in a terminal: wide (CJK) characters take two; combining marks, joiners and variation
     selectors (as in an emoji like ⚠️) none."""
+    if text.isascii():  # the usual case, and the fast one
+        return len(text)
     return sum(0 if unicodedata.category(c) in ("Mn", "Me", "Cf") and c != "\xad" else
                2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in text)
 

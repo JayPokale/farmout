@@ -2040,6 +2040,29 @@ class TerminalUiTest(CliBase):
         self.assertIn("Deleted t and the 2 branches off it", gone)
         self.assertEqual([r["name"] for r in self.json("ls")], ["k"])
 
+    def test_find_looks_in_answers_too(self):
+        self.fo("run", "codex", "say one", "-n", "t")
+        self.fo("run", "codex", "lines alpha|beta|" + "|".join(f"filler {i}" for i in range(40)) + "|zebra", "-n", "z")
+        self.fo("run", "codex", "big 30", "-n", "x")
+        self.fo("run", "codex", "say newest", "-n", "n")
+        _, zebra, xs = self.ui(["screen"], "/", ["type", "zebr"], ["screen"], "esc", "/", ["type", "xxxxx"], ["screen"])
+        self.assertIn("1 of 1", zebra)
+        self.assertIn("z · turn 1", zebra)
+        self.assertRegex(zebra, r"│ • zebra\s+[│┃]", "the reader opens where the answer says it")
+        self.assertIn("1 of 1", xs, "words only the answer has count too")
+        self.assertIn("x · turn 1", xs)
+
+    def test_a_whole_conversation_opens_in_the_pager(self):
+        self.fo("run", "codex", "say one", "-n", "t")
+        self.fo("send", "t", "say two")
+        self.fo("fork", "t", "--at", "1", "say other")
+        kind, text = json.loads(self.ui("O", ["external"])[0])  # on the newest turn: the branch's
+        self.assertEqual(kind, "pager")
+        self.assertTrue(text.startswith("# t-1 (codex)"), text[:80])
+        for seen in ("say one", "say other", "other"):
+            self.assertIn(seen, text, "the turns before the branch come too")
+        self.assertNotIn("say two", text, "but not the ones after it")
+
     def test_a_running_patch_waits_until_its_turn_is_done(self):
         self.repo()
         self.fo("run", "codex", "nap 20", "--isolate", "-n", "busy", "--bg")

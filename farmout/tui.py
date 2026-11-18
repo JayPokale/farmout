@@ -25,10 +25,10 @@ BASIC = {"err": 1, "ok": 2, "run": 3, "acc": 3, "code": 6, "w:claude": 1, "w:cod
          "w:copilot": 5, "w:deepseek": 4}  # the 8-colour terminal's stand-ins for graph.PALETTE
 HELP = [("↑↓ j k", "move"), ("← → h l", "fold, unfold; ← also goes up to the branch"),
         ("⏎ space", "read a turn; fold a branch"), ("Tab", "between the graph and the reader"), ("g G", "first, last"),
-        ("/", "find a question"),
+        ("/", "find a question, a name, or words in an answer"),
         ("c", "continue from the newest turn"), ("b", "branch from this turn"),
         ("e", "ask this turn differently: a branch from the turn before"), ("n", "new conversation"),
-        ("x", "stop a running turn"), ("o", "open the turn in your pager"), ("y", "copy the turn's answer"),
+        ("x", "stop a running turn"), ("o O", "open the turn, or its whole conversation, in your pager"), ("y", "copy the turn's answer"),
         ("d", "an isolated session's patch, in your pager"), ("D", "delete a conversation or branch, with the branches off it"),
         ("a", "show review, ask and race runs too"), ("r q", "reload; quit")]
 
@@ -244,7 +244,7 @@ class App:
         self.external = None  # ("pager" | "editor", text): run() leaves the screen for it
         self.wanted = None  # (session, message id): select that turn once it shows up
         self.drafts, self.answers, self.cache = {}, {}, (None, None)
-        self.hit, self.geo = {}, {}
+        self.hit, self.geo, self.rw = {}, {}, 0
         self.load(first=True, focus=focus)
 
     # The conversations
@@ -377,7 +377,7 @@ class App:
                "enter": self.enter, " ": self.enter, "tab": self.swap, "btab": self.swap,
                "c": lambda: self.compose("continue"), "b": lambda: self.compose("branch"),
                "e": lambda: self.compose("edit"), "n": lambda: self.compose("new"), "x": self.stop,
-               "/": self.find, "o": self.page, "y": self.yank, "d": self.patch, "D": self.delete, "a": self.all_runs,
+               "/": self.find, "o": self.page, "O": self.whole, "y": self.yank, "d": self.patch, "D": self.delete, "a": self.all_runs,
                "r": self.load, "?": self.open_help, "q": self.quit}.get(k)
         if act and (node or k in ("n", "a", "r", "?", "q")):
             act()
@@ -467,6 +467,14 @@ class App:
         if row["kind"] != "turn":
             return self.say("Pick a turn to open", "dim")
         self.external = ("pager", clean("\n".join("".join(t for t, _ in line) for line in self.reading(row, 100))))
+
+    def whole(self):
+        node = self.row()["node"]
+        try:  # a branch's conversation includes the turns before it, as `farmout export` writes it
+            text = sessions.transcript(node["name"])
+        except (OSError, KeyError) as e:
+            return self.say(f"Couldn't read {node['name']}: {e}", "err")
+        self.external = ("pager", clean(f"# {node['name']} ({lane(node)})\n\n{text}"))
 
     def yank(self):
         row = self.row()
@@ -632,14 +640,27 @@ class App:
                 self.go(b["hits"][b["at"]])
         elif b["text"].key(k):
             q = b["text"].text.strip().lower()
-            b["hits"] = [self.key_of(r) for r in graph.layout(self.roots)
-                         if q and q in (r["turn"]["prompt"] if r["kind"] == "turn" else r["node"]["name"]).lower()]
+
+            def hit(r):  # a name or a question, or from three letters on an answer too
+                t = r.get("turn")
+                if not t:
+                    return q in r["node"]["name"].lower()
+                return q in t["prompt"].lower() or (len(q) >= 3 and t["status"] != "running" and q in (
+                    self.detail(r["node"]["name"], t["n"], t["status"]).get("text") or "").lower())
+            b["hits"] = [self.key_of(r) for r in graph.layout(self.roots) if q and hit(r)]
             b["at"] = 0
             if b["hits"]:
                 self.go(b["hits"][0])
 
     def go(self, key):
         self.show(key[1], key[2] if key[0] == "turn" else None)
+        q = self.box["text"].text.strip().lower() if self.box and self.box["kind"] == "find" else ""
+        row = self.row()
+        if q and row and row["kind"] == "turn" and self.rw:  # the reader opens where the answer says it
+            lines = ["".join(t for t, _ in line).lower() for line in self.reading(row, self.rw)]
+            heads = [i for i, line in enumerate(lines) if line.startswith("▌")]  # "▌You", then the answer's
+            at = next((i for i in range(heads[1] if len(heads) > 1 else 0, len(lines)) if q in lines[i]), None)
+            self.rtop = max(0, (at if at is not None else next((i for i, x in enumerate(lines) if q in x), 3)) - 3)
 
     # Drawing
 
@@ -755,6 +776,7 @@ class App:
         if not row:
             return
         lines = self.reading(row, w - 4)
+        self.rw = w - 4
         ih = h - 2
         self.rpage = ih
         self.rtop = max(0, min(self.rtop, len(lines) - ih))
@@ -838,7 +860,7 @@ class App:
             c.cursor = (y, x0 + cols(b["text"].text[:b["text"].cur]))
             q = b["text"].text.strip()
             n = len(b["hits"])
-            info = (f"{b['at'] + 1} of {n}" if n else "no match" if q else "type to find a question")
+            info = (f"{b['at'] + 1} of {n}" if n else "no match" if q else "type to find a question or an answer")
             info += " · ↑↓ next · ⏎ go · Esc back"
             c.put(y, max(x + 2, w - cols(info) - 1), info, "dim")
         elif b and b["kind"] == "ask":
