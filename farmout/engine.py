@@ -75,8 +75,9 @@ def switch(t, worker, model):
     """The task moved to another lane. The same worker keeps its conversation and only changes model. Another
     worker can't resume what this one holds, so it starts a conversation of its own and gets the earlier turns as
     a file (t["handoff"]() returns the files and a note to add)."""
-    if worker == t.get("worker"):
-        return {**t, "model": model}
+    if worker == t.get("worker"):  # a new conversation also gets a new id: the failed run may have taken the old one
+        fresh = t.get("session_id") and not t.get("resume")
+        return {**t, "model": model, **({"session_id": str(uuid.uuid4())} if fresh else {})}
     nt = {**t, "worker": worker, "model": model, "resume": None, "fork": None, "history": None,
           "session_id": str(uuid.uuid4()) if t.get("persist") and worker in ("claude", "copilot") else None}
     if t.get("handoff") and (t.get("resume") or t.get("history")):

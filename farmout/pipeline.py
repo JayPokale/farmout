@@ -17,7 +17,7 @@ from pathlib import Path
 
 from . import flows, hooks, proc, review, sessions, skills
 from .config import CONFIG, STATE, find, project_root, read
-from .workers import ENABLED
+from .workers import ENABLED, lane
 
 RUNS = STATE / "runs"
 KEYS = {"name", "prompt", "worker", "workers", "skill", "files", "write", "isolate", "model", "effort", "test", "on",
@@ -223,16 +223,16 @@ def context(state):
 
 
 def pick(names, distinct=True):
-    """The stage's workers that are available here; an unavailable one is swapped for another, so built-in
-    pipelines work with whatever subscriptions you have. distinct: no worker twice (one session per worker)."""
+    """The stage's workers (or worker:model lanes) that are available here; an unavailable one is swapped for
+    another, so built-in pipelines work with whatever subscriptions you have. distinct: no lane twice."""
     out, notes = [], []
     for w in names:
-        if w in ENABLED and not (distinct and w in out):
+        if lane(w)[0] in ENABLED and not (distinct and w in out):
             out.append(w)
             continue
-        if w in ENABLED:
+        if lane(w)[0] in ENABLED:
             continue
-        alt = next((a for a in ENABLED if a != "api" and a not in out), None)
+        alt = next((a for a in ENABLED if a != "api" and a not in [lane(x)[0] for x in out]), None)
         if not alt and not distinct:
             alt = next(iter(ENABLED), None)
         if not alt:

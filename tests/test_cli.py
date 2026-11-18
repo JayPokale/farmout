@@ -791,6 +791,15 @@ class OneSubscriptionTest(CliBase):
         (self.work / ".farmout" / "settings.toml").write_text('web = true\n')
         self.assertIn('[models]\nclaude = "sonnet"', self.fo("bench", "--apply", "--last", rc=1).stderr)
 
+    def test_a_pipeline_stage_can_use_two_models_of_one_worker(self):
+        d = self.work / ".farmout" / "pipelines"
+        d.mkdir(parents=True)
+        (d / "two.json").write_text(json.dumps({"stage": [{"name": "a", "workers": ["claude:opus", "claude:sonnet"],
+                                                           "prompt": "say piped"}]}))
+        self.fo("pipe", "run", "two")
+        models = sorted(flag(r["argv"], "--model") for r in self.runs() if r["name"] == "claude")
+        self.assertEqual(models, ["opus", "sonnet"])
+
     def test_claudes_own_error_message_is_shown(self):
         p = self.fo("run", "claude", "claudeout", "--fallback", "", rc=1)
         self.assertTrue(p.stdout.startswith("RuntimeError: claude: Not logged in · Please run /login\n"), p.stdout)
