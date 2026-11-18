@@ -8,7 +8,7 @@ import uuid
 
 from . import hooks, isolate, usage
 from .config import settings
-from .workers import ENABLED, SETUP, lane, limited_for, logged_out
+from .workers import ENABLED, SETUP, lane, limited_for, logged_out, lost_conversation
 
 LOGIN_PAUSE = 1800  # a worker that can't log in is left alone this long (or until it works again)
 
@@ -146,6 +146,15 @@ def execute(t, key, where=None, on_iso=None):
             res = {"ok": False, "worker": w, "model": t.get("model"), "text": err, "limited": bool(cause), "why": cause}
         usage.log(worker=w, ok=res["ok"], secs=round(time.time() - t1, 1), limited=res.get("limited", False),
                   tokens=usage.tokens(res.get("usage")), chars=len(res["text"]))
+        if not res["ok"] and t.get("resume") and t.get("handoff") and lost_conversation(res["text"]):
+            # its CLI can't find the conversation it holds (a cleared store, or an older Claude Code after the folder
+            # moved): the same worker starts afresh, with the conversation so far as a file
+            files, note = t["handoff"]()
+            notes.append(f"{w} couldn't find its own conversation, so it got the conversation so far as a file")
+            t = {**t, "resume": None, "fork": None, "handoff": None, "files": list(t.get("files") or []) + files,
+                 "prompt": t["prompt"] + note,
+                 "session_id": str(uuid.uuid4()) if t.get("persist") and w in ("claude", "copilot") else None}
+            continue
         if res["ok"] or not res.get("limited"):
             break
         tried.append(k)

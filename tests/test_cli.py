@@ -2,6 +2,7 @@
 
 Run:  python3 -m unittest discover -s tests -v
 """
+import http.client
 import http.server
 import importlib.util
 import json
@@ -1629,6 +1630,207 @@ elif a[:2] == ["pr", "checks"]:
         self.assertIn("no small bug-fix commits", self.fo("bench", "-n", "1", rc=1).stderr)
 
 
+class HistoryTest(CliBase):
+    """Conversations outlive a renamed or moved folder, branch off any turn, and show as a tree."""
+
+    def test_a_session_follows_its_renamed_folder(self):
+        self.repo()
+        (self.work / "sub").mkdir()
+        self.fo("run", "codex", "say one", "-n", "c", cwd=self.work / "sub")
+        self.fo("run", "claude", "say uno", "-n", "k", cwd=self.work / "sub")
+        moved = self.tmp / "renamed"
+        os.rename(self.work, moved)
+        p = self.fo("send", "c", "recall", cwd=self.tmp, rc=1)
+        self.assertIn("is gone (renamed or moved?)", p.stderr, "from outside the repository it can't be found")
+        self.assertIn("(folder gone)", self.fo("ls", cwd=self.tmp).stdout)
+        self.assertEqual(self.runs()[-1]["name"], "claude", "nothing ran")
+
+        p = self.fo("send", "c", "recall", cwd=moved)
+        self.assertEqual(p.stdout, "say one\n", "codex resumes its own conversation, by id")
+        self.assertIn(f"[c · its folder is now {moved / 'sub'}]", p.stderr)
+        self.assertEqual((self.meta("c")["cwd"], self.last("codex")["cwd"]), (str(moved / "sub"),) * 2,
+                         "the same folder inside the repository, found from the repository's top")
+        self.assertIn(f"folder moved from {self.work / 'sub'} to {moved / 'sub'}", self.last("codex")["brief"])
+        self.fo("send", "c", "say again", cwd=moved)
+        self.assertNotIn("folder moved", self.last("codex")["brief"], "said once")
+
+        p = self.fo("send", "k", "say dos", cwd=moved)  # this claude can't find it from the new folder: a file instead
+        self.assertEqual(p.stdout, "dos\n")
+        self.assertIn("claude couldn't find its own conversation", p.stderr)
+        run = self.last("claude")
+        self.assertNotIn("--resume", run["argv"])
+        self.assertIn("continues an earlier conversation (with claude)", run["brief"])
+        ctx = Path(re.search(r"^- (.+context-0002\.md)$", run["brief"], re.M).group(1)).read_text()
+        self.assertIn("say uno", ctx)
+        self.assertEqual(self.fo("send", "k", "recall", cwd=moved).stdout, "say dos\n",
+                         "then claude resumes natively again, from the new folder")
+        self.assertEqual(flag(self.last("claude")["argv"], "--resume"), self.meta("k")["native_id"])
+
+    def test_a_branch_off_an_earlier_session_follows_the_moved_folder_too(self):
+        self.repo()
+        self.fo("run", "codex", "say one", "-n", "t")
+        self.fo("fork", "t", "say two", "-n", "b")
+        moved = self.tmp / "moved"
+        os.rename(self.work, moved)
+        self.fo("fork", "b", "--at", "1", "say again", "-n", "c", cwd=moved)  # turn 1 is t's, from before b began
+        self.assertEqual([self.meta(n)["cwd"] for n in ("t", "b", "c")], [str(moved)] * 3)
+        self.assertEqual(self.meta("c")["parent"], "t")
+
+    def test_a_renamed_subfolder_is_never_swapped_for_another_folder(self):
+        self.repo()
+        (self.work / "sub").mkdir()
+        self.fo("run", "codex", "say one", "-n", "s", "--write", cwd=self.work / "sub")
+        os.rename(self.work / "sub", self.work / "sub2")
+        p = self.fo("send", "s", "say two", rc=1)  # from the repository's top: sub is gone from it too
+        self.assertIn("has no sub either", p.stderr)
+        self.fo("send", "s", "--here", "say two", cwd=self.work / "sub2")
+        self.assertEqual(self.meta("s")["cwd"], str(self.work / "sub2"))
+
+    def test_a_branch_whose_first_turn_failed_still_gets_its_history(self):
+        self.fo("run", "codex", "say one", "-n", "t")
+        self.fo("fork", "t", "-w", "copilot", "fail boom", "-n", "b", rc=1)
+        self.fo("send", "b", "say retry")
+        brief = self.last("copilot")["brief"]
+        self.assertIn("continues an earlier conversation (with copilot)", brief)
+        self.assertIn("say one", Path(re.search(r"^- (.+context-0002\.md)$", brief, re.M).group(1)).read_text())
+
+    def test_no_branch_is_made_off_a_folder_that_is_gone(self):
+        self.repo()
+        self.fo("run", "codex", "write b.py x", "--isolate", "-n", "w")
+        shutil.rmtree(self.meta("w")["iso"]["worktree"])
+        self.assertIn("its worktree", self.fo("fork", "w", "say hi", rc=1).stderr)
+        self.assertEqual([r["name"] for r in self.json("ls")], ["w"], "no empty branch left behind")
+
+    def test_send_here_moves_a_session_to_any_folder(self):
+        self.fo("run", "codex", "say one", "-n", "plain")  # not a git repository: no way to tell it's the same folder
+        os.rename(self.work, self.tmp / "elsewhere")
+        self.assertIn("--here", self.fo("send", "plain", "recall", cwd=self.tmp / "elsewhere", rc=1).stderr)
+        p = self.fo("send", "plain", "--here", "recall", cwd=self.tmp / "elsewhere")
+        self.assertEqual(p.stdout, "say one\n")
+        self.assertEqual(self.meta("plain")["cwd"], str(self.tmp / "elsewhere"))
+
+    def test_an_isolated_session_keeps_its_worktree_when_the_repository_moves(self):
+        self.repo()
+        self.fo("run", "codex", "write b.py one", "--isolate", "-n", "w")
+        moved = self.tmp / "moved"
+        os.rename(self.work, moved)
+        self.fo("send", "w", "write c.py two", cwd=moved)
+        iso = self.meta("w")["iso"]
+        self.assertTrue(iso["worktree"].startswith(str(moved) + os.sep), iso)
+        patch = self.fo("diff", "w", cwd=moved).stdout
+        self.assertIn("+++ b/b.py", patch)
+        self.assertIn("+++ b/c.py", patch)
+        self.assertIn(iso["worktree"], self.git("worktree", "list", cwd=moved), "git's links were repaired")
+
+    def test_branch_off_any_turn_and_see_the_tree(self):
+        self.fo("run", "codex", "say one", "-n", "t")
+        self.fo("send", "t", "say two")
+        self.fo("send", "t", "say three")
+        p = self.fo("fork", "t", "--at", "1", "-w", "copilot", "say other", "-n", "b")
+        self.assertIn("[b · branched from t after turn 1 · copilot]", p.stderr)
+        ctx = (self.state / "sessions" / "b" / "context.md").read_text()
+        self.assertIn("say one", ctx)
+        self.assertNotIn("say two", ctx, "only the turns up to the branch point")
+        self.assertIn("Read it first", self.last("copilot")["brief"])
+        self.assertEqual(self.json("log", "b")[0]["prompt"], "say other", "the pointer to it isn't part of the question")
+        self.fo("send", "b", "say more")  # turn 3 of b's conversation
+        self.fo("fork", "b", "--at", "1", "say sibling", "-n", "c")
+        self.assertEqual(self.meta("c")["parent"], "t", "turn 1 is t's: the new branch starts from t")
+        self.fo("fork", "b", "--at", "3", "say deeper", "-n", "d")
+        self.assertEqual([self.meta("d")[k] for k in ("parent", "fork_at", "base")], ["b", 2, 3])
+        export = self.fo("export", "d").stdout
+        self.assertEqual(re.findall(r"^## Turn (\d+) \((\w+)", export, re.M),
+                         [("1", "codex"), ("2", "copilot"), ("3", "copilot"), ("4", "copilot")])
+        self.assertNotIn("say two", export)
+        self.assertIn("no finished turn 9 to branch from; its turns are 1 to 3", self.fo("fork", "t", "--at", "9", "x", rc=1).stderr)
+
+        out = self.fo("tree", "d")
+        lines = [re.sub(r"\s{2,}(\S+( · \S+)?|◀)$", "", x) for x in out.stdout.splitlines()]  # without the lane column
+        where = str(self.work)
+        self.assertTrue(lines[0].startswith(f"t · codex · {where} · "), lines[0])
+        self.assertEqual(lines[1:], ["├─ 1 say one", "├─ ⑂ b · copilot", "│  ├─ 2 say other", "│  ├─ 3 say more",
+                                     "│  └─ ⑂ d · copilot", "│     └─ 4 say deeper", "├─ ⑂ c · codex",
+                                     "│  └─ 2 say sibling", "├─ 2 say two", "└─ 3 say three"])
+        self.assertIn("d · copilot", [x for x in out.stdout.splitlines() if x.endswith("◀")][0])
+        [root] = self.json("tree")
+        self.assertEqual([(b["name"], b["fork_at"]) for b in root["branches"]], [("b", 1), ("c", 1)])
+        self.assertEqual([t["num"] for t in root["branches"][0]["branches"][0]["turns"]], [4])
+
+    def test_claude_branches_natively_only_off_the_end(self):
+        self.fo("run", "claude", "say one", "-n", "k")
+        self.fo("send", "k", "say two")
+        self.assertEqual(self.fo("fork", "k", "--at", "1", "recall", "-n", "k1").stdout, "none\n")
+        run = self.last("claude")
+        self.assertNotIn("--fork-session", run["argv"])
+        ctx = Path(re.search(r"^- (\S+context\.md)$", run["brief"], re.M).group(1)).read_text()
+        self.assertIn("say one", ctx)
+        self.assertNotIn("say two", ctx)
+        self.assertEqual(self.fo("fork", "k", "recall", "-n", "k2").stdout, "say two\n")
+        self.assertIn("--fork-session", self.last("claude")["argv"])
+
+
+class UiTest(CliBase):
+    """`farmout ui`: a local page that needs its key, and continues or branches conversations."""
+
+    def start_ui(self):
+        p = subprocess.Popen([sys.executable, str(SERVER), "ui", "--no-open"], cwd=self.work, env=self.env, text=True,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.addCleanup(lambda: (p.kill(), p.communicate(timeout=10)))
+        m = re.search(r"http://127\.0\.0\.1:(\d+)/\?key=(\S+)", p.stdout.readline())
+        self.assertTrue(m, p.stderr.read() if p.poll() is not None else "no address printed")
+        return int(m.group(1)), m.group(2)
+
+    def call(self, port, path, key=None, body=None, host=None, origin=None):
+        headers = {"Host": host or f"127.0.0.1:{port}", **({"X-Farmout-Key": key} if key else {}),
+                   **({"Origin": origin} if origin else {}), **({"Content-Type": "application/json"} if body else {})}
+        c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        c.request("POST" if body is not None else "GET", path, body=json.dumps(body) if body is not None else None,
+                  headers=headers)
+        r = c.getresponse()
+        raw = r.read()
+        c.close()
+        return r.status, r.getheader("Content-Security-Policy"), raw
+
+    def test_the_page_needs_its_key_and_continues_or_branches(self):
+        self.fo("run", "codex", "say one", "-n", "t")
+        self.fo("send", "t", "say two")
+        port, key = self.start_ui()
+        self.assertEqual(self.call(port, "/")[0], 403)
+        status, csp, page = self.call(port, f"/?key={key}")
+        self.assertEqual(status, 200)
+        nonce = re.search(r"script-src 'nonce-([^']+)'", csp).group(1)
+        self.assertIn(f'<script nonce="{nonce}">', page.decode())
+        self.assertEqual(self.call(port, "/api/state")[0], 403, "no key")
+        self.assertEqual(self.call(port, "/api/state", key="nope")[0], 403, "a wrong key")
+        self.assertEqual(self.call(port, "/api/state", key=key, host="evil.example")[0], 403, "DNS rebinding")
+        self.assertEqual(self.call(port, "/?key=%C3%A9")[0], 403, "an odd key is refused, not a crash")
+        c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        c.request("POST", "/api/send", body=b"{}", headers={"X-Farmout-Key": key, "Content-Length": "-1"})
+        self.assertEqual(c.getresponse().status, 400, "a negative length isn't read until the client hangs up")
+        c.close()
+        send = {"mode": "new", "worker": "codex", "prompt": "say x"}
+        self.assertEqual(self.call(port, "/api/send", key=key, body=send, origin="https://evil.example")[0], 403)
+
+        [t] = [s for s in json.loads(self.call(port, "/api/state", key=key)[2])["sessions"] if s["name"] == "t"]
+        self.assertEqual([h["prompt"] for h in t["history"]], ["say one", "say two"])
+        self.assertEqual(json.loads(self.call(port, "/api/turn?session=t&n=1", key=key)[2])["text"], "one")
+
+        status, _, raw = self.call(port, "/api/send", key=key, body={"mode": "continue", "session": "t", "n": 1, "prompt": "say x"})
+        self.assertEqual((status, json.loads(raw)["error"]), (400, "turn 1 isn't the newest in t: branch from it instead"))
+        r = json.loads(self.call(port, "/api/send", key=key, body={"mode": "continue", "session": "t", "n": 2, "prompt": "say three"})[2])
+        self.assertEqual(r["session"], "t")
+        self.assertTrue(wait_until(lambda: [x["status"] for x in self.json("log", "t")] == ["ok"] * 3, 30))
+
+        edit = {"mode": "branch", "edit": True, "session": "t", "n": 2, "prompt": "say deux", "worker": "copilot"}
+        b = json.loads(self.call(port, "/api/send", key=key, body=edit)[2])["session"]
+        self.assertEqual([self.meta(b)[k] for k in ("parent", "base", "worker")], ["t", 1, "copilot"],
+                         "asking question 2 differently keeps turn 1")
+        self.assertTrue(wait_until(lambda: [x["text"] for x in self.json("log", b)] == ["deux"], 30))
+        new = json.loads(self.call(port, "/api/send", key=key, body=send)[2])["session"]
+        self.assertTrue(wait_until(lambda: [x["text"] for x in self.json("log", new)] == ["x"], 30))
+        self.assertEqual(self.meta(new)["cwd"], str(self.work), "a new conversation starts where farmout ui runs")
+
+
 class McpSessionTest(Base):
     def last_brief(self, cli):
         recs = [json.loads(p.read_text()) for p in sorted(self.log.glob("[0-9]*.json"), key=lambda p: p.stat().st_mtime_ns)]
@@ -1664,6 +1866,23 @@ class McpSessionTest(Base):
         started = self.call(s, "pipeline", action="run", name="p", cwd=str(self.work))[1]
         run_id = re.search(r"run (\S+) in", started).group(1)
         self.assertTrue(wait_until(lambda: ": ok" in self.call(s, "pipeline", action="status", run=run_id)[1], 30))
+
+    def test_send_follows_a_moved_folder(self):
+        def git(*args):
+            subprocess.run(["git", "-C", str(self.work), "-c", "user.name=t", "-c", "user.email=t@localhost", *args],
+                           check=True, capture_output=True)
+        git("init", "-q")
+        (self.work / "a.py").write_text("x = 1\n")
+        git("add", ".")
+        git("commit", "-qm", "init")
+        s = self.start()
+        self.call(s, "send", session="mv", worker="codex", message="say one", cwd=str(self.work))
+        moved = self.tmp / "moved"
+        os.rename(self.work, moved)
+        err, text = self.call(s, "send", session="mv", message="recall", cwd=str(moved))
+        self.assertFalse(err, text)
+        self.assertIn(f"(its folder moved; the session follows it to {moved})", text)
+        self.assertEqual(text.splitlines()[-1], "say one")
 
     def test_cancelling_a_send_stops_that_session(self):
         s = self.start()

@@ -91,6 +91,11 @@ farmout send dates -w codex                          # or on another worker, whi
 farmout send dates --attach review-1-claude "Fix what this review found"
 farmout fork review-1-codex "Why do you think line 42 races?"     # a side question, same context
 
+# Every conversation is a tree: branch off any turn, on any model
+farmout tree dates                                   # its turns, and the branches off each one
+farmout fork dates --at 2 -w claude:opus "Try it with a lookup table instead"
+farmout ui                                           # all of it in your browser: read, continue, branch
+
 # Pipelines: each stage starts when the previous one ends
 farmout pipe run fix --set test="pytest -x"      # review → fix what 2+ models agree on → check the fix
 farmout pipe run spec "Add CSV export to the reports page"
@@ -121,8 +126,10 @@ farmout hook install          # review every commit; block it when 2+ models fla
 | command | what it does |
 |---|---|
 | `run <worker> "<prompt>"` | start a session: `-n name`, `--write` (edit the current directory), `--isolate` (edit a private worktree, make a patch), `--model` (or `claude:opus` as the worker), `--effort`, `--fallback w1,w2` (who takes over at a limit or a lost login; default: every other ready worker, `""` for none), `--bg`, `-f file`. `auto` picks the first allowed worker that isn't at a usage limit |
-| `send <session> "<msg>"` | the next message; a busy session queues it. `--attach <session>` hands over that session's last reply, `-f` adds files, `--bg` returns at once. `--model opus` continues on another model, `-w codex[:model]` on another worker (it gets the conversation so far as a file) |
-| `fork <session> "<msg>"` | a new session that starts from this one's conversation; `--worker` continues with a different model |
+| `send <session> "<msg>"` | the next message; a busy session queues it. `--attach <session>` hands over that session's last reply, `-f` adds files, `--bg` returns at once. `--model opus` continues on another model, `-w codex[:model]` on another worker (it gets the conversation so far as a file). `--here` continues in the current folder after you moved the project (inside the same git repository farmout finds it without that) |
+| `fork <session> "<msg>"` | branch a conversation: a new session that keeps its turns up to `--at N` (default: the newest; `0` keeps none) and goes on from there, on `-w worker[:model]` or `--model` if you like. Turns are numbered as `farmout tree` shows them |
+| `tree [session]` | conversations as trees: each turn's question, and the branches off each turn (`--all` adds review, ask and race runs; `--json`) |
+| `ui` | every conversation in your browser, on 127.0.0.1 with a key made for each run: search your questions, read any turn, continue from the newest turn or branch off any turn, on any worker or model, or start a new conversation |
 | `ask "<question>"` | the same question to every worker (`-w` to choose, `-w claude:opus,codex` to pick a model too, `-w claude:opus,claude:sonnet` for two models of one subscription), answers side by side; `--debate` lets each read the others and answer again |
 | `review [focus]` | every worker reviews `--staged`, `--base <ref>` or your uncommitted change; `-w` takes the same lanes as `ask`, and `codex,codex` reviews twice with one model; `--min-agree N`, `--fail-on high\|medium\|low` for exit codes |
 | `race "<task>"` | every worker attempts the task in its own worktree; `--test <cmd>` picks the winner, `--apply` lands it |
@@ -146,7 +153,11 @@ Every command takes `--json` for scripts and `-C <dir>`. Prompts can come from s
 
 A session is a named conversation with one worker, saved in `~/.local/state/farmout/sessions/<name>/`. farmout resumes it through the worker CLI's own session id (`claude --resume`, `codex exec resume`, `copilot --session-id`, `agy --conversation`, `dsh --session-id`; for `api` it keeps the history itself), so the model really remembers earlier turns rather than rereading a summary.
 
-Messages go through an inbox. The session's runner, a background process that holds the session's lock, answers them in order, which is why `send` to a busy session queues instead of failing, why `farmout attach` works from any terminal, and why `farmout stop` stops exactly one session's worker. Forking a Claude session uses Claude's native fork; other workers get the transcript as a file. Review, ask, race and pipeline stages all create sessions too, so you can follow up with any reviewer: `farmout send review-3-codex "Show me the input that breaks line 42"`.
+Messages go through an inbox. The session's runner, a background process that holds the session's lock, answers them in order, which is why `send` to a busy session queues instead of failing, why `farmout attach` works from any terminal, and why `farmout stop` stops exactly one session's worker. Review, ask, race and pipeline stages all create sessions too, so you can follow up with any reviewer: `farmout send review-3-codex "Show me the input that breaks line 42"`.
+
+**Branches.** `farmout fork <session> --at 3` starts a new session that keeps the conversation up to turn 3 and goes on from there, so one conversation becomes a tree: try Opus on one branch and Codex on another, or ask question 4 a different way, and keep both. Branching Claude off the end of its own conversation uses Claude's native fork; anything else gets the conversation so far as a file. A branch works in the same folder, read-only, and sees the files as they are now: the conversation branches, your files don't. `farmout tree` draws the tree, and `farmout ui` opens it in your browser, where you can search every question you've asked, read any turn, and continue or branch from it. That page listens on 127.0.0.1 only and needs the key in the address it prints, so other sites you visit can't use it.
+
+**Moved or renamed folders.** Sessions are found by name, not by folder, and each remembers where its folder sits in its git repository. Rename or move the project, then `send` from anywhere inside it: the session follows, each worker resumes its own conversation by id, and its next message says where the folder went. An isolated session's worktree moves with the repository (farmout re-links it with `git worktree repair`). Outside a git repository, `farmout send <session> --here "..."` continues in the current folder. If a worker's CLI can't find its own conversation any more (a cleared session store, or an older Claude Code, which looked for a conversation only in its original folder), farmout gives it the conversation so far as a file instead of failing.
 
 ## Pipelines
 
@@ -384,6 +395,8 @@ One-shot `delegate` outputs go to `~/.cache/farmout/` and are safe to delete. `f
 **How is this different from OpenAI's Codex plugin for Claude Code?** That plugin drives Codex only, from Claude Code. farmout drives whichever subscriptions you have (Codex, Gemini through Antigravity, Copilot, a second Claude, local models), several at once, from your terminal or any MCP client, with sessions and pipelines.
 
 **I only have one subscription. Is farmout for me?** Yes, though it does more with two. One plan holds several models: Claude's Opus, Sonnet and Haiku, several Codex models, or Copilot's models from several vendors. `farmout bench -w claude:opus,claude:sonnet --apply` tells you whether the bigger model finds more of your own past bugs and makes the better choice the default; `farmout review -w claude:opus,claude:sonnet` (or `-w codex,codex`) gets two independent reviews from one plan; `fallback = ["claude:sonnet"]` keeps you working when Opus hits its limit; and `farmout send <session> --model opus` moves a conversation up a model when it gets hard. A local model through the `api` worker (Ollama) adds a free second opinion.
+
+**I renamed my project folder. Can I continue my conversations?** Yes. Claude Code's `--continue` and its `/resume` list look only at the current folder's history, but farmout finds sessions by name: `farmout send <session> "..."` from anywhere in the renamed repository follows the folder and resumes the worker's own conversation. `farmout ls` marks sessions whose folder is gone, and `--here` covers folders outside git.
 
 **Will it burn my other quotas?** Every task spends the quota of the worker that runs it. `review`, `ask` and `race` send one task per worker; `farmout stats` shows what each did. Use `-w` to pick workers.
 

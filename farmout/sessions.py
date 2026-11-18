@@ -4,6 +4,10 @@ A message goes into the session's inbox. The session's runner, a background proc
 works through the inbox in order, so a busy session queues new messages instead of refusing them. Commands that
 wait for an answer only watch the turn records, so any terminal can attach to any session, and `farmout stop`
 stops exactly one session's runner and its worker.
+
+Sessions are found by name, never by folder, and each remembers where its folder sits in its git repository, so a
+renamed or moved project keeps its conversations (rehome). A fork branches off any turn and keeps the conversation
+up to there; the branches of a conversation form a tree (`farmout tree`, `farmout ui`).
 """
 import fcntl
 import json
@@ -28,6 +32,9 @@ NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 PKG = str(Path(__file__).resolve().parent.parent)
 NEW_ID = ("claude", "copilot")  # CLIs that take a session id we choose; codex and agy report theirs
 RUNNER = "import sys; sys.path.insert(0, sys.argv.pop(1)); from farmout.cli import main; sys.exit(main(sys.argv[1:]))"
+GONE = ("{name}'s folder {old} is gone (renamed or moved?). Run this from its new place, or from anywhere in the same "
+        "git repository, and the session follows it there; or `farmout send {name} --here \"...\"` continues in the "
+        "current folder.")
 
 
 def path(name):
@@ -85,8 +92,79 @@ def new_group(kind):
     return reserve(ROOT / ".groups", kind)
 
 
+def home_of(cwd):
+    """Where a folder sits in its git repository, so it can be found again once the repository is renamed or moved:
+    the commit checked out (the repository keeps it wherever it goes), the main working tree, and the folder's path
+    inside that. None outside a repository with commits."""
+    p = subprocess.run(["git", "-C", str(cwd), "rev-parse", "HEAD", "--git-common-dir", "--show-toplevel"],
+                       capture_output=True, text=True)
+    lines = p.stdout.splitlines()
+    if p.returncode or len(lines) < 3:
+        return None
+    common = Path(cwd, lines[1]).resolve()
+    top = str(common.parent) if common.name == ".git" else os.path.realpath(lines[2])  # from a worktree: the main one
+    return {"head": lines[0], "top": top, "rel": os.path.relpath(os.path.realpath(cwd), top)}
+
+
+def moved_to(home, cwd):
+    """(main working tree, folder) where a session's folder is now, when cwd is in the same repository (one that has
+    the commit the session recorded); else None. The folder is the same path inside the repository, or None if that
+    isn't there (renamed too): never some other folder, where a writer would edit the wrong files."""
+    now = home_of(cwd) if home else None
+    if not now or subprocess.run(["git", "-C", now["top"], "cat-file", "-e", home["head"] + "^{commit}"],
+                                 capture_output=True).returncode:
+        return None
+    folder = os.path.normpath(os.path.join(now["top"], home["rel"]))
+    return now["top"], folder if os.path.isdir(folder) else None
+
+
+def repair(top):
+    """Re-link a moved repository's farmout worktrees: git records their paths, both ways, as absolute paths."""
+    d = Path(top, ".farmout", "worktrees")
+    trees = [str(p) for p in d.iterdir() if p.is_dir()] if d.is_dir() else []
+    if trees:
+        subprocess.run(["git", "-C", top, "worktree", "repair", *trees], capture_output=True)
+
+
+def rehome(name, cwd, force=False):
+    """Point a session at its folder's new place; returns the new folder, or None if nothing changed. Unless force,
+    only a session whose folder is gone moves, and cwd must be in the same git repository: the session's folder is
+    found there by its path inside the repository. force (`--here`) makes cwd its folder. An isolated session's
+    worktree moves with its repository. The worker still resumes its own conversation (by id, from the new folder),
+    and its next message says where the folder went."""
+    meta = load(name)
+    old = meta["cwd"]
+    if not force and os.path.isdir(old):
+        return None
+    cwd = os.path.realpath(os.path.expanduser(cwd or os.getcwd()))
+    got = moved_to(meta.get("home"), cwd)
+    if not got and not force:
+        raise ValueError(GONE.format(name=name, old=old))
+    if not force and not got[1]:
+        raise ValueError(f"{name}'s folder {old} is gone, and {got[0]} has no {meta['home']['rel']} either (renamed "
+                         f"too?). From the folder it should use: farmout send {name} --here \"...\"")
+    if not got and meta.get("iso"):
+        raise ValueError(f"{name} edits in a worktree of its own git repository: run this from inside that repository")
+    new = cwd if force else got[1]
+    if new == old:
+        return None
+    iso = meta.get("iso")
+    if iso and got and iso["top"] != got[0]:
+        was = iso["top"]
+        iso.update({k: got[0] + iso[k][len(was):] for k in ("top", "worktree", "patch")
+                    if iso.get(k) and (iso[k] == was or iso[k].startswith(was + os.sep))})
+    meta.update(cwd=new, home=home_of(new) or meta.get("home"), moved_from=meta.get("moved_from") or old)
+    save(meta)
+    if got:
+        repair(got[0])
+    return new
+
+
 def create(worker, cwd, name=None, write=False, isolate=False, model=None, effort=None, group=None, parent=None,
-           fork_of=None, fallback=None, lane=None):
+           fork_of=None, fallback=None, lane=None, fork_at=None, base=0, kind=None):
+    """A new session, named <kind>-<n> (kind: the worker) unless named. A branch (fork) names its parent, the
+    parent's turn it continues from (fork_at) and how many turns came before its first one (base), which numbers its
+    turns along the whole conversation."""
     if worker not in ENABLED:
         raise ValueError(f"unknown or unavailable worker {worker!r}; available: {', '.join(ENABLED) or 'none'}")
     ROOT.mkdir(parents=True, exist_ok=True)
@@ -96,13 +174,15 @@ def create(worker, cwd, name=None, write=False, isolate=False, model=None, effor
         except FileExistsError:
             raise ValueError(f"a session named {name!r} already exists") from None
     else:
-        name = reserve(ROOT, worker)
+        name = reserve(ROOT, kind or worker)
     d = path(name)
     (d / "inbox").mkdir()
     (d / "turns").mkdir()
-    meta = {"name": name, "worker": worker, "cwd": os.path.realpath(os.path.expanduser(cwd or os.getcwd())),
+    cwd = os.path.realpath(os.path.expanduser(cwd or os.getcwd()))
+    meta = {"name": name, "worker": worker, "cwd": cwd, "home": home_of(cwd),
             "write": bool(write or isolate), "isolate": bool(isolate), "model": model, "effort": effort,
-            "group": group, "parent": parent, "fork_of": fork_of, "fallback": fallback, "lane": lane, "native_id": None,
+            "group": group, "parent": parent, "fork_of": fork_of, "fork_at": fork_at, "base": base,
+            "fallback": fallback, "lane": lane, "native_id": None,
             "iso": None, "turns": 0, "created": time.time(), "last": None}
     save(meta)
     event(name, "SessionStart", {k: meta[k] for k in ("worker", "cwd", "write", "isolate", "group", "parent")})
@@ -151,11 +231,14 @@ def stash(text, kind="stdin"):
     return str(p)
 
 
-def post(name, prompt, files=(), attach=(), cwd=None, switch=None):
+def post(name, prompt, files=(), attach=(), cwd=None, switch=None, note=None):
     """Queue a message. Relative files resolve against cwd; attach names sessions whose last output goes along.
-    switch {"worker", "model"} moves the conversation to that worker or model from this message on."""
+    switch {"worker", "model"} moves the conversation to that worker or model from this message on. note goes to the
+    worker after the prompt but stays out of the conversation's record (a branch's pointer to its context.md)."""
     d = path(name)
-    load(name)
+    meta = load(name)
+    if not os.path.isdir(meta["cwd"]):  # callers rehome() first; a message queued now would only fail
+        raise ValueError(GONE.format(name=name, old=meta["cwd"]))
     base = cwd or os.getcwd()
     files = [os.path.realpath(os.path.join(base, os.path.expanduser(f))) for f in files]
     missing = [f for f in files if not os.path.exists(f)]
@@ -165,6 +248,8 @@ def post(name, prompt, files=(), attach=(), cwd=None, switch=None):
     msg = {"id": uuid.uuid4().hex[:12], "prompt": prompt, "files": files, "posted": time.time()}
     if switch:
         msg["switch"] = {k: v for k, v in switch.items() if v}
+    if note:
+        msg["note"] = note
     write_json(d / "inbox" / f"{time.time_ns()}-{msg['id']}.json", msg)
     event(name, "MessageReceived", {"message": msg["id"], "prompt": prompt, "files": files})
     return msg
@@ -248,9 +333,9 @@ def kick(name):
         spawn(["_runner", name], path(name) / "runner.log")
 
 
-def deliver(name, prompt, files=(), attach=(), cwd=None, wait=True, timeout=None, switch=None):
+def deliver(name, prompt, files=(), attach=(), cwd=None, wait=True, timeout=None, switch=None, note=None):
     """Queue a message and start the runner; wait for the turn's record, or return the queued message."""
-    msg = post(name, prompt, files, attach, cwd, switch)
+    msg = post(name, prompt, files, attach, cwd, switch, note)
     kick(name)
     return wait_msg(name, msg["id"], timeout) if wait else msg
 
@@ -329,7 +414,7 @@ def turn(name, msg, key, inbox_file=None):
         m = load(name)
         m["iso"] = iso
         save(m)
-    t = {"worker": meta["worker"], "prompt": msg["prompt"], "files": rec["files"], "cwd": meta["cwd"],
+    t = {"worker": meta["worker"], "prompt": msg["prompt"] + (msg.get("note") or ""), "files": rec["files"], "cwd": meta["cwd"],
          "write": meta["write"], "isolate": meta["isolate"], "model": meta["model"], "effort": meta["effort"],
          "persist": True, "fallback": meta.get("fallback"), "session": name, "handoff": handoff(name, n)}
     if meta["native_id"]:
@@ -338,12 +423,21 @@ def turn(name, msg, key, inbox_file=None):
         t.update(resume=meta["fork_of"], fork=True, session_id=str(uuid.uuid4()))
     elif meta["worker"] in NEW_ID:
         t["session_id"] = str(uuid.uuid4())
+    if not t.get("resume") and not t.get("history") and not msg.get("note") and (d / "context.md").exists():
+        # a branch whose first turn didn't take: nothing holds its earlier turns yet, so this message carries them
+        files, note = t["handoff"]()
+        t.update(files=t["files"] + files, prompt=t["prompt"] + note)
+    if meta.get("moved_from"):  # paths in the conversation so far point at the old folder
+        t["prompt"] += (f"\n\n(This project's folder moved from {meta['moved_from']} to {meta['cwd']} since the last "
+                        "message: files from earlier in the conversation are now under the new folder.)")
     if meta["worker"] == "api":
         t["history"] = read_json(d / "messages.json", [])
     if (worker, model) != (meta["worker"], meta["model"]):
         t = engine.switch(t, worker, model)
     where = meta["iso"] or ({"label": name, "branch": f"farmout/{name}"} if meta["isolate"] else None)
     try:
+        if not os.path.isdir(meta["cwd"]):  # moved since the message was queued
+            raise FileNotFoundError(GONE.format(name=name, old=meta["cwd"]))
         res = engine.execute(t, key, where, on_iso=keep_iso)
     except Exception as e:  # a bug or an I/O error: record it, and the runner goes on to the next message
         res = {"ok": False, "worker": worker, "text": f"{type(e).__name__}: {e}", "notes": [], "iso": None,
@@ -365,6 +459,7 @@ def turn(name, msg, key, inbox_file=None):
         else:
             meta["native_id"] = res.get("native_id") or meta["native_id"]
         meta["worker"], meta["model"] = res["worker"], res.get("model")
+        meta.pop("moved_from", None)  # the worker has been told
         if res.get("messages"):
             write_json(d / "messages.json", res["messages"])
     meta["iso"] = res.get("iso") or meta["iso"]
@@ -378,28 +473,17 @@ def turn(name, msg, key, inbox_file=None):
 
 
 def handoff(name, n):
-    """For turn n, if it moves to another worker: () -> (files, note). The files hold the conversation so far (a
-    native fork's parent conversation first), and the note, added to the message, points the new worker at them."""
+    """For turn n, if it can't resume the worker's own conversation (another worker, or a folder its CLI doesn't
+    know): () -> (files, note). The file holds the conversation so far, a branch's earlier turns included, and the
+    note, added to the message, points the worker at it."""
     def give():
-        meta = load(name)
-        parts = []
-        if meta.get("fork_of") and meta.get("parent"):
-            try:
-                parts.append(transcript(meta["parent"]))
-            except (KeyError, OSError, ValueError):
-                pass
-        parts.append(transcript(name, before=n))
-        text = "\n".join(p for p in parts if p.strip())
-        files = [str(path(name) / "context.md")] if (path(name) / "context.md").exists() else []
-        if text:
-            ctx = path(name) / f"context-{n:04d}.md"
-            ctx.write_text(text)
-            files.append(str(ctx))
-        if not files:
+        meta, text = load(name), transcript(name, before=n)
+        if not text.strip():
             return [], ""
-        listed = ", ".join(Path(f).name for f in files)
-        return files, (f"\n\nContext: this message continues an earlier conversation (with {meta['worker']}), "
-                       f"which is in the listed file{'s' * (len(files) > 1)} {listed}. Read it first.")
+        ctx = path(name) / f"context-{n:04d}.md"
+        ctx.write_text(text)
+        return [str(ctx)], (f"\n\nContext: this message continues an earlier conversation (with {meta['worker']}), "
+                            f"which is in the listed file {ctx.name}. Read it first.")
     return give
 
 
@@ -438,41 +522,77 @@ def remove(name):
 
 
 def transcript(name, before=None):
-    """The conversation as Markdown; before=n stops at turn n."""
-    parts = []
+    """The conversation as Markdown from its very start: a branch's context.md holds the turns it branched off with,
+    and its own turns are numbered on from there. before=n stops at this session's turn n."""
+    meta, ctx = load(name), path(name) / "context.md"
+    parts = [ctx.read_text().rstrip("\n") + "\n"] if ctx.exists() else []
     for r in turns(name):
         if before is not None and r["n"] >= before:
             break
         out = Path(r["output"]).read_text() if r.get("output") and os.path.exists(r["output"]) else ""
-        parts.append(f"## Turn {r['n']} ({r.get('worker')}, {r['status']})\n\n### Prompt\n\n{r['prompt']}\n\n### Reply\n\n{out}\n")
+        parts.append(f"## Turn {(meta.get('base') or 0) + r['n']} ({r.get('worker')}, {r['status']})\n\n"
+                     f"### Prompt\n\n{r['prompt']}\n\n### Reply\n\n{out}\n")
     return "\n".join(parts)
 
 
-def fork(name, prompt, new_name=None, worker=None):
-    """A new session that starts from this one's conversation: a native fork for claude, otherwise the transcript
-    goes along as a file. It works in this session's directory (its worktree, if any), read-only."""
-    parent = load(name)
+def fork(name, new_name=None, worker=None, at=None, model=None):
+    """A new session that branches off this conversation after turn `at`, keeping the conversation up to there.
+    Turns are numbered along the whole conversation, as `farmout tree` shows them, so a turn from before this branch
+    began belongs to a session it branched off, and the new branch starts from that one. Default: the newest finished
+    turn; 0 keeps none. Claude branches natively off the end of its own conversation; otherwise the conversation so
+    far goes along as a file. It works in that session's folder (its worktree, if any), read-only. Returns the new
+    session's meta, and the files and note for its first message."""
+    parent = here = load(name)
+    while at is not None and at <= (parent.get("base") or 0) and parent.get("parent"):
+        try:
+            parent = load(parent["parent"])
+        except KeyError:  # removed: its turns live on only in this branch's context.md
+            break
+    if parent is not here and not os.path.isdir(parent["cwd"]):  # moved with the branch it was reached from
+        rehome(parent["name"], here["cwd"])
+        parent = load(parent["name"])
+    name, base = parent["name"], parent.get("base") or 0
+    done = [r["n"] for r in turns(name) if r["status"] != "running"]
+    at = (done[-1] if done else 0) if at is None else at - base
+    if at != 0 and at not in done:
+        raise ValueError(f"{name} has no finished turn {base + at} to branch from"
+                         + (f"; its turns are {base + 1} to {base + done[-1]}" if done else "; it has none yet"))
     worker = worker or parent["worker"]
-    native = worker == parent["worker"] == "claude" and parent["native_id"]
+    native = worker == parent["worker"] == "claude" and parent["native_id"] and at == parent["turns"]
     iso = parent.get("iso")
     cwd = os.path.join(iso["worktree"], iso.get("rel", ".")) if iso else parent["cwd"]
-    meta = create(worker, cwd, name=new_name, model=parent["model"] if worker == parent["worker"] else None,
-                  effort=parent["effort"], group=parent.get("group"), parent=name,
-                  fork_of=parent["native_id"] if native else None)
-    files = []
-    if not native and parent["turns"]:
+    if not os.path.isdir(cwd):  # say so before making a branch that could never run
+        raise ValueError(f"can't branch off {name}: its {'worktree' if iso else 'folder'} {cwd} is gone")
+    root = parent
+    while root.get("parent"):  # branches are named after their conversation: cache-1, cache-2, ...
+        try:
+            root = load(root["parent"])
+        except KeyError:
+            break
+    meta = create(worker, cwd, name=new_name, effort=parent["effort"], group=parent.get("group"), parent=name,
+                  kind=root["name"] if len(root["name"]) <= 56 else None,
+                  model=model or (parent["model"] if worker == parent["worker"] else None),
+                  fork_of=parent["native_id"] if native else None, fork_at=at, base=(parent.get("base") or 0) + at)
+    if parent.get("moved_from"):  # its folder moved and nobody has been told yet: the branch tells its worker
+        meta["moved_from"] = parent["moved_from"]
+        save(meta)
+    files, note, text = [], None, transcript(name, before=at + 1)
+    if text.strip():  # kept even for a native fork: a later move to another worker or folder hands it over
         ctx = path(meta["name"]) / "context.md"
-        ctx.write_text(transcript(name))
-        prompt += (f"\n\nContext: this continues an earlier conversation (with {parent['worker']}), which is in the "
-                   "listed file context.md. Read it first.")
-        files.append(str(ctx))
-    return meta, prompt, files
+        ctx.write_text(text)
+        if not native:
+            note = (f"\n\nContext: this continues an earlier conversation (with {parent['worker']}), which is in "
+                    "the listed file context.md. Read it first.")
+            files.append(str(ctx))
+    return meta, files, note
 
 
 def summary(meta):
     name, q = meta["name"], len(pending(meta["name"]))
     state = "running" if busy(name) else "queued" if q else (meta.get("last") or {}).get("status") or "new"
-    return {"name": name, "worker": meta["worker"], "state": state, "queued": q, "turns": meta["turns"],
-            "created": meta.get("created"), "updated": (meta.get("last") or {}).get("ended") or meta.get("created"),
-            "cwd": meta["cwd"], "group": meta.get("group"),
-            "isolate": meta.get("isolate"), "branch": (meta.get("iso") or {}).get("branch")}
+    return {"name": name, "worker": meta["worker"], "model": meta.get("model"), "state": state, "queued": q,
+            "turns": meta["turns"], "created": meta.get("created"),
+            "updated": (meta.get("last") or {}).get("ended") or meta.get("created"), "cwd": meta["cwd"],
+            "group": meta.get("group"), "parent": meta.get("parent"), "fork_at": meta.get("fork_at"),
+            "base": meta.get("base") or 0, "isolate": meta.get("isolate"),
+            "branch": (meta.get("iso") or {}).get("branch")}

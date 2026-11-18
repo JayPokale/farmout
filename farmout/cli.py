@@ -147,14 +147,14 @@ def show_turn(a, name, rec):
     return 0 if rec["status"] == "ok" else 1
 
 
-def send_and_show(a, name, prompt, files, attach=(), switch=None):
+def send_and_show(a, name, prompt, files, attach=(), switch=None, note=None):
     if a.bg:
-        msg = sessions.deliver(name, prompt, files, attach, cwd=a.cwd, wait=False, switch=switch)
+        msg = sessions.deliver(name, prompt, files, attach, cwd=a.cwd, wait=False, switch=switch, note=note)
         emit(a, {"session": name, "message": msg["id"], "status": "queued"},
              f"{name}: queued; `farmout attach {name}` to watch, `farmout log {name}` to read")
         return 0
     flows.ACTIVE.add(name)
-    rec = sessions.deliver(name, prompt, files, attach, cwd=a.cwd, switch=switch)
+    rec = sessions.deliver(name, prompt, files, attach, cwd=a.cwd, switch=switch, note=note)
     flows.ACTIVE.discard(name)
     return show_turn(a, name, rec)
 
@@ -170,8 +170,16 @@ def cmd_run(a):
     return send_and_show(a, meta["name"], prompt, a.file + extra)
 
 
+def follow(a, name):
+    """A session whose folder was renamed or moved follows it (or, with --here, moves to the current folder)."""
+    moved = sessions.rehome(name, a.cwd, force=getattr(a, "here", False))
+    if moved and not a.json:
+        err(f"[{name} · its folder is now {short(moved)}]")
+
+
 def cmd_send(a):
     prompt, extra = read_prompt(a.message, cwd=a.cwd)
+    follow(a, a.session)
     meta = sessions.load(a.session)
     worker, model = lane(a.worker) if a.worker else (None, None)
     if worker:
@@ -186,12 +194,99 @@ def cmd_send(a):
 
 def cmd_fork(a):
     prompt, extra = read_prompt(a.message, cwd=a.cwd)
-    if a.worker:
-        check_workers([a.worker])
-    meta, prompt, files = sessions.fork(a.session, prompt, a.name, a.worker)
+    worker, model = lane(a.worker) if a.worker else (None, None)
+    if worker:
+        check_workers([worker])
+    follow(a, a.session)
+    meta, files, note = sessions.fork(a.session, a.name, worker, a.at, a.model or model)
     if not a.json:
-        err(f"[{meta['name']} · forked from {a.session} · {meta['worker']}]")
-    return send_and_show(a, meta["name"], prompt, files + a.file + extra)
+        err(f"[{meta['name']} · branched from {meta['parent']} after turn {meta['base']} · {meta['worker']}"
+            f"{':' + meta['model'] if meta.get('model') else ''}]")
+    return send_and_show(a, meta["name"], prompt, files + a.file + extra, note=note)
+
+
+def tree_node(m, kids):
+    """A session, its turns (numbered along the whole conversation) and the branches off it, for `farmout tree`."""
+    base = m.get("base") or 0
+    return {"name": m["name"], "worker": m["worker"], "model": m.get("model"), "cwd": m["cwd"],
+            "gone": not os.path.isdir(m["cwd"]), "state": sessions.summary(m)["state"], "group": m.get("group"),
+            "fork_at": m.get("fork_at"), "updated": (m.get("last") or {}).get("ended") or m.get("created"),
+            "turns": [{"n": r["n"], "num": base + r["n"], "prompt": r["prompt"], "worker": r.get("worker"),
+                       "model": r.get("model"), "status": r["status"], "secs": r.get("secs")}
+                      for r in sessions.turns(m["name"])],
+            "branches": [tree_node(k, kids) for k in kids.get(m["name"], [])]}
+
+
+def tree_text(node, width, mark=None, prefix=""):
+    """The lines under a session: its turns, with each branch hung after the turn it continues from."""
+    def lane_of(x):
+        return f"{x['worker']}:{x['model']}" if x.get("model") else str(x.get("worker"))
+    ns = [t["n"] for t in node["turns"]]
+    after = {}
+    for b in node["branches"]:  # an older fork recorded no turn: it hangs at the end
+        after.setdefault(b["fork_at"] if b["fork_at"] == 0 or b["fork_at"] in ns else (ns[-1] if ns else 0), []).append(b)
+    items = [("b", b) for b in after.get(0, [])]
+    for t in node["turns"]:
+        items += [("t", t)] + [("b", b) for b in after.get(t["n"], [])]
+    lines = []
+    for i, (kind, x) in enumerate(items):
+        lead, more = (prefix + "└─ ", prefix + "   ") if i == len(items) - 1 else (prefix + "├─ ", prefix + "│  ")
+        if kind == "b":
+            lines.append(lead + "⑂ " + tree_head(x, mark, node["cwd"]))
+            lines += tree_text(x, width, mark, more)
+            continue
+        tail = "  " + lane_of(x) + ("" if x["status"] == "ok" else f" · {x['status']}")
+        room = max(12, width - len(lead) - len(str(x["num"])) - 1 - len(tail))
+        first = (x["prompt"].strip().splitlines() or [""])[0]
+        first = first if len(first) <= room else first[:room - 1] + "…"
+        lines.append(f"{lead}{x['num']} {first.ljust(room)}{tail}".rstrip())
+    return lines
+
+
+def tree_head(node, mark=None, parent_cwd=None):
+    bits = [node["name"], f"{node['worker']}:{node['model']}" if node.get("model") else node["worker"]]
+    if node["cwd"] != parent_cwd or node["gone"]:  # a branch usually works where its parent does
+        bits.append(short(node["cwd"]) + (" (folder gone)" if node["gone"] else ""))
+    if node["state"] not in ("ok", "new"):
+        bits.append(node["state"])
+    return " · ".join(bits) + ("  ◀" if node["name"] == mark else "")
+
+
+def cmd_tree(a):
+    metas = {}
+    for n in sessions.names():
+        try:
+            metas[n] = sessions.load(n)
+        except KeyError:  # removed meanwhile
+            pass
+    kids = {}
+    for m in metas.values():
+        if m.get("parent") in metas:
+            kids.setdefault(m["parent"], []).append(m)
+    if a.session:
+        root = sessions.load(a.session)
+        while root.get("parent") in metas:
+            root = metas[root["parent"]]
+        roots = [root]
+    else:  # whole conversations, the most recently active last (next to your prompt, as in `farmout ls`)
+        def active(m):
+            return max([(m.get("last") or {}).get("ended") or m.get("created") or 0] + [active(k) for k in kids.get(m["name"], [])])
+        roots = sorted((m for m in metas.values() if m.get("parent") not in metas and (a.all or not m.get("group"))),
+                       key=active)[-a.limit:]
+    nodes = [tree_node(m, kids) for m in roots]
+    if a.json:
+        return emit(a, nodes)
+    if not nodes:
+        return print("No conversations yet. Start one: farmout run <worker> \"<prompt>\"")
+    width = shutil.get_terminal_size((100, 24)).columns
+    print("\n\n".join("\n".join([tree_head(n, a.session) + f" · {ago(n['updated'])} ago"] + tree_text(n, width, a.session))
+                      for n in nodes), flush=True)
+    err("\nContinue from any turn: farmout fork <session> --at <turn> \"...\", or browse it all with farmout ui")
+
+
+def cmd_ui(a):
+    from . import ui
+    return ui.serve(a.cwd, a.port, not a.no_open)
 
 
 def answers(rounds):
@@ -312,7 +407,8 @@ def ls_text(rows):
         return "No sessions yet. Start one: farmout run <worker> \"<prompt>\""
     return table([("NAME", "WORKER", "STATE", "TURNS", "AGE", "WHERE")] +
                  [(r["name"], r["worker"], r["state"] + (f" (+{r['queued']})" if r["queued"] and r["state"] == "running" else ""),
-                   r["turns"], ago(r["created"]), short(r["cwd"]) + (f" [{r['branch']}]" if r["branch"] else ""))
+                   r["turns"], ago(r["created"]), short(r["cwd"]) + (f" [{r['branch']}]" if r["branch"] else "")
+                   + ("" if os.path.isdir(r["cwd"]) else " (folder gone)"))
                   for r in rows])
 
 
@@ -917,14 +1013,30 @@ def parser():
     s.add_argument("-w", "--worker", metavar="WORKER[:MODEL]",
                    help="continue the conversation on another worker from this message on (it gets the earlier turns)")
     s.add_argument("--model", help="continue on another model of the same worker (or of --worker)")
+    s.add_argument("--here", action="store_true", help="the session's folder moved: continue in the current folder "
+                   "(-C DIR for another); inside the same git repository farmout finds it without this")
     s.add_argument("--bg", action="store_true", help="queue it and return at once")
 
-    f = add("fork", "start a new session from an existing one's conversation (a side question)", cmd_fork, (common, files))
+    f = add("fork", "branch a conversation: a new session that keeps its turns up to one you pick and goes on from "
+            "there", cmd_fork, (common, files))
     f.add_argument("session")
     f.add_argument("message", nargs="*")
+    f.add_argument("--at", type=int, metavar="TURN", help="branch after this turn (`farmout tree` numbers them; "
+                   "default: the newest; 0 keeps none)")
     f.add_argument("-n", "--name")
-    f.add_argument("--worker", help="continue with a different worker (it gets the transcript)")
+    f.add_argument("-w", "--worker", metavar="WORKER[:MODEL]", help="continue on another worker (it gets the "
+                   "conversation so far as a file)")
+    f.add_argument("--model", help="continue on another model")
+    f.add_argument("--here", action="store_true", help="the session's folder moved: use the current folder")
     f.add_argument("--bg", action="store_true")
+
+    tr = add("tree", "every conversation as a tree: its turns, and the branches off each one", cmd_tree)
+    tr.add_argument("session", nargs="?", help="only the tree this session belongs to")
+    tr.add_argument("-n", dest="limit", type=int, default=10, help="how many conversations (default 10)")
+    tr.add_argument("--all", action="store_true", help="also review, ask, race and pipeline runs")
+    ui = add("ui", "browse every conversation in your browser, and continue or branch from any turn", cmd_ui)
+    ui.add_argument("--port", type=int, default=0, help="port on 127.0.0.1 (default: any free one)")
+    ui.add_argument("--no-open", action="store_true", help="print the address instead of opening a browser")
 
     k = add("ask", "ask every worker the same question in parallel", cmd_ask, (common, files))
     k.add_argument("prompt", nargs="*", help="the question; or pipe it in")

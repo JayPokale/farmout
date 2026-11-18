@@ -139,8 +139,10 @@ def delegate(args, rid):
 
 def send_tool(a, rid):
     name = a.get("session") or ""
-    switch = None
+    switch, moved = None, None
     try:
+        sessions.load(name)
+        moved = sessions.rehome(name, a.get("cwd") or os.getcwd())  # its folder was renamed or moved: follow it
         meta = sessions.load(name)
         if a.get("worker") or a.get("model"):
             switch = {"worker": a.get("worker"), "model": a.get("model")}
@@ -159,6 +161,8 @@ def send_tool(a, rid):
     finally:
         waiting.pop(rid, None)
     head = f"## {name} turn {rec['n']} ({rec.get('worker')}) {'ok' if rec['status'] == 'ok' else rec['status'].upper()} {rec.get('secs', '?')}s -> {rec.get('output')}"
+    if moved:
+        head += f"\n(its folder moved; the session follows it to {moved})"
     return f"{head}\n{capped(flows.text(rec))}", rec["status"] != "ok"
 
 

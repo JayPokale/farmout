@@ -733,7 +733,7 @@ class LimitWordingTest(unittest.TestCase):
     def test_reset_times(self):
         import datetime
         sys.path.insert(0, str(SERVER.parent))
-        from farmout.workers import limited_for, logged_out, reset_in
+        from farmout.workers import limited_for, logged_out, lost_conversation, reset_in
         ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
         now = datetime.datetime(2026, 11, 18, 12, 0, tzinfo=ist)  # a Wednesday
         cases = {
@@ -763,6 +763,11 @@ class LimitWordingTest(unittest.TestCase):
                      "OAuth token has expired. Please obtain a new token", "Your subscription has expired"):
             self.assertTrue(logged_out(text), text)
         self.assertFalse(logged_out("FileNotFoundError: no such file"))
+        for text in ("RuntimeError: claude exited 1: No conversation found with session ID: 9f1c",
+                     "Error: thread 0199a-x not found", "could not find the session to resume"):
+            self.assertTrue(lost_conversation(text), text)
+        self.assertFalse(lost_conversation("RuntimeError: codex exited 1: file not found: a.py"))
+        self.assertFalse(lost_conversation("Not logged in · Please run /login"))
 
 
 class ProcTest(unittest.TestCase):

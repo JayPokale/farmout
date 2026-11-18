@@ -2,7 +2,9 @@
 
 The tests install a copy under each CLI's name, with a shebang for the current Python. Each run is logged to
 $FAKE_LOG/<pid>.json. Sessions work like the real CLIs': claude and copilot take the id farmout gives them, codex and
-agy report a new one, and every CLI resumes by id (see sid()). The first line of the brief says what to do:
+agy report a new one, and every CLI resumes by id (see sid()). claude finds a conversation only from the folder it
+began in, as older Claude Code did (newer versions find it by id from anywhere), so farmout's recovery is tested: a
+resume that can't find its conversation gets it as a file. The first line of the brief says what to do:
   say <text>       reply <text>
   big <n>          reply n 'x' characters
   fail <message>   print <message> to stderr and exit 1
@@ -66,9 +68,13 @@ with open(os.path.join(log, f"{os.getpid()}.json"), "w") as f:
                "env": {k: v for k, v in os.environ.items() if k.startswith(("CLAUDE", "ANTHROPIC"))}}, f)
 
 store = os.path.join(log, "store")
+if name == "claude":  # ~/.claude/projects/<folder>/, searched only from that folder (older Claude Code)
+    store = os.path.join(store, "".join(c if c.isalnum() else "-" for c in os.getcwd()))
 os.makedirs(store, exist_ok=True)
 history_file = os.path.join(store, f"{session}.json") if session else None
 source = os.path.join(store, f"{flag('--resume')}.json") if "--fork-session" in args else history_file  # claude fork
+if name == "claude" and flag("--resume") and not os.path.exists(source):
+    sys.exit(f"No conversation found with session ID: {flag('--resume')}")
 history = json.load(open(source)) if source and os.path.exists(source) else []
 
 cmd, _, reply = brief.split("\n")[0].partition(" ")

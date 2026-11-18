@@ -89,6 +89,11 @@ farmout send dates -w codex                          # or on another worker, whi
 farmout send dates --attach review-1-claude "Fix what this review found"
 farmout fork review-1-codex "Why do you think line 42 races?"     # a side question, same context
 
+# Every conversation is a tree: branch off any turn, on any model
+farmout tree dates                                   # its turns, and the branches off each one
+farmout fork dates --at 2 -w claude:opus "Try it with a lookup table instead"
+farmout ui                                           # all of it in your browser: read, continue, branch
+
 # Pipelines: each stage starts when the previous one ends
 farmout pipe run fix --set test="pytest -x"      # review → fix what 2+ models agree on → check the fix
 farmout pipe run spec "Add CSV export to the reports page"
@@ -119,8 +124,10 @@ farmout hook install          # review every commit; block it when 2+ models fla
 | 命令 | 作用 |
 |---|---|
 | `run <worker> "<prompt>"` | 启动一个会话：`-n name`、`--write`（直接修改当前目录）、`--isolate`（在私有 worktree 中修改并生成补丁）、`--model`、`--effort`、`--fallback w1,w2`、`--bg`、`-f file`。worker 填 `auto` 时，会选第一个允许使用且未触及用量上限的 worker |
-| `send <session> "<msg>"` | 发送下一条消息；会话忙碌时消息会排队。`--attach <session>` 把那个会话的最后一条回复一并交过去，`-f` 附加文件，`--bg` 立即返回。`--model opus` 换个模型继续，`-w codex[:model]` 换个 worker 继续（它会以文件形式拿到此前的对话） |
-| `fork <session> "<msg>"` | 以该会话的对话为起点开一个新会话；`--worker` 换一个模型接着聊 |
+| `send <session> "<msg>"` | 发送下一条消息；会话忙碌时消息会排队。`--attach <session>` 把那个会话的最后一条回复一并交过去，`-f` 附加文件，`--bg` 立即返回。`--model opus` 换个模型继续，`-w codex[:model]` 换个 worker 继续（它会以文件形式拿到此前的对话）。项目文件夹挪了位置后，`--here` 在当前文件夹继续（在同一个 git 仓库里，farmout 不用它也能自己找到） |
+| `fork <session> "<msg>"` | 给对话开一个分支：新会话保留到第 `--at N` 轮为止的对话（默认最新一轮；`0` 表示一轮都不保留），从那里接着聊，还可以用 `-w worker[:model]` 或 `--model` 换 worker 或模型。轮次编号与 `farmout tree` 显示的一致 |
+| `tree [session]` | 把对话画成树：每一轮的问题，以及从每一轮分出去的分支（`--all` 连 review、ask、race 的运行也列出；支持 `--json`） |
+| `ui` | 在浏览器里查看所有对话，只监听 127.0.0.1，每次运行都生成新的密钥：搜索你问过的问题，阅读任意一轮，从最新一轮继续，或从任意一轮分支出去（可换任意 worker 或模型），也可以开新对话 |
 | `ask "<question>"` | 把同一个问题发给每个 worker（用 `-w` 挑选，`-w claude:opus,codex` 还能指定模型，`-w claude:opus,claude:sonnet` 用同一个订阅的两个模型），答案并排展示；`--debate` 让每个 worker 读完其他人的回答后再答一次 |
 | `review [focus]` | 每个 worker 审查 `--staged`、`--base <ref>` 或你未提交的改动；`-w` 的写法与 `ask` 相同，`codex,codex` 让同一个模型审查两次；`--min-agree N`，以及决定退出码的 `--fail-on high\|medium\|low` |
 | `race "<task>"` | 每个 worker 在各自的 worktree 中尝试这个任务；`--test <cmd>` 选出胜者，`--apply` 直接应用 |
@@ -144,7 +151,11 @@ farmout hook install          # review every commit; block it when 2+ models fla
 
 会话（session）就是与某个 worker 的一段命名对话，保存在 `~/.local/state/farmout/sessions/<name>/`。farmout 借助 worker CLI 自己的会话 ID 来恢复会话（`claude --resume`、`codex exec resume`、`copilot --session-id`、`agy --conversation`、`dsh --session-id`；`api` 则由 farmout 自己保存历史），所以模型是真的记得之前的轮次，而不是重读一份摘要。
 
-消息会先进入收件箱。会话的 runner 是一个持有该会话锁的后台进程，按顺序处理这些消息。正因如此，向忙碌的会话 `send` 消息会排队而不是失败，`farmout attach` 在任何终端里都能用，`farmout stop` 也只会停掉这一个会话的 worker。fork Claude 会话时用的是 Claude 原生的 fork；其他 worker 则会以文件形式拿到对话记录。review、ask、race 和流水线的各个阶段也都会创建会话，所以你可以继续追问任何一位审查者：`farmout send review-3-codex "Show me the input that breaks line 42"`。
+消息会先进入收件箱。会话的 runner 是一个持有该会话锁的后台进程，按顺序处理这些消息。正因如此，向忙碌的会话 `send` 消息会排队而不是失败，`farmout attach` 在任何终端里都能用，`farmout stop` 也只会停掉这一个会话的 worker。review、ask、race 和流水线的各个阶段也都会创建会话，所以你可以继续追问任何一位审查者：`farmout send review-3-codex "Show me the input that breaks line 42"`。
+
+**分支。** `farmout fork <session> --at 3` 开一个新会话，保留到第 3 轮为止的对话，再从那里接着聊。于是一段对话就成了一棵树：一个分支试 Opus，另一个分支试 Codex，或者把第 4 个问题换个问法，两边都留着。从 Claude 自己对话的末尾分支时用的是 Claude 原生的 fork；其他情况下，新分支会以文件形式拿到此前的对话。分支在同一个文件夹里工作，只读，看到的是文件现在的样子：分支的是对话，不是你的文件。`farmout tree` 把这棵树画出来；`farmout ui` 在浏览器里打开它，你可以搜索问过的所有问题、阅读任意一轮，并从那里继续或分支。这个页面只监听 127.0.0.1，并且需要它打印的地址里带的密钥，所以你访问的其他网站用不了它。
+
+**文件夹被移动或改名。** farmout 按名字找会话，而不是按文件夹，每个会话还记得自己的文件夹在 git 仓库里的位置。项目改名或挪走之后，在仓库里任何地方 `send` 即可：会话会跟过去，每个 worker 按 id 恢复自己的对话，下一条消息还会告诉它文件夹搬到了哪里。隔离会话的 worktree 会随仓库一起移动（farmout 用 `git worktree repair` 重新连上）。不在 git 仓库里时，用 `farmout send <session> --here "..."` 在当前文件夹继续。如果某个 worker 的 CLI 找不到自己的对话了（会话存储被清空，或旧版 Claude Code 只在原来的文件夹里找对话），farmout 会以文件形式把此前的对话交给它，而不是直接失败。
 
 ## 流水线
 
@@ -382,6 +393,8 @@ farmout 在你的机器上以你的登录身份，按各厂商文档中说明的
 **它和 OpenAI 为 Claude Code 推出的 Codex 插件有什么不同？** 那个插件只能在 Claude Code 里驱动 Codex。farmout 能驱动你拥有的任何订阅（Codex、通过 Antigravity 使用的 Gemini、Copilot、第二个 Claude 账号、本地模型），可以同时用好几个，在终端或任何 MCP 客户端里都能用，还支持会话和流水线。
 
 **我只有一个订阅，farmout 适合我吗？** 适合，只是订阅越多能做的越多。一个订阅里就有好几个模型：Claude 的 Opus、Sonnet 和 Haiku，几个 Codex 模型，或者 Copilot 里来自多家厂商的模型。`farmout bench -w claude:opus,claude:sonnet --apply` 告诉你更大的模型能不能在你自己过去的 bug 上找得更多，并把更合适的那个设为默认；`farmout review -w claude:opus,claude:sonnet`（或 `-w codex,codex`）用一个订阅拿到两份独立的审查；`fallback = ["claude:sonnet"]` 让你在 Opus 触及上限时继续工作；遇到难题时，`farmout send <session> --model opus` 把对话换到更大的模型上。再通过 `api` worker 接一个本地模型（Ollama），就多了一个免费的第二意见。
+
+**我把项目文件夹改名了，还能接着聊吗？** 能。Claude Code 的 `--continue` 和 `/resume` 列表只看当前文件夹的历史，但 farmout 按名字找会话：在改名后的仓库里任何地方运行 `farmout send <session> "..."`，会话就会跟着文件夹走，并恢复 worker 自己的对话。`farmout ls` 会标出文件夹已不存在的会话，git 之外的文件夹用 `--here`。
 
 **会不会把我其他订阅的额度烧光？** 每个任务消耗的是执行它的那个 worker 的额度。`review`、`ask` 和 `race` 会给每个 worker 各发一个任务；`farmout stats` 会显示每个 worker 做了什么。用 `-w` 挑选要用的 worker。
 

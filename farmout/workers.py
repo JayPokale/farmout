@@ -324,3 +324,15 @@ def limited_for(error):
 def logged_out(error):
     """True if the error says the worker isn't logged in, its login expired or its subscription ended."""
     return bool(LOGIN.search(error))
+
+
+# A resume the CLI couldn't place: no such conversation in its store (cleared, or an older Claude Code, which looked
+# for a conversation only under the folder it began in).
+LOST = re.compile(r"no (?:conversation|session|thread)s? (?:was )?found|(?:conversation|session|thread) (?:\S+ )?"
+                  r"(?:was )?not found|(?:could not|couldn't|cannot|can't|unable to) (?:find|load|resume) "
+                  r"(?:the |that |a )?(?:conversation|session|thread)", re.I)
+
+
+def lost_conversation(error):
+    """True if the error says the CLI couldn't find the conversation it was asked to resume."""
+    return bool(LOST.search(error))
