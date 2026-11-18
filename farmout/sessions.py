@@ -250,7 +250,12 @@ def post(name, prompt, files=(), attach=(), cwd=None, switch=None, note=None):
         msg["switch"] = {k: v for k, v in switch.items() if v}
     if note:
         msg["note"] = note
-    write_json(d / "inbox" / f"{time.time_ns()}-{msg['id']}.json", msg)
+    try:
+        with guarded(name):
+            load(name)  # still here: a removal didn't get in first
+            write_json(d / "inbox" / f"{time.time_ns()}-{msg['id']}.json", msg)
+    except FileNotFoundError:
+        raise KeyError(f"no session named {name!r} (it was just removed)") from None
     event(name, "MessageReceived", {"message": msg["id"], "prompt": prompt, "files": files})
     return msg
 
@@ -294,6 +299,19 @@ def runner_pid(name):
 
 def busy(name):
     return runner_pid(name) is not None
+
+
+@contextmanager
+def guarded(name):
+    """A short lock on a session for the steps that mustn't interleave: queuing a message, branching off it, and
+    removing it. A remove holds it throughout, so a message or a branch either lands before it (and stops it) or
+    finds the session gone."""
+    with open(path(name) / "guard.lock", "a") as f:  # a session removed meanwhile: FileNotFoundError
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 @contextmanager
@@ -516,10 +534,11 @@ def remove(name):
     """Delete a session, its worktree and branch. It holds the session's runner lock throughout, so no runner starts
     meanwhile, and moves the folder aside in one step before deleting it, so a file that won't delete can't leave
     half a session behind (what's left sits in the state folder's trash)."""
-    meta = load(name)
-    with holding(name) as mine:
+    load(name)
+    with holding(name) as mine, guarded(name):
         if not mine or busy(name):
             raise RuntimeError(f"{name} is running; `farmout stop {name}` first")
+        meta = load(name)  # as it is now: a turn that just ended may have made a worktree
         if pending(name):  # a message that arrived moments ago would go with it, unanswered
             raise RuntimeError(f"{name} has messages waiting; `farmout stop {name}` drops them")
         if meta.get("iso"):
@@ -576,20 +595,25 @@ def fork(name, new_name=None, worker=None, at=None, model=None):
                          + (f"; its turns are {base + 1} to {base + done[-1]}" if done else "; it has none yet"))
     worker = worker or parent["worker"]
     native = worker == parent["worker"] == "claude" and parent["native_id"] and at == parent["turns"]
-    iso = parent.get("iso")
-    cwd = os.path.join(iso["worktree"], iso.get("rel", ".")) if iso else parent["cwd"]
-    if not os.path.isdir(cwd):  # say so before making a branch that could never run
-        raise ValueError(f"can't branch off {name}: its {'worktree' if iso else 'folder'} {cwd} is gone")
-    root = parent
-    while root.get("parent"):  # branches are named after their conversation: cache-1, cache-2, ...
-        try:
-            root = load(root["parent"])
-        except KeyError:
-            break
-    meta = create(worker, cwd, name=new_name, effort=parent["effort"], group=parent.get("group"), parent=name,
-                  kind=root["name"] if len(root["name"]) <= 56 else None,
-                  model=model or (parent["model"] if worker == parent["worker"] else None),
-                  fork_of=parent["native_id"] if native else None, fork_at=at, base=(parent.get("base") or 0) + at)
+    try:
+        with guarded(name):  # a removal of this session either finished first or waits for the branch
+            parent = load(name)
+            iso = parent.get("iso")
+            cwd = os.path.join(iso["worktree"], iso.get("rel", ".")) if iso else parent["cwd"]
+            if not os.path.isdir(cwd):  # say so before making a branch that could never run
+                raise ValueError(f"can't branch off {name}: its {'worktree' if iso else 'folder'} {cwd} is gone")
+            root = parent
+            while root.get("parent"):  # branches are named after their conversation: cache-1, cache-2, ...
+                try:
+                    root = load(root["parent"])
+                except KeyError:
+                    break
+            meta = create(worker, cwd, name=new_name, effort=parent["effort"], group=parent.get("group"), parent=name,
+                          kind=root["name"] if len(root["name"]) <= 56 else None,
+                          model=model or (parent["model"] if worker == parent["worker"] else None),
+                          fork_of=parent["native_id"] if native else None, fork_at=at, base=(parent.get("base") or 0) + at)
+    except FileNotFoundError:
+        raise KeyError(f"no session named {name!r} (it was just removed)") from None
     if parent.get("moved_from"):  # its folder moved and nobody has been told yet: the branch tells its worker
         meta["moved_from"] = parent["moved_from"]
         save(meta)

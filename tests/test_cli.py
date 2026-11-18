@@ -2441,6 +2441,43 @@ class McpSessionTest(Base):
 
 
 
+class SessionGuardTest(unittest.TestCase):
+    """Removing a session doesn't interleave with a message being queued for it or a branch being made off it."""
+
+    def setUp(self):
+        import tempfile
+        from farmout import sessions
+        self.tmp = Path(tempfile.mkdtemp(prefix="farmout-guard-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        for attr, value in (("ROOT", self.tmp / "sessions"), ("STATE", self.tmp)):
+            old = getattr(sessions, attr)
+            setattr(sessions, attr, value)
+            self.addCleanup(setattr, sessions, attr, old)
+        d = self.tmp / "sessions" / "s"
+        (d / "inbox").mkdir(parents=True)
+        (d / "turns").mkdir()
+        (d / "meta.json").write_text(json.dumps({"name": "s", "worker": "codex", "cwd": str(self.tmp), "turns": 0}))
+
+    def test_a_message_queued_during_a_removal_waits_then_finds_it_gone(self):
+        from farmout import sessions
+        result = []
+
+        def post():
+            try:
+                result.append(sessions.post("s", "say hi"))
+            except Exception as e:
+                result.append(e)
+        with sessions.guarded("s"):  # what a removal holds while it checks and moves the folder away
+            t = threading.Thread(target=post)
+            t.start()
+            time.sleep(0.3)
+            self.assertTrue(t.is_alive(), "the message waits for the removal")
+            os.replace(self.tmp / "sessions" / "s", self.tmp / "gone")
+        t.join(10)
+        self.assertIsInstance(result[0], KeyError, result)
+        self.assertEqual(list((self.tmp / "gone" / "inbox").iterdir()), [], "nothing was queued into the removed one")
+
+
 class LiveLanesTest(unittest.TestCase):
     """The rows `farmout review` and friends draw on a terminal while workers run."""
 
