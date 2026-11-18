@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 // colours runs under the bar.
 const SECTIONS = [
   { id: "demo", label: "Demo" },
+  { id: "graph", label: "UI" },
   { id: "bench", label: "Bench" },
   { id: "how", label: "How it works" },
   { id: "get-started", label: "Get started" },
