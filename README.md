@@ -359,6 +359,12 @@ Other heads: `codex mcp add farmout -- farmout mcp`, `copilot mcp add farmout --
 - **Isolation:** an isolated worker edits its own worktree in `<repo>/.farmout/worktrees/`, and in-repo paths in its files and brief are rewritten to point there. Your tree changes only when you apply a patch. It is not a filesystem sandbox: a tracked symlink that points outside the repository can be written through, and `codex` and `copilot` may also write the system temp directory.
 - **Prompt injection is real.** Workers read whatever you hand them, and a hostile document can try to instruct them. Read-only mode limits the damage but can't make injection impossible. Don't delegate secrets; `web = false` in settings closes the web tools.
 - **Data leaves your machine.** Briefs and files go to each worker's provider. Use the `workers` setting to keep a work repository away from personal accounts.
+- **Everything farmout runs, sends and fetches:**
+  - *Runs:* the worker CLIs you installed (`agy`, `codex`, `claude`, `copilot`, `dsh`), `git`, `gh` for `fix-pr`, your own test command for `race` and pipelines, and hooks you set up or trusted (`farmout hooks` lists them).
+  - *Sends:* each brief (your prompt, the files you name, the change under review, and a continued conversation's earlier turns) to that worker's provider through its CLI, or to the endpoint you set for `api`. No telemetry and no analytics.
+  - *Fetches:* only on request: `farmout store` reads the store index and the files you install from this repository on GitHub, each pinned by SHA-256, and `farmout skill add` downloads the skill you name. `bench/leaderboard.py`, a maintainer script the package doesn't install, clones the public repositories it scores.
+  - *Listens:* `farmout ui --web` serves its page on 127.0.0.1 with a key made for each run; `farmout mcp` speaks over stdio only.
+  - *Writes:* sessions and results under `~/.local/state/farmout`, settings under `~/.config/farmout`, isolated worktrees under `<repo>/.farmout/worktrees/`, and your own files only with `--write` or when you apply a patch.
 
 ## Terms of service
 

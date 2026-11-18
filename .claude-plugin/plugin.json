@@ -1,7 +1,7 @@
 {
   "name": "farmout",
   "version": "0.1.0",
-  "description": "Let Claude Code hand its grunt work to your other AI subscriptions: in parallel, read-only by default, from one dependency-free Python file.",
+  "description": "Hit your limit less: Claude Code hands long reads, reviews and boilerplate to your other AI subscriptions (Codex, Gemini, GitHub Copilot, a second Claude), read-only by default, and a task at its limit moves to the next one. Standard-library Python, no dependencies.",
   "author": {
     "name": "Jay Pokale",
     "url": "https://github.com/JayPokale"
@@ -12,9 +12,12 @@
     "mcp",
     "delegation",
     "multi-agent",
+    "code-review",
     "codex",
     "antigravity",
-    "gemini"
+    "gemini",
+    "copilot",
+    "usage-limits"
   ],
   "mcpServers": {
     "farmout": {

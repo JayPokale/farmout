@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "farmout",
-  "description": "Delegate Claude Code subtasks to your other AI subscriptions through their official CLIs.",
+  "description": "Hand Claude Code's long reads and reviews to your other AI subscriptions, and keep going when one hits its limit.",
   "owner": {
     "name": "Jay Pokale",
     "url": "https://github.com/JayPokale"
@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "farmout",
-      "description": "Parallel, read-only-by-default delegation to Antigravity, Codex, a second Claude account or any OpenAI-compatible model.",
+      "description": "Read-only-by-default delegation, cross-model review and fallback across Codex, Gemini (Antigravity), GitHub Copilot, a second Claude account, DeepSeek or any OpenAI-compatible model.",
       "source": "./",
       "category": "productivity"
     }
