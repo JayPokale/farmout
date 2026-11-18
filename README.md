@@ -179,7 +179,7 @@ dates · claude · 2m ago
 
 | key | what it does |
 |---|---|
-| `↑` `↓` (`j` `k`, the mouse) | move; `←` `→` fold and unfold a branch; `⏎` reads a turn |
+| `↑` `↓` (`j` `k`, the mouse) | move; `J` `K` jump between conversations; `←` `→` fold and unfold a branch; `⏎` reads a turn |
 | `c` · `b` · `e` · `R` | continue from the newest turn · branch off this one · ask this one again differently, on the same worker or another · send a failed newest turn again |
 | `n` · `x` | a new conversation · stop a running turn |
 | `f` · `S` | only this project's conversations, or every folder's · what each subscription did this week (`farmout stats`) |

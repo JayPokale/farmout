@@ -26,12 +26,12 @@ BASIC = {"err": 1, "ok": 2, "run": 3, "acc": 3, "code": 6, "w:claude": 1, "w:cod
          "w:copilot": 5, "w:deepseek": 4}  # the 8-colour terminal's stand-ins for graph.PALETTE
 HELP = [("↑↓ j k", "move"), ("← → h l", "fold, unfold; ← also goes up to the branch"),
         ("⏎ space", "read a turn; fold a branch"), ("Tab · g G", "graph or reader; first, last"),
-        ("/ · u", "find in questions, names and answers; the next unread answer"),
+        ("J K", "next, previous conversation"), ("/ · u", "find in questions and answers; next unread answer"),
         ("c · R", "continue from the newest turn; send a failed one again"), ("b", "branch from this turn"),
-        ("e", "ask this turn differently: a branch from the turn before"), ("n · x", "new conversation; stop a running turn"),
-        ("o O", "open the turn, or its whole conversation, in your pager"),
-        ("y · d", "copy the answer; an isolated session's patch in your pager"),
-        ("D", "delete a conversation or branch, with the branches off it"),
+        ("e", "ask this turn differently, as a branch"), ("n · x", "new conversation; stop a running turn"),
+        ("o O", "the turn, or its whole conversation, in your pager"),
+        ("y · d", "copy the answer; an isolated session's patch"),
+        ("D", "delete a conversation or branch, with its branches"),
         ("a · f", "review, ask and race runs too; only this project's"),
         ("S · r · q", "what each subscription did this week; reload; quit")]
 
@@ -445,6 +445,7 @@ class App:
                "j": lambda: self.move(1), "pgup": lambda: self.move(-10), "pgdn": lambda: self.move(10),
                "home": lambda: self.move(-len(self.rows)), "g": lambda: self.move(-len(self.rows)),
                "end": lambda: self.move(len(self.rows)), "G": lambda: self.move(len(self.rows)),
+               "J": lambda: self.jump(1), "K": lambda: self.jump(-1),
                "left": self.left, "h": self.left, "right": self.right, "l": self.right,
                "enter": self.enter, " ": self.enter, "tab": self.swap, "btab": self.swap,
                "c": lambda: self.compose("continue"), "b": lambda: self.compose("branch"),
@@ -460,6 +461,13 @@ class App:
         if self.rows:
             self.i = max(0, min(len(self.rows) - 1, self.i + d))
             self.sel, self.rtop = self.key_of(self.rows[self.i]), 0
+
+    def jump(self, d):
+        """To the next (d=1) or previous (d=-1) conversation's head row."""
+        heads = [i for i, r in enumerate(self.rows) if r["kind"] == "head"]
+        later = [i for i in heads if (i > self.i if d > 0 else i < self.i)]
+        if later:
+            self.move((later[0] if d > 0 else later[-1]) - self.i)
 
     def fold(self, name, shut):
         (self.folded.add if shut else self.folded.discard)(name)
@@ -1044,7 +1052,7 @@ class App:
         x, y = (w - width) // 2, max(0, (h - bh) // 2)
         self.border(c, x, y, width, bh, "acc", [(" Keys ", "bold acc")], foot=[(" any key closes this ", "dim")])
         for k, (keys, what) in enumerate(lines[:bh - 5]):
-            xx = c.put(y + 1 + k, x + 2, keys.ljust(10), "bold acc", x + width - 2)
+            xx = c.put(y + 1 + k, x + 2, keys.ljust(12), "bold acc", x + width - 2)
             c.put(y + 1 + k, xx, what, "", x + width - 2)
         for k, line in enumerate(wrap("Turns are numbered along the whole conversation: a branch keeps the turns before "
                                       "it. From a shell: farmout fork <session> --at <turn> \"...\"", width - 4)[:2]):

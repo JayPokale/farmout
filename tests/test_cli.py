@@ -2239,6 +2239,13 @@ class TerminalUiTest(CliBase):
         self.assertIn("Last 7 days", text)
         self.assertRegex(text, r"codex\s+1\s+1\s+0")
 
+    def test_j_and_k_jump_between_conversations(self):
+        for name in "abc":
+            self.fo("run", "codex", f"say {name}", "-n", name)
+        screens = self.ui("g", "J", ["screen"], "J", ["screen"], "J", ["screen"], "K", ["screen"])
+        titles = [re.search(r"╭─ (\w) ", sc.split("\n")[0][60:]).group(1) for sc in screens]
+        self.assertEqual(titles, ["b", "a", "a", "b"], "c is the newest, so first; J stops at the last one")
+
     def test_an_empty_ui_says_where_to_start(self):
         screen, = self.ui(["screen"])
         self.assertIn("Start here", screen)
