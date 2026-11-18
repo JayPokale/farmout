@@ -27,7 +27,7 @@ cd your-repo && farmout bench --share   # which of your AI subscriptions finds r
 - **Hit it less, inside Claude Code**: Claude hands long reads and boilerplate to whichever subscription fits. Summarizing three papers this way cost Claude **59% fewer tokens** (74% less cost) for the same answers.
 - **`farmout bench`**: which AI is best on *your* code, and is Opus worth your quota there? Recent bug fixes from your git history are undone in a scratch worktree, each of your subscriptions is asked to find the bug, and `--share` turns the scores into a post and an image card (scores only, never your code). Name models to compare them: `-w claude:opus,claude:sonnet,codex`, or `copilot:<model>` for any model your Copilot plan has enabled (`/model` in Copilot lists them).
 - **`farmout review`**: Codex, Gemini (through Antigravity), GitHub Copilot and a second Claude account review your change at the same time, read-only. Findings are merged across models with agreement counts, and any finding that cites a file or line that doesn't exist is dropped before you see it. In [our benchmark](https://github.com/JayPokale/farmout/blob/main/bench/README.md), each of 32 bugs (23 planted, 9 real regressions from open-source projects) was flagged by at least three of the four models.
-- **`farmout race "<task>" --test "pytest -x"`**: every model attempts the same change in its own git worktree; your tests pick the winner, and nothing touches your tree until you `farmout apply` it.
+- **`farmout race "<task>" --test "pytest -x"`**: every model that can edit files attempts the same change in its own git worktree; your tests pick the winner, and nothing touches your tree until you `farmout apply` it.
 - **One subscription is enough**: its models fill the lanes (`farmout review -w claude:opus,claude:sonnet`, or `-w codex,codex` for two runs of one model), `farmout bench --apply` makes the model that did best on your own code the default, and a model at its limit hands over to the next one you name (`fallback = ["claude:sonnet"]`).
 - **`farmout run` / `send` / `fork` / `ui`**: named conversations with any worker that queue messages while busy and hand one session's reply to another. Branch off any turn onto another model (`farmout fork cache --at 2 -w codex "..."`), and walk every conversation as a branching graph in your terminal with `farmout ui`: read any turn, continue it, or branch off it. Conversations survive a renamed or moved folder.
 - **`farmout pipe run fix`**: review your change, fix what two or more models agree on in a worktree, then review the fix. Write your own pipelines with gates, approvals and parallel stages.
@@ -154,7 +154,7 @@ A real `farmout review`, replayed: one change, four subscriptions, one merged ta
 | `hook install\|uninstall [--pre-push]` | a git hook that reviews each commit or push |
 | `doctor [--live]`, `mcp` | check the workers; serve the MCP tools on stdio |
 
-Every command takes `--json` for scripts and `-C <dir>`. Prompts can come from stdin; with a prompt given, piped stdin goes along as a file. Exit codes: 0 ok, 1 failed (or a review gate tripped), 130 stopped.
+Every command but `mcp` takes `--json` for scripts and `-C <dir>`. Prompts can come from stdin; with a prompt given, piped stdin goes along as a file. Exit codes: 0 ok, 1 failed (or a review gate tripped), 130 stopped.
 
 ## Sessions
 
@@ -182,6 +182,7 @@ dates · claude · 2m ago
 | `↑` `↓` (`j` `k`, the mouse) | move; `←` `→` fold and unfold a branch; `⏎` reads a turn |
 | `c` · `b` · `e` | continue from the newest turn · branch off this one · ask this one again differently, on the same worker or another |
 | `n` · `x` | a new conversation · stop a running turn |
+| `f` | only this project's conversations, or every folder's |
 | `/` | find a question, a name, or words in an answer |
 | `o` · `O` | this turn · its whole conversation, in your pager |
 | `y` · `d` · `D` | copy the answer · an isolated session's patch · delete the conversation or branch, with the branches off it |
@@ -377,11 +378,11 @@ Other heads: `codex mcp add farmout -- farmout mcp`, `copilot mcp add farmout --
 - **Prompt injection is real.** Workers read whatever you hand them, and a hostile document can try to instruct them. Read-only mode limits the damage but can't make injection impossible. Don't delegate secrets; `web = false` in settings closes the web tools.
 - **Data leaves your machine.** Briefs and files go to each worker's provider. Use the `workers` setting to keep a work repository away from personal accounts.
 - **Everything farmout runs, sends and fetches:**
-  - *Runs:* the worker CLIs you installed (`agy`, `codex`, `claude`, `copilot`, `dsh`), `git`, `gh` for `fix-pr`, your own test command for `race` and pipelines, and hooks you set up or trusted (`farmout hooks` lists them).
+  - *Runs:* the worker CLIs you installed (`agy`, `codex`, `claude`, `copilot`, `dsh`), `git`, `gh` for `fix-pr`, your own test command for `race` and pipelines, hooks you set up or trusted (`farmout hooks` lists them), `pdftotext` when the `api` worker gets a PDF, and in `farmout ui` your pager, your editor and a clipboard tool when you ask for them.
   - *Sends:* each brief (your prompt, the files you name, the change under review, and a continued conversation's earlier turns) to that worker's provider through its CLI, or to the endpoint you set for `api`. No telemetry and no analytics.
   - *Fetches:* only on request: `farmout store` reads the store index and the files you install from this repository on GitHub, each pinned by SHA-256, and `farmout skill add` downloads the skill you name. `bench/leaderboard.py`, a maintainer script the package doesn't install, clones the public repositories it scores.
   - *Listens:* `farmout ui --web` serves its page on 127.0.0.1 with a key made for each run; `farmout mcp` speaks over stdio only.
-  - *Writes:* sessions and results under `~/.local/state/farmout`, settings under `~/.config/farmout`, isolated worktrees under `<repo>/.farmout/worktrees/`, and your own files only with `--write` or when you apply a patch.
+  - *Writes:* sessions and results under `~/.local/state/farmout`, delegated results under `~/.cache/farmout`, settings under `~/.config/farmout`, isolated worktrees under `<repo>/.farmout/worktrees/`. In your project, only what you ask for: edits with `--write`, a patch you apply, a file you name (`export -o`), the settings `bench --apply` writes, a git hook you install.
 
 ## Terms of service
 

@@ -180,6 +180,7 @@ dates · claude · 2m ago
 | `↑` `↓`（`j` `k`、鼠标） | 移动；`←` `→` 折叠、展开分支；`⏎` 阅读这一轮 |
 | `c` · `b` · `e` | 从最新一轮继续 · 从这一轮分叉 · 把这一轮换个问法再问，用同一个 worker 或换一个 |
 | `n` · `x` | 新对话 · 停止正在运行的一轮 |
+| `f` | 只看这个项目的对话，或所有文件夹的 |
 | `/` | 查找问题、名称或回答里的词 |
 | `o` · `O` | 在分页器里打开这一轮 · 整段对话 |
 | `y` · `d` · `D` | 复制回答 · 隔离会话的补丁 · 删除这段对话或分支，连同从它分出的分支 |
@@ -375,11 +376,11 @@ farmout 同时也是一个 MCP 服务器（`farmout mcp`，或 `python3 server.p
 - **提示词注入是真实存在的风险**。worker 会读取你交给它们的任何内容，恶意文档可能会试图对它们下指令。只读模式能限制损害，但无法让注入变得不可能。不要把机密委托出去；在设置中写 `web = false` 可以关闭联网工具。
 - **数据会离开你的机器**。任务说明和文件会发送给各个 worker 的服务商。可以用 `workers` 设置让工作仓库远离个人账号。
 - **farmout 运行、发送和获取的全部内容：**
-  - *运行：* 你安装的 worker CLI（`agy`、`codex`、`claude`、`copilot`、`dsh`）、`git`、`fix-pr` 用到的 `gh`、`race` 和流水线里你自己的测试命令，以及你设置或信任的钩子（`farmout hooks` 会列出它们）。
+  - *运行：* 你安装的 worker CLI（`agy`、`codex`、`claude`、`copilot`、`dsh`）、`git`、`fix-pr` 用到的 `gh`、`race` 和流水线里你自己的测试命令、你设置或信任的钩子（`farmout hooks` 会列出它们）、`api` worker 收到 PDF 时用的 `pdftotext`，以及在 `farmout ui` 里你要求时打开的分页器、编辑器和剪贴板工具。
   - *发送：* 每份任务说明（你的提示词、你指定的文件、待审查的改动，以及继续一段对话时它此前的各轮）通过 CLI 发给对应 worker 的服务商，`api` 则发给你设置的端点。没有遥测，也没有分析统计。
   - *获取：* 只在你要求时：`farmout store` 从 GitHub 上的本仓库读取商店索引和你安装的文件，每个文件都用 SHA-256 锁定；`farmout skill add` 下载你指定的技能。`bench/leaderboard.py` 是维护者用的脚本，不随包安装，它会克隆它评分的公开仓库。
   - *监听：* `farmout ui --web` 只在 127.0.0.1 上提供页面，并且每次运行都生成新的密钥；`farmout mcp` 只通过 stdio 通信。
-  - *写入：* 会话和结果在 `~/.local/state/farmout`，设置在 `~/.config/farmout`，隔离的 worktree 在 `<repo>/.farmout/worktrees/`；只有加了 `--write` 或你应用补丁时，才会改动你自己的文件。
+  - *写入：* 会话和结果在 `~/.local/state/farmout`，委派的结果在 `~/.cache/farmout`，设置在 `~/.config/farmout`，隔离的 worktree 在 `<repo>/.farmout/worktrees/`。在你的项目里只写你要求的：`--write` 的改动、你应用的补丁、你指定的文件（`export -o`）、`bench --apply` 写入的设置、你安装的 git 钩子。
 
 ## 服务条款
 
