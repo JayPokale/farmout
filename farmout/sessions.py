@@ -307,7 +307,8 @@ def turn(name, msg, key, inbox_file=None):
     """Run one message through the session's worker, resuming its conversation. The turn is recorded before the
     message leaves the inbox, so a crash in between can't lose it unseen (at most once, never silently)."""
     meta, d = load(name), path(name)
-    n = meta["turns"] + 1
+    # after the newest turn file too: a runner killed between writing one and saving meta mustn't have it overwritten
+    n = max([meta["turns"]] + [int(p.stem) for p in (d / "turns").glob("[0-9]*.json") if p.stem.isdigit()]) + 1
     rec = {"n": n, "id": msg["id"], "prompt": msg["prompt"], "files": msg.get("files") or [],
            "worker": meta["worker"], "started": time.time(), "status": "running"}
     write_json(d / "turns" / f"{n:04d}.json", rec)

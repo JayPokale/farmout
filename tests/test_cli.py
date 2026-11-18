@@ -1119,6 +1119,15 @@ class MoreTest(CliBase):
                 self.assertIn("no workers are ready here", p.stderr)
                 self.assertNotIn("No findings", p.stdout, "an empty review must not look like a clean change")
 
+    def test_a_turn_left_by_a_killed_runner_is_never_overwritten(self):
+        self.fo("run", "codex", "say first", "-n", "k")
+        turns = self.state / "sessions" / "k" / "turns"
+        crashed = {"n": 2, "id": "lost", "prompt": "say lost", "files": [], "worker": "codex", "started": 1, "status": "running"}
+        (turns / "0002.json").write_text(json.dumps(crashed))  # written, then the runner died before meta said 2 turns
+        self.fo("send", "k", "say third")
+        self.assertEqual(json.loads((turns / "0002.json").read_text())["id"], "lost")
+        self.assertEqual(json.loads((turns / "0003.json").read_text())["prompt"], "say third")
+
     def test_bare_undo_never_reaches_into_another_repository(self):
         self.repo()
         self.fo("run", "codex", "write one.txt 1", "--isolate", "-n", "p1")
