@@ -18,7 +18,7 @@ agy report a new one, and every CLI resumes by id (see sid()). The first line of
   lines a|b|c      reply "- a", "- b" and "- c" on three lines
   recall           reply with the first line of this session's previous brief, or "none"
 farmout's review brief is answered from $FAKE_LOG/review-<cli>-<model>.txt, else review-<cli>.txt (default: NO
-FINDINGS).
+FINDINGS; "EXIT <message>" fails the run).
   agyerror         agy reports a non-SUCCESS status
   agyempty         agy reports SUCCESS with an empty answer, as when headless mode denied a tool it wanted
   claudeout        claude prints its JSON report of a failed login and exits 1, as the real one does
@@ -76,6 +76,8 @@ if brief.startswith("Review a code change"):  # farmout's review brief: answer f
     found = os.path.join(log, f"review-{name}-{flag('--model') or flag('-m')}.txt")  # or review-<cli>-<model>.txt
     found = found if os.path.exists(found) else os.path.join(log, f"review-{name}.txt")
     reply = open(found).read() if os.path.exists(found) else "NO FINDINGS"
+    if reply.startswith("EXIT "):  # a reviewer that fails
+        sys.exit(reply[5:])
 elif cmd == "big":
     reply = "x" * int(reply)
 elif cmd == "fail":

@@ -13,10 +13,16 @@ from .workers import ENABLED, SETUP, lane, limited_for, logged_out
 LOGIN_PAUSE = 1800  # a worker that can't log in is left alone this long (or until it works again)
 
 
-def lane_key(worker, model=None):
-    """What a usage limit is recorded under: the worker, or worker:model when a model was named, so that Opus at
-    its limit doesn't keep Sonnet from being tried."""
+def lane_key(worker, model=None, s=None):
+    """What a usage limit is recorded under: worker:model when the model is known (named, or the worker's default
+    in the settings s), else the worker; so Opus at its limit doesn't keep Sonnet from being tried."""
+    model = model or ((s or {}).get("models") or {}).get(worker)
     return f"{worker}:{model}" if model else worker
+
+
+def held_by(key, worker, held, why):
+    """Is farmout leaving this lane alone? Its own limit, or its worker isn't logged in (a login is per worker)."""
+    return key in held or (worker in held and why.get(worker) == "login")
 
 
 def check(t):
@@ -94,18 +100,24 @@ def execute(t, key, where=None, on_iso=None):
     stopped halfway still leaves it findable. Returns {ok, worker, text, native_id, usage, secs, notes, iso, messages}.
     """
     t0, notes, iso, tried = time.time(), [], None, []
+    try:
+        s0 = settings(os.path.expanduser(t.get("cwd") or os.getcwd()))
+    except Exception:
+        s0 = {}
     # a conversation the worker holds natively moves only if the session can hand its transcript over
     order = fallbacks(t) if not t.get("resume") or t.get("handoff") else []
-    held, here = usage.limits(), lane_key(t.get("worker"), t.get("model"))
-    if here in held:  # known to be out of quota, or logged out: go straight to the next one, if there is one
-        nxt = next(((w, m) for w, m in order if lane_key(w, m) != here and lane_key(w, m) not in held), None)
+    held, why = usage.limits(), usage.reasons()
+    here = lane_key(t.get("worker"), t.get("model"), s0)
+    if held_by(here, t.get("worker"), held, why):  # known to be out of quota, or logged out: go straight on
+        nxt = next(((w, m) for w, m in order if lane_key(w, m, s0) != here
+                    and not held_by(lane_key(w, m, s0), w, held, why)), None)
         if nxt:
-            notes.append(f"{usage.describe(here)}; used {lane_key(*nxt)}")
+            notes.append(f"{usage.describe(here if here in held else t['worker'])}; used {lane_key(*nxt)}")
             tried.append(here)
             t = switch(t, *nxt)
     while True:
         w, t1 = t.get("worker"), time.time()
-        k = lane_key(w, t.get("model"))
+        k = lane_key(w, t.get("model"), s0)
         try:
             if w not in ENABLED:
                 raise ValueError(f"unknown or unavailable worker {w!r}; available: {', '.join(ENABLED) or 'none'}")
@@ -125,26 +137,27 @@ def execute(t, key, where=None, on_iso=None):
             res = {**reply, "ok": True, "worker": w, "model": t.get("model"), "text": (reply.get("text") or "").strip()}
             usage.clear_limit(k, *([w] if usage.reasons().get(w) == "login" else []))  # it logs in again
         except Exception as e:
-            err, why = f"{type(e).__name__}: {e}", None
+            err, cause = f"{type(e).__name__}: {e}", None
             if isinstance(e, RuntimeError):
                 wait = limited_for(err)
-                why = "limit" if wait else "login" if logged_out(err) else None
-                if why:
-                    usage.mark_limited(k, wait or LOGIN_PAUSE, why)
-            res = {"ok": False, "worker": w, "model": t.get("model"), "text": err, "limited": bool(why), "why": why}
+                cause = "limit" if wait else "login" if logged_out(err) else None
+                if cause:  # a login is the worker's, whatever the model
+                    usage.mark_limited(w if cause == "login" else k, wait or LOGIN_PAUSE, cause)
+            res = {"ok": False, "worker": w, "model": t.get("model"), "text": err, "limited": bool(cause), "why": cause}
         usage.log(worker=w, ok=res["ok"], secs=round(time.time() - t1, 1), limited=res.get("limited", False),
                   tokens=usage.tokens(res.get("usage")), chars=len(res["text"]))
         if res["ok"] or not res.get("limited"):
             break
         tried.append(k)
-        held = usage.limits()
-        nxt = next(((fw, fm) for fw, fm in order if lane_key(fw, fm) not in tried and lane_key(fw, fm) not in held), None)
+        held, why = usage.limits(), usage.reasons()
+        nxt = next(((fw, fm) for fw, fm in order if lane_key(fw, fm, s0) not in tried
+                    and not held_by(lane_key(fw, fm, s0), fw, held, why)), None)
         if not nxt:
             if res["why"] == "login":
                 res["text"] += (f"\n\n[farmout] {w} isn't logged in, or its subscription ended. To use it again: "
                                 f"{SETUP.get(w, (None, 'log in again'))[1]}. `farmout doctor --live` checks every login.")
             break
-        notes.append(f"{usage.describe(k)}; retried on {lane_key(*nxt)}")
+        notes.append(f"{usage.describe(w if res['why'] == 'login' else k)}; retried on {lane_key(*nxt)}")
         if iso and iso is not where:  # a worktree this task made: the next worker starts from its base, not from
             try:                      # whatever the limited one had half done
                 isolate.reset(iso)

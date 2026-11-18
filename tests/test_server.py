@@ -746,6 +746,10 @@ class LimitWordingTest(unittest.TestCase):
             "Weekly limit reached · resets Mon 9am (Asia/Kolkata)": 4 * 86400 + 21 * 3600,
             "rate limit; resets at 2026-11-18T15:00:00Z": 8.5 * 3600,
             "429 Too Many Requests": None,
+            "usage limit, resets 3pm, monthly limit": 3 * 3600,  # "monthly" isn't Monday
+            "limit reached; resets 3pm (PST)": 16.5 * 3600,
+            "limit reached; resets Thurs 9am (Asia/Kolkata)": 21 * 3600,
+            "limit reached; resets 3pm (Nowhere/Atlantis)": None,  # a zone it can't read: no guess
         }
         for text, want in cases.items():
             with self.subTest(text):

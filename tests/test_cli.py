@@ -676,6 +676,30 @@ class OneSubscriptionTest(CliBase):
         self.fo("run", "claude", "say plain")
         self.assertEqual(flag(self.last("claude")["argv"], "--model"), "sonnet")
 
+    def test_limits_follow_the_model_the_settings_chose(self):
+        (self.work / ".farmout").mkdir()
+        (self.work / ".farmout" / "settings.json").write_text('{"models": {"claude": "opus"}}')
+        p = self.fo("run", "claude", "busymodel opus say from sonnet", "--fallback", "claude:opus,claude:sonnet")
+        self.assertEqual(p.stdout, "from sonnet\n")
+        self.assertEqual([flag(r["argv"], "--model") for r in self.runs()], ["opus", "sonnet"],
+                         "claude ran Opus by the settings; claude:opus is that same lane, so it isn't tried again")
+        self.assertEqual(list(json.loads((self.state / "limits.json").read_text())), ["claude:opus"])
+        self.assertIn("left out claude:opus is at a usage limit", self.fo("review", rc=None).stderr)
+
+    def test_a_lost_login_blocks_every_model_of_that_worker(self):
+        self.state.mkdir(parents=True, exist_ok=True)
+        (self.state / "limits.json").write_text(json.dumps({"claude": {"until": time.time() + 600, "why": "login"}}))
+        p = self.fo("run", "claude:opus", "say elsewhere", "--fallback", "codex")
+        self.assertEqual(p.stdout, "elsewhere\n")
+        self.assertIn("claude isn't logged in", p.stderr)
+        self.assertEqual([r["name"] for r in self.runs()], ["codex"], "claude wasn't tried")
+
+    def test_a_lane_in_a_group_never_falls_back_onto_another_lane(self):
+        p = self.json("ask", "limited codex say hi", "-w", "codex,claude")
+        workers = [x["worker"] for x in p["answers"]]
+        self.assertEqual(workers[1], "claude")
+        self.assertNotIn(workers[0], ("codex", "claude"), "the codex lane went to a worker outside the group")
+
     def test_a_logged_out_worker_falls_back_and_says_how_to_log_in(self):
         p = self.fo("run", "codex", "loggedout codex say rescued", "--fallback", "claude")
         self.assertEqual(p.stdout, "rescued\n")
@@ -790,6 +814,11 @@ class OneSubscriptionTest(CliBase):
         (self.work / ".farmout" / "settings.json").unlink()
         (self.work / ".farmout" / "settings.toml").write_text('web = true\n')
         self.assertIn('[models]\nclaude = "sonnet"', self.fo("bench", "--apply", "--last", rc=1).stderr)
+        (self.work / ".farmout" / "settings.toml").unlink()
+        self.reviewers_say(codex="EXIT boom")
+        p = self.fo("bench", "-n", "1", "-w", "codex", "--apply", rc=1)
+        self.assertIn("codex", p.stdout, "the paid-for results still show")
+        self.assertIn("nothing to apply", p.stderr)
 
     def test_a_pipeline_stage_can_use_two_models_of_one_worker(self):
         d = self.work / ".farmout" / "pipelines"

@@ -261,6 +261,9 @@ WAIT = re.compile(r"(?:try again|retry|resets?|available again|wait)\s+(?:in|aft
                   r"((?:\d+(?:\.\d+)?\s*[a-z]+[,\s]*(?:and\s+)?)+)", re.I)
 AT = re.compile(r"(?:resets?|try again|available again)\b(.{0,60})", re.I | re.S)
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+WEEKDAY = re.compile(r"\b(" + "|".join(DAYS) + r")(?:[a-z]*day|s|rs?)?\b", re.I)  # Mon, Tues, Thurs, Monday; not "monthly"
+ZONES = {"UTC": 0, "GMT": 0, "PST": -8, "PDT": -7, "MST": -7, "MDT": -6, "CST": -6, "CDT": -5, "EST": -5, "EDT": -4,
+         "BST": 1, "CET": 1, "CEST": 2, "IST": 5.5, "JST": 9, "AEST": 10, "AEDT": 11}
 
 
 def reset_in(error, now=None):
@@ -292,14 +295,16 @@ def reset_in(error, now=None):
     hour, minute = int(clock.group(1)) % 24, int(clock.group(2) or 0)
     if clock.group(3):
         hour = hour % 12 + (12 if clock.group(3).lower() == "p" else 0)
-    zone = re.search(r"\(([A-Za-z_]+(?:/[A-Za-z_+-]+)+|UTC)\)", tail)
-    if zone:
+    zone = re.search(r"\(([A-Za-z_]+(?:/[A-Za-z_+-]+)+|[A-Z]{2,4})\)", tail)
+    if zone and zone.group(1) in ZONES:
+        now = now.astimezone(datetime.timezone(datetime.timedelta(hours=ZONES[zone.group(1)])))
+    elif zone:
         try:
             now = now.astimezone(zoneinfo.ZoneInfo(zone.group(1)))
         except (zoneinfo.ZoneInfoNotFoundError, ValueError):
-            pass
+            return None  # a zone we can't read: a guess could be hours off, so the 15-minute default is safer
     when = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    day = re.search(r"\b(" + "|".join(DAYS) + r")[a-z]*\b", tail, re.I)
+    day = WEEKDAY.search(tail)
     if day:
         when += datetime.timedelta(days=(DAYS.index(day.group(1).lower()) - when.weekday()) % 7)
     while when <= now:

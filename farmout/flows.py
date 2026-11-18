@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 
 from . import isolate, proc, sessions
+from .config import settings
 from .workers import ENABLED, lane
 
 ACTIVE = set()  # sessions this process is waiting on; the CLI stops them on Ctrl-C
@@ -44,6 +45,10 @@ def fan(group, workers, cwd, prompt, files=(), isolate=False, models=None, timeo
     [(session name, turn record)] in order."""
     plan = lanes(group, workers, names)
     prompts = prompt if isinstance(prompt, list) else [prompt] * len(plan)
+    if fallback is None and len({w for _, w, _, _ in plan}) > 1:  # a lane at its limit mustn't land on another lane's
+        s = settings(cwd or os.getcwd())                          # worker: two answers from one worker in one group
+        base = s["fallback"] if "fallback" in s else [w for w in ENABLED if w != "api"]
+        fallback = [x for x in base if lane(x)[0] not in {w for _, w, _, _ in plan}]
     metas = []
     try:
         for label, w, m, name in plan:

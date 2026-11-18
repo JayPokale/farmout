@@ -12,7 +12,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from . import VERSION, bench, flows, live, pipeline, proc, review, sessions, skills, store, usage
+from . import VERSION, bench, engine, flows, live, pipeline, proc, review, sessions, skills, store, usage
 from . import hooks as farmout_hooks
 from .config import OUT_DIR, STATE, digest, find, project_root, read, repo_root, settings, trust_file
 from .workers import API_BASE, API_MODEL, ENABLED, SETUP, WORKERS, lane, use_main_claude
@@ -102,7 +102,7 @@ def everyone(asked):
     return workers
 
 
-def picked(asked):
+def picked(asked, cwd=None):
     """-w for ask, review, race and fix-pr: lanes, each `worker` or `worker:model`. One subscription can fill several
     (`claude:opus,claude:sonnet`, or `codex,codex` for two runs of one model). With no -w, every ready worker that
     isn't known to be at a usage limit or logged out."""
@@ -110,11 +110,12 @@ def picked(asked):
     if lanes:
         check_workers(list(dict.fromkeys(lane(x)[0] for x in lanes)))
         return lanes
-    workers, held = everyone(None), usage.limits()
-    ready = [w for w in workers if w not in held]
-    for w in workers:
-        if w in held:
-            err(f"farmout: left out {usage.describe(w)}")
+    workers, held, why, s = everyone(None), usage.limits(), usage.reasons(), settings(cwd or os.getcwd())
+    out = {w: engine.lane_key(w, None, s) for w in workers}
+    out = {w: (k if k in held else w) for w, k in out.items() if engine.held_by(k, w, held, why)}
+    ready = [w for w in workers if w not in out]
+    for k in out.values():
+        err(f"farmout: left out {usage.describe(k)}")
     if not ready:
         raise ValueError("every worker is at a usage limit or logged out (`farmout status`); -w uses one anyway")
     return ready
@@ -123,10 +124,11 @@ def picked(asked):
 def auto_worker(cwd):
     """(worker, model) for `farmout run auto`: the first allowed lane that isn't at a usage limit or logged out,
     your fallback order first (`farmout bench --apply` writes it best-first), then every other worker."""
-    s, held = settings(cwd), usage.limits()
+    s, held, why = settings(cwd), usage.limits(), usage.reasons()
     allowed = [lane(x) for x in (s.get("fallback") or []) + list(ENABLED)]
     allowed = [(w, m) for w, m in allowed if w in ENABLED and w in s.get("workers", ENABLED)]
-    pick = next(((w, m) for w, m in allowed if w != "api" and (f"{w}:{m}" if m else w) not in held), None)
+    pick = next(((w, m) for w, m in allowed if w != "api" and not engine.held_by(engine.lane_key(w, m, s), w, held, why)),
+                None)
     pick = pick or next(iter(allowed), None)
     if not pick:
         raise ValueError("no allowed workers available here (`farmout doctor`, .farmout/settings)")
@@ -215,7 +217,7 @@ def show_answers(a, group, rounds):
 
 def cmd_ask(a):
     prompt, extra = read_prompt(a.prompt, cwd=a.cwd)
-    workers = picked(a.workers)
+    workers = picked(a.workers, a.cwd)
     group = sessions.new_group("debate" if a.debate else "ask")
     title = f"farmout ask{' --debate' if a.debate else ''} · {len(workers)} workers · read-only"
     with live.Lanes(group, workers, "answering", title=title, on=live.enabled(a)):
@@ -241,7 +243,7 @@ def show_review(a, r, min_agree=1, fail_on="never"):
 
 
 def cmd_review(a):
-    workers = picked(a.workers)
+    workers = picked(a.workers, a.cwd)
     group = sessions.new_group("review")
     with live.Lanes(group, workers, "reviewing", title=f"farmout review · {len(workers)} workers · read-only",
                     findings=True, on=live.enabled(a)):
@@ -252,7 +254,7 @@ def cmd_review(a):
 
 def cmd_race(a):
     task, extra = read_prompt(a.task, cwd=a.cwd)
-    workers = picked(a.workers)
+    workers = picked(a.workers, a.cwd)
     group = sessions.new_group("race")
     with live.Lanes(group, workers, "working", title=f"farmout race · {len(workers)} workers · one worktree each",
                     on=live.enabled(a)) as lanes:
@@ -265,7 +267,7 @@ def cmd_fix_pr(a):
     if a.dry_run:
         task = flows.pr_task(a.cwd, a.number)
         return emit(a, {"number": a.number, "task": task}, task)
-    workers = picked(a.workers)
+    workers = picked(a.workers, a.cwd)
     group = sessions.new_group(f"pr{a.number}")
     with live.Lanes(group, workers, "working", title=f"farmout fix-pr {a.number} · {len(workers)} workers",
                     on=live.enabled(a)) as lanes:
@@ -683,11 +685,17 @@ def cmd_bench(a):
                              lanes=lanes)
     board = bench.scoreboard(rows)
     card = bench.share(board, rows, report) if a.share else None
-    applied = apply_bench(a, rows) if a.apply else None
+    applied, failed_apply = None, None
+    if a.apply:
+        try:
+            applied = apply_bench(a, rows)
+        except ValueError as e:  # the reviews are paid for: show them, then say what couldn't be applied
+            failed_apply = str(e)
     if a.json:
         return emit(a, {"commits": rows, "scoreboard": [{"worker": w, "found": f, "of": o, "failed": x} for w, f, o, x in board],
                         "report": str(report), **({"share": card} if card else {}),
-                        **({"applied": applied} if applied else {})})
+                        **({"applied": applied} if applied else {}),
+                        **({"apply_error": failed_apply} if failed_apply else {})}) or (1 if failed_apply else 0)
     print(table([("WORKER", "FOUND", "FAILED")] + [(w, f"{f}/{o}", x) for w, f, o, x in board]))
     print()
     ws = [w for w, *_ in board]
@@ -705,6 +713,9 @@ def cmd_bench(a):
     if applied:
         print()
         show_applied(applied)
+    elif failed_apply:
+        err(f"farmout bench --apply: {failed_apply}")
+        return 1
     elif rows:
         err("Use the winners here (best model per worker, fallback order): farmout bench --apply --last")
 
