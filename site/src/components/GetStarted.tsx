@@ -30,13 +30,13 @@ const INSTALLS = [
   },
 ];
 
-// Real `farmout doctor` output from the maintainer's machine, with the install
-// paths and the first (version) line left out.
+// Real `farmout doctor` output from the maintainer's machine (19 Nov 2026), with the
+// install paths, the first (version) line and the Antigravity terms note left out.
 const DOCTOR = [
   ["ready", "antigravity", "agy 1.4.6", "text-term-agy"],
   ["ready", "codex", "codex-cli 0.163.0", "text-term-codex"],
   ["ready", "claude", "2.1.323 (Claude Code)", "text-term-claude"],
-  ["ready", "copilot", "GitHub Copilot CLI 1.0.112.", "text-term-copilot"],
+  ["ready", "copilot", "GitHub Copilot CLI 1.0.114.", "text-term-copilot"],
   ["missing", "deepseek", "install DeepSeek Harness (`npm i -g @deepseek-ai/dsh`) and set DEEPSEEK_API_KEY", "text-term-dim"],
   ["missing", "api", "set FARMOUT_API_BASE and FARMOUT_API_MODEL (and FARMOUT_API_KEY if needed)", "text-term-dim"],
 ] as const;
@@ -141,7 +141,11 @@ export default function GetStarted() {
                       <span className="text-term-dim">{v}</span>
                     </p>
                   ))}
-                  <p className="mt-1 whitespace-pre text-term-dim">
+                  <p className="mt-1 whitespace-pre text-term-fg">
+                    4 subscriptions ready. `farmout review` has them all review your change, and a task at its limit
+                    moves on in this order here: antigravity, codex, claude, copilot. The `fallback` setting changes it.
+                  </p>
+                  <p className="whitespace-pre text-term-dim">
                     Logins are not checked. `farmout doctor --live` sends each ready worker one tiny prompt.
                   </p>
                 </div>
@@ -155,6 +159,7 @@ export default function GetStarted() {
                   ["one question, every answer", 'farmout ask "Is this migration safe?"'],
                   ["your tests pick the winner", 'farmout race "Fix the flaky test" --test "pytest -x"'],
                   ["a conversation that remembers", 'farmout run codex "Add tests for parse_date()" -n dates'],
+                  ["every conversation, as a graph", "farmout ui"],
                 ].map(([k, v]) => (
                   <div
                     key={k}
