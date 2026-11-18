@@ -2,7 +2,9 @@
 
 [English](../README.md) · [简体中文](README.zh-CN.md) · **日本語** · [한국어](README.ko.md) · [Español](README.es.md)
 
-**契約しているすべての AI サブスクリプションを働かせましょう：Codex、Gemini、GitHub Copilot、2 つ目の Claude アカウント、ローカルモデル。会話を覚えるセッション、並列コードレビュー、テストが勝者を決めるレース、パイプラインを、ターミナルからでも Claude Code の中からでも。デフォルトで読み取り専用、依存関係ゼロ。**
+**上限に当たる回数を減らし、当たっても作業を止めない。**
+
+farmout は、すでに契約している AI サブスクリプション（Claude、Codex、Gemini、GitHub Copilot、DeepSeek、2 つ目の Claude アカウント、ローカルモデル）に作業を任せます。長文の読み込みやレビューを任せればメインのモデルのクォータが長持ちし、どれかが利用上限に達したりログインが切れたりすると、タスクは会話ごと次のモデルに引き継がれます。どのターンからでも分岐できる会話、並列コードレビュー、テストが勝者を決めるレース、パイプラインを、ターミナルからでも Claude Code の中からでも。デフォルトで読み取り専用、依存関係ゼロ。
 
 [![CI](https://github.com/JayPokale/farmout/actions/workflows/ci.yml/badge.svg)](https://github.com/JayPokale/farmout/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.9%2B-3776ab)
@@ -10,7 +12,7 @@
 ![MCP](https://img.shields.io/badge/MCP-stdio-6e56cf)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
-> **注:** この翻訳は以前のバージョンに基づいています。最新の機能（`farmout bench --share`、ライブ進捗表示、DeepSeek 対応など）は[英語の README](../README.md) をご覧ください。
+> **注:** この翻訳は抄訳です。すべての機能（DeepSeek ワーカー、スキル、フック、ストア、設定など）は[英語の README](../README.md) をご覧ください。
 
 ```bash
 pipx install git+https://github.com/JayPokale/farmout
@@ -19,6 +21,9 @@ cd your-repo && farmout bench --share   # あなたのコードの実際のバ�
 
 <p align="center"><img src="../assets/review-demo.svg" width="900" alt="実際の実行を再現したターミナルのアニメーション。/farmout:review が未コミットの変更 1 件を antigravity、codex、claude、copilot に並列で送り、Claude が統合・検証済みの 9 件の指摘と、各指摘を挙げたモデル数を表にして表示する"></p>
 
+- **上限でも止まらない**: サブスクリプションが利用上限に達したりログアウトしていたりすると、farmout のタスク・会話・パイプラインのステージは、それまでの会話を持ったまま次に使えるモデルへ移ります。意図的に切り替えることもできます（`farmout send cache -w codex`、または `--model opus`）。farmout が移せるのは farmout 自身のタスクと会話で、すでにクォータを使い切った Claude Code の対話セッションは救えません。
+- **サブスクリプション 1 つでも十分**: 1 つのプランの複数モデルでレーンを埋められます（`farmout review -w claude:opus,claude:sonnet`）。`farmout bench --apply` は、あなたのコードで最も成績の良かったモデルをデフォルトにします。
+- **会話をグラフで**: `farmout fork cache --at 2 -w codex "..."` でどのターンからでも別のモデルに分岐できます。`farmout ui` はすべての会話をターミナル上の分岐グラフとして描き、任意のターンを読む・続ける・そこから分岐することができます（`farmout tree` は同じグラフを出力）。フォルダの名前を変えたり移動したりしても、会話はそのまま続けられます。
 - **`/farmout:review`**: Codex、Gemini (Antigravity 経由)、GitHub Copilot、2 つ目の Claude アカウントが、あなたの diff を読み取り専用で同時にレビューします。Claude が結果を統合し、各問題を指摘したモデル数を集計して、すべての指摘をコードと照合します。[ベンチマーク](../bench/README.md)では、32 件のバグ (仕込んだ 23 件と、オープンソースプロジェクトの実際のリグレッション 9 件) のすべてが、4 モデル中 3 モデル以上に指摘されました。
 - **`/farmout:race <task>`**: 各モデルが同じ修正を、それぞれ専用の git worktree で試みます。勝者はテストで決まり、あなたが承認するまで作業ツリーには一切変更が入りません。
 - **日常的な委譲**: Claude が長文の読み込みやボイラープレートの作成を、適したサブスクリプションに任せます。この方法で論文 3 本を要約したところ、同じ回答を得るのに Claude のトークン消費は **59% 減**(コストは 74% 減)でした。
@@ -49,6 +54,10 @@ farmout run codex "src/dates.py の parse_date() に単体テストを追加" --
 farmout send dates "うるう年もカバーして"
 # パッチを作業ツリーに適用（または --pr）
 farmout apply dates
+# 会話のどのターンからでも、別のモデルで分岐
+farmout fork dates --at 1 -w claude "タイムゾーン付きの入力もテストして"
+# すべての会話をターミナル上の分岐グラフとして閲覧・続行・分岐
+farmout ui
 # レビュー → 2 モデル以上が一致した問題を修正 → 修正をレビュー
 farmout pipe run fix
 # 各サブスクリプションがしてくれたこと

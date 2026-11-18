@@ -2,7 +2,9 @@
 
 [English](../README.md) · **简体中文** · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md)
 
-**让你付费的每个 AI 订阅都动起来：Codex、Gemini、GitHub Copilot、DeepSeek、第二个 Claude 账号、本地模型。会记住上下文的会话、并行代码审查、由你的测试裁定胜负的竞速，还有流水线，在终端里或在 Claude Code 内部都能用。默认只读，零依赖。**
+**少撞额度上限；撞上了也能接着干。**
+
+farmout 把工作交给你已经付费的各个 AI 订阅：Claude、Codex、Gemini、GitHub Copilot、DeepSeek、第二个 Claude 账号、本地模型。把长篇阅读和代码审查交给它们，主力模型的额度就能撑得更久；其中某个订阅触及用量上限或登录失效时，任务会交给下一个，对话也一起带过去。可以从任意一轮分叉的对话、并行代码审查、由你的测试裁定胜负的竞速，还有流水线，在终端里或在 Claude Code 内部都能用。默认只读，零依赖。
 
 [![CI](https://github.com/JayPokale/farmout/actions/workflows/ci.yml/badge.svg)](https://github.com/JayPokale/farmout/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.9%2B-3776ab)
@@ -19,14 +21,15 @@ cd your-repo && farmout bench --share   # 哪个 AI 订阅最能在你自己的�
 
 <p align="center"><img src="../assets/review-demo.svg" width="900" alt="真实运行的终端动画回放：一次审查把同一处未提交的改动并行发给 antigravity、codex、claude 和 copilot，随后 Claude 输出一张合并并核实过的表格，列出 9 条发现以及每条被几个模型指出"></p>
 
-- **`farmout bench`**：在你自己的代码上，哪个 AI 最强？farmout 会在临时 worktree 里撤销你 git 历史中最近的 bug 修复，让你的每个订阅去把 bug 找出来；加上 `--share`，还能把得分做成一篇帖子和一张图片卡片（只有分数，绝不包含你的代码）。
+- **撞上限也不停**：某个订阅触及用量上限或已退出登录时，farmout 的任务、对话或流水线阶段会带着此前的对话交给下一个可用的模型，而不是直接失败。也可以主动切换（`farmout send cache -w codex`，或 `--model opus`）。farmout 转移的是它自己的任务和对话；已经用完额度的 Claude Code 交互式会话，它救不回来。
+- **在 Claude Code 里少用额度**：Claude 会把长篇阅读和样板代码交给最合适的订阅。用这种方式总结三篇论文，答案完全相同，Claude 却少用了 **59% 的 token**（成本降低 74%）。
+- **`farmout bench`**：在你自己的代码上，哪个 AI 最强？Opus 值得占用你的额度吗？farmout 会在临时 worktree 里撤销你 git 历史中最近的 bug 修复，让你的每个订阅去把 bug 找出来；加上 `--share`，还能把得分做成一篇帖子和一张图片卡片（只有分数，绝不包含你的代码）。
 - **`farmout review`**：Codex、Gemini（通过 Antigravity）、GitHub Copilot 和第二个 Claude 账号同时以只读方式审查你的改动。各模型的发现会合并在一起，并标出有几个模型意见一致；凡是引用了不存在的文件或行号的发现，在你看到之前就会被剔除。在[我们的基准测试](../bench/README.md)中，32 个 bug（23 个人为植入，9 个是来自开源项目的真实回归）每一个都被四个模型中的至少三个指出。
 - **`farmout race "<task>" --test "pytest -x"`**：每个模型都在各自的 git worktree 里尝试同一处改动，由你的测试选出胜者；在你执行 `farmout apply` 之前，你的工作区不会有任何改动。
 - **只有一个订阅也够用**：同一个订阅里的多个模型可以各占一条线路（`farmout review -w claude:opus,claude:sonnet`，或用 `-w codex,codex` 让同一个模型审查两次）；`farmout bench --apply` 会把在你自己代码上表现最好的模型设为默认；某个模型触及上限时，交给你指定的下一个模型（`fallback = ["claude:sonnet"]`）。
-- **`farmout run` / `send` / `fork`**：和任意 worker 开启命名会话。会话会记住对话内容，忙碌时把新消息排进队列，还能把一个会话的回复转交给另一个会话。对话中途可以换模型或换 worker（`farmout send dates --model opus`，或 `-w codex`，新 worker 会拿到此前的对话）；某个订阅触及上限或登录失效时，任务会交给下一个可用的 worker，而不是直接失败。
+- **`farmout run` / `send` / `fork` / `ui`**：和任意 worker 开启命名对话，忙碌时把新消息排进队列，还能把一个会话的回复转交给另一个会话。可以从任意一轮分叉到另一个模型（`farmout fork cache --at 2 -w codex "..."`），用 `farmout ui` 在终端里把每段对话画成一张分支图：阅读任意一轮、接着往下聊，或从那里分叉。文件夹改名或移动后，对话照样能继续。
 - **`farmout pipe run fix`**：先审查你的改动，再在 worktree 里修复两个及以上模型一致指出的问题，然后审查这次修复。你也可以自己编写流水线，支持门禁（gate）、审批和并行阶段。
 - **技能、钩子和商店**：在任意 worker 上运行 `SKILL.md` 技能（Claude Code、Codex 和 Copilot 通用的格式），挂接 farmout 的各类事件，还能安装经过审核的钩子、技能和工具，每个文件都用 SHA-256 锁定。
-- **在 Claude Code 里**：Claude 会把长篇阅读和样板代码交给最合适的订阅。用这种方式总结三篇论文，答案完全相同，Claude 却少用了 **59% 的 token**（成本降低 74%）。
 
 你为 Claude 付了费，可能还订阅了 ChatGPT、Google AI、GitHub Copilot、第二个 Claude 席位，或者在 GPU 上跑着开源模型。它们各自待在自己的终端里，一天中的大部分时间都闲着。farmout 以你的身份驱动这些服务的官方 CLI，让它们并行干活、互相检查，在同一项工作上轮流接力。不需要 API Key，没有额外账单，也没有任何依赖：纯 Python 标准库实现，在把账号托付给它之前，你可以先把代码通读一遍。
 

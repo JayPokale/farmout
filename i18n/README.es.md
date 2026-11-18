@@ -2,7 +2,9 @@
 
 [English](../README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · **Español**
 
-**Pon a trabajar todas las suscripciones de IA que pagas: Codex, Gemini, GitHub Copilot, una segunda cuenta de Claude y modelos locales. Conversaciones que recuerdan, revisión en paralelo, carreras que deciden tus pruebas y pipelines, desde tu terminal o dentro de Claude Code. De solo lectura por defecto y sin dependencias.**
+**Llega menos al límite. Sigue trabajando cuando llegues.**
+
+farmout reparte el trabajo entre las suscripciones de IA que ya pagas: Claude, Codex, Gemini, GitHub Copilot, DeepSeek, una segunda cuenta de Claude y modelos locales. Dales las lecturas largas y las revisiones y la cuota de tu modelo principal durará más; cuando una llega a su límite de uso o su sesión caduca, la tarea pasa a la siguiente y la conversación va con ella. Conversaciones que puedes ramificar desde cualquier turno, revisión en paralelo, carreras que deciden tus pruebas y pipelines, desde tu terminal o dentro de Claude Code. De solo lectura por defecto y sin dependencias.
 
 [![CI](https://github.com/JayPokale/farmout/actions/workflows/ci.yml/badge.svg)](https://github.com/JayPokale/farmout/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.9%2B-3776ab)
@@ -10,7 +12,7 @@
 ![MCP](https://img.shields.io/badge/MCP-stdio-6e56cf)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
-> **Nota:** esta traducción corresponde a una versión anterior. Para lo más reciente (`farmout bench --share`, progreso en vivo, soporte para DeepSeek), consulta el [README en inglés](../README.md).
+> **Nota:** esta traducción es un resumen. Para todas las funciones (el worker de DeepSeek, skills, hooks, la tienda, los ajustes), consulta el [README en inglés](../README.md).
 
 ```bash
 pipx install git+https://github.com/JayPokale/farmout
@@ -19,6 +21,9 @@ cd your-repo && farmout bench --share   # ¿qué IA encuentra mejor los bugs rea
 
 <p align="center"><img src="../assets/review-demo.svg" width="900" alt="Reproducción animada de terminal de una ejecución real: /farmout:review envía un cambio sin confirmar a antigravity, codex, claude y copilot en paralelo; luego Claude muestra una tabla combinada y verificada de nueve hallazgos e indica cuántos modelos señalaron cada uno"></p>
 
+- **Sigue al llegar al límite**: cuando una suscripción llega a su límite de uso o tiene la sesión cerrada, una tarea, conversación o etapa de pipeline de farmout pasa al siguiente modelo disponible con los turnos anteriores, en vez de fallar. También puedes cambiar a propósito (`farmout send cache -w codex`, o `--model opus`). farmout mueve sus propias tareas y conversaciones; no puede rescatar una sesión interactiva de Claude Code que ya agotó su cuota.
+- **Con una sola suscripción basta**: sus modelos llenan los carriles (`farmout review -w claude:opus,claude:sonnet`), y `farmout bench --apply` deja como predeterminado el modelo que mejor lo hizo con tu propio código.
+- **Conversaciones como un grafo**: `farmout fork cache --at 2 -w codex "..."` ramifica desde cualquier turno hacia otro modelo, y `farmout ui` dibuja todas tus conversaciones como un grafo con ramas en la terminal: lee cualquier turno, continúalo o ramifica desde él (`farmout tree` imprime el mismo grafo). Las conversaciones sobreviven a una carpeta renombrada o movida.
 - **`/farmout:review`**: Codex, Gemini (mediante Antigravity), GitHub Copilot y una segunda cuenta de Claude revisan tu diff a la vez, en modo de solo lectura. Claude combina los hallazgos, cuenta cuántos modelos señalaron cada problema y verifica cada hallazgo contra el código. En [nuestro benchmark](../bench/README.md), cada uno de los 32 bugs (23 introducidos a propósito y 9 regresiones reales de proyectos open source) fue señalado por al menos tres de los cuatro modelos.
 - **`/farmout:race <task>`**: cada modelo intenta la misma corrección en su propio git worktree; tus pruebas eligen al ganador y nada modifica tu árbol hasta que lo indiques.
 - **Delegación diaria**: Claude delega lecturas largas y código repetitivo a la suscripción más adecuada. Resumir tres artículos así le costó a Claude **59% menos tokens** (74% menos coste) para obtener las mismas respuestas.
@@ -49,6 +54,10 @@ farmout run codex "Añade tests para parse_date() en src/dates.py" --isolate -n 
 farmout send fechas "Cubre también los años bisiestos"
 # aplica el parche a tu árbol (o --pr)
 farmout apply fechas
+# ramifica desde cualquier turno de la conversación, con otro modelo
+farmout fork fechas --at 1 -w claude "Prueba también entradas con zona horaria"
+# todas las conversaciones como un grafo en la terminal: lee, continúa o ramifica
+farmout ui
 # revisar → corregir lo que 2+ modelos acuerdan → revisar la corrección
 farmout pipe run fix
 # qué hizo cada suscripción por ti

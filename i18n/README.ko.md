@@ -2,7 +2,9 @@
 
 [English](../README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · **한국어** · [Español](README.es.md)
 
-**구독 중인 모든 AI를 일하게 하세요: Codex, Gemini, GitHub Copilot, 두 번째 Claude 계정, 로컬 모델. 대화를 기억하는 세션, 병렬 코드 리뷰, 테스트가 승자를 정하는 레이스, 파이프라인을 터미널에서도 Claude Code 안에서도 쓸 수 있습니다. 기본은 읽기 전용이고 의존성은 0개입니다.**
+**한도에 덜 걸리고, 걸려도 작업은 계속됩니다.**
+
+farmout은 이미 구독 중인 AI 서비스(Claude, Codex, Gemini, GitHub Copilot, DeepSeek, 두 번째 Claude 계정, 로컬 모델)에 작업을 맡깁니다. 긴 문서 읽기와 리뷰를 맡기면 주력 모델의 사용량이 오래가고, 어느 하나가 사용 한도에 걸리거나 로그인이 만료되면 작업은 대화와 함께 다음 모델로 넘어갑니다. 어느 턴에서든 분기할 수 있는 대화, 병렬 코드 리뷰, 테스트가 승자를 정하는 레이스, 파이프라인을 터미널에서도 Claude Code 안에서도 쓸 수 있습니다. 기본은 읽기 전용이고 의존성은 0개입니다.
 
 [![CI](https://github.com/JayPokale/farmout/actions/workflows/ci.yml/badge.svg)](https://github.com/JayPokale/farmout/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.9%2B-3776ab)
@@ -10,7 +12,7 @@
 ![MCP](https://img.shields.io/badge/MCP-stdio-6e56cf)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
-> **참고:** 이 번역은 이전 버전을 기준으로 합니다. 최신 기능(`farmout bench --share`, 실시간 진행 표시, DeepSeek 지원 등)은 [영어 README](../README.md)를 참고하세요.
+> **참고:** 이 번역은 요약본입니다. 모든 기능(DeepSeek 워커, 스킬, 훅, 스토어, 설정 등)은 [영어 README](../README.md)를 참고하세요.
 
 ```bash
 pipx install git+https://github.com/JayPokale/farmout
@@ -19,6 +21,9 @@ cd your-repo && farmout bench --share   # 내 코드의 실제 버그를 가장 
 
 <p align="center"><img src="../assets/review-demo.svg" width="900" alt="실제 실행 터미널 리플레이: /farmout:review가 커밋되지 않은 변경 사항 하나를 antigravity, codex, claude, copilot에 병렬로 전달하면, Claude가 각 문제를 지적한 모델 수와 함께 검증된 9가지 발견 항목을 병합된 표로 출력합니다"></p>
 
+- **한도에 걸려도 멈추지 않음**: 구독이 사용 한도에 도달하거나 로그아웃 상태이면, farmout의 작업·대화·파이프라인 단계는 지금까지의 대화를 그대로 가지고 다음으로 사용 가능한 모델로 넘어갑니다. 직접 전환할 수도 있습니다(`farmout send cache -w codex`, 또는 `--model opus`). farmout이 옮기는 것은 farmout 자신의 작업과 대화이며, 이미 한도를 다 쓴 Claude Code 대화형 세션은 살릴 수 없습니다.
+- **구독 하나로도 충분**: 한 요금제의 여러 모델로 레인을 채울 수 있습니다(`farmout review -w claude:opus,claude:sonnet`). `farmout bench --apply`는 여러분의 코드에서 가장 성적이 좋았던 모델을 기본값으로 정합니다.
+- **대화를 그래프로**: `farmout fork cache --at 2 -w codex "..."`로 어느 턴에서든 다른 모델로 분기할 수 있습니다. `farmout ui`는 모든 대화를 터미널 안의 분기 그래프로 그려 주며, 아무 턴이나 읽고, 이어 가고, 거기서 분기할 수 있습니다(`farmout tree`는 같은 그래프를 출력). 폴더 이름을 바꾸거나 옮겨도 대화는 그대로 이어집니다.
 - **`/farmout:review`**: Codex, Gemini(Antigravity 경유), GitHub Copilot, 두 번째 Claude 계정이 동시에 읽기 전용으로 diff를 리뷰합니다. Claude는 각 모델이 발견한 내용을 병합하고, 문제를 지적한 모델 수를 집계하며, 코드와 대조하여 모든 항목을 검증합니다. [자체 벤치마크](../bench/README.md)에서는 32개의 버그(의도적으로 심은 23개, 오픈소스 프로젝트의 실제 회귀 9개) 모두가 4개 모델 중 최소 3개에서 지적되었습니다.
 - **`/farmout:race <task>`**: 모든 모델이 각자의 git worktree에서 동일한 수정을 시도합니다. 테스트를 통해 최적의 결과를 선택하며, 사용자가 승인하기 전까지는 기존 트리를 전혀 변경하지 않습니다.
 - **일상적인 작업 위임**: Claude가 긴 문서 읽기나 보일러플레이트 작성을 상황에 맞는 구독 서비스에 위임합니다. 이 방식으로 논문 3편을 요약했을 때 동일한 답변에 대해 Claude의 토큰 소비가 **59% 감소**(비용 74% 절감)했습니다.
@@ -49,6 +54,10 @@ farmout run codex "src/dates.py의 parse_date()에 단위 테스트 추가" --is
 farmout send dates "윤년도 다뤄 줘"
 # 패치를 작업 트리에 적용(또는 --pr)
 farmout apply dates
+# 대화의 어느 턴에서든 다른 모델로 분기
+farmout fork dates --at 1 -w claude "시간대가 붙은 입력도 테스트해 줘"
+# 모든 대화를 터미널 속 분기 그래프로 보고, 이어 가고, 분기하기
+farmout ui
 # 리뷰 → 2개 이상 모델이 동의한 문제 수정 → 수정 리뷰
 farmout pipe run fix
 # 각 구독이 해 준 일
