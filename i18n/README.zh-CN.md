@@ -235,7 +235,7 @@ timeout = 30
 
 ## 哪个模型最懂你的代码
 
-`farmout bench -n 3` 会在你的提交历史中找出最近的小型 bug 修复提交（标题像是修复，最多涉及 4 个文件、80 行改动的代码），在临时 worktree 里撤销每次修复，让 bug 以未提交改动的形式回到它真实所在的代码库，再让每个 worker 审查；只要某个 worker 有一条发现落在改动处的 3 行以内，就给它计分。代价是每个提交、每个 worker 各一次审查；报告保存在 `~/.local/state/farmout/bench/` 下。在 tqdm 的两次修复上，Claude、Codex 和 Copilot 两次都找到了，Antigravity 的快速模型找到了一次。
+`farmout bench -n 3` 会在你的提交历史中找出最近的小型 bug 修复提交（标题像是修复，最多 4 个源码文件、1 到 80 行改动，除此之外只改了测试和文档），在临时 worktree 里撤销每次修复的代码，让 bug 以未提交改动的形式回到它真实所在的代码库，再让每个 worker 审查；只要某个 worker 有一条发现落在改动处的 3 行以内，就给它计分。修复附带的测试和 changelog 保持原样，临时副本的提交历史也不会出现这次修复，所以 diff 里没有任何东西会泄露 bug 在哪里。`-w` 接受多条线路：`codex`，或用 `claude:opus` 指定模型；同一个 worker 写上几个模型，就能比较这些模型（分轮运行）。代价是每个提交、每条线路各一次审查；报告（含每条原始回复）保存在 `~/.local/state/farmout/bench/` 下。在 tqdm 的两次修复上，Claude、Codex 和 Copilot 两次都找到了，Antigravity 的快速模型找到了一次。
 
 ## 设置
 
