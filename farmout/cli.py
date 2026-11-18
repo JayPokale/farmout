@@ -322,6 +322,8 @@ def show_race(a, group, rows, winner):
 
 def ls_rows(a):
     rows = [sessions.summary(sessions.load(n)) for n in sessions.names()]
+    if getattr(a, "here", False):  # a session counts as a conversation of one for this
+        rows = graph.in_project(rows, str(project_root(a.cwd)))
     return rows if a.all else rows[-a.limit:]
 
 
@@ -1028,6 +1030,7 @@ def parser():
 
     ls = add("ls", "list sessions", cmd_ls)
     ls.add_argument("--all", action="store_true", help="every session, not just the newest")
+    ls.add_argument("--here", action="store_true", help="only the sessions started in this project")
     ls.add_argument("-n", dest="limit", type=int, default=30, help="how many to show (default 30)")
     ls.add_argument("--watch", action="store_true", help="keep redrawing, as a dashboard (Ctrl-C to quit)")
     ls.add_argument("--interval", type=float, default=2, help="seconds between redraws (default 2)")

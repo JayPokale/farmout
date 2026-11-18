@@ -1837,6 +1837,7 @@ class HistoryTest(CliBase):
         here = self.fo("tree", "--here").stdout
         self.assertIn("home", here)
         self.assertNotIn("away", here)
+        self.assertEqual([r["name"] for r in self.json("ls", "--here")], ["home"], "ls --here too")
 
     def test_tree_here_counts_a_linked_worktree_of_the_repository(self):
         self.repo()

@@ -142,7 +142,7 @@ A real `farmout review`, replayed: one change, four subscriptions, one merged ta
 | `race "<task>"` | every worker attempts the task in its own worktree; `--test <cmd>` picks the winner, `--apply` lands it |
 | `fix-pr <number>` | a pull request's review comments and failing checks (via `gh`; bots, the author's own replies and approvals left out) become a race; check the PR out first. `--dry-run` prints the brief and stops |
 | `bench [-n N]` | replay N recent small bug fixes from your history; each worker (or `worker:model` lane) is scored on finding the bug. `--apply` makes the winners this repo's defaults, `--apply --last` applies your last run |
-| `ls [--watch]`, `log`, `attach`, `wait`, `stop`, `rm` | list (or watch, as a dashboard), read, watch, wait for, stop and delete sessions (`rm` also removes a session's worktree and branch, but keeps one with messages waiting or branches working in its worktree) |
+| `ls [--watch] [--here]`, `log`, `attach`, `wait`, `stop`, `rm` | list (or watch, as a dashboard; `--here` keeps this project's), read, watch, wait for, stop and delete sessions (`rm` also removes a session's worktree and branch, but keeps one with messages waiting or branches working in its worktree) |
 | `diff`, `apply [--pr]`, `undo` | an isolated session's patch: show it, apply it (several in order, stopping at the first that doesn't apply), open a pull request with `gh`, or take an applied one back out |
 | `export <session> [--html]` | a conversation as Markdown or a standalone HTML page |
 | `status [--line]` | what's running, queued, waiting for approval or at a usage limit |
