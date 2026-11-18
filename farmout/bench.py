@@ -90,8 +90,13 @@ def prepare(top, c, wt, fresh=False, settings=None):
     so no reviewer sees it as a change."""
     if fresh:
         wt.mkdir(parents=True)
-        tar = git(top, "archive", "--format=tar", c["sha"], binary=True)
-        subprocess.run(["tar", "-x", "-C", str(wt)], input=tar, check=True, capture_output=True)
+        # The commit's files as a checkout writes them (`git archive` would drop export-ignore files and fill in
+        # export-subst ones); Git LFS files stay pointers, so preparing never downloads.
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {**os.environ, "GIT_INDEX_FILE": os.path.join(tmp, "index")}
+            for args in (["read-tree", c["sha"]], ["checkout-index", "-a", "-f"]):
+                git(top, "-c", "filter.lfs.smudge=", "-c", "filter.lfs.process=", "-c", "filter.lfs.required=false",
+                    "--work-tree", str(wt), *args, env=env)
         git(wt, "init", "-q")
         git(wt, "add", "-A", "-f")
         git(wt, *SNAPSHOT, "commit", "-q", "--no-verify", "-m", "snapshot")

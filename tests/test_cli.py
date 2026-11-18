@@ -2744,6 +2744,21 @@ class BenchCopyTest(unittest.TestCase):
         bench.prepare(str(self.top), c, wt, fresh=True)
         self.assertEqual((wt / "café.py").read_text(), "def f(x):\n    return x\n")
 
+    def test_a_fresh_copy_keeps_export_ignored_files_and_export_subst_as_written(self):
+        from farmout import bench
+        (self.top / ".gitattributes").write_text("tests/** export-ignore\nVERSION export-subst\n")
+        (self.top / "VERSION").write_text("$Format:%H$\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "attributes for source archives")
+        (self.top / "m.py").write_text((self.top / "m.py").read_text().replace("return a / b", "return a / float(b)"))
+        self.git("commit", "-qam", "fix integer division in ratio")
+        c = bench.candidates(str(self.top), 5)[0]
+        self.assertEqual(c["sha"], self.git("rev-parse", "HEAD").strip())
+        wt = self.tmp / "wt-attrs"
+        bench.prepare(str(self.top), c, wt, fresh=True)
+        self.assertTrue((wt / "tests" / "test_regression.py").exists(), "export-ignore is for tarballs, not reviews")
+        self.assertEqual((wt / "VERSION").read_text(), "$Format:%H$\n", "as the commit has it")
+
     def test_one_fix_that_wont_undo_doesnt_lose_the_others(self):
         from unittest import mock
         from farmout import bench
