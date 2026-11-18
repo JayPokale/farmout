@@ -430,6 +430,8 @@ farmout 在你的机器上以你的登录身份，按各厂商文档中说明的
 
 **它和 OpenAI 为 Claude Code 推出的 Codex 插件有什么不同？** 那个插件只能在 Claude Code 里驱动 Codex。farmout 能驱动你拥有的任何订阅（Codex、通过 Antigravity 使用的 Gemini、Copilot、第二个 Claude 账号、本地模型），可以同时用好几个，在终端或任何 MCP 客户端里都能用，还支持会话和流水线。
 
+**这是绕过用量上限的办法吗？** 不是。触及上限的任务会转到你付费的另一个订阅，或者（如果你指定了）同一订阅里的另一个模型（`fallback = ["claude:sonnet"]`）；每个订阅自己的上限照样有效，farmout 会在 worker 报告的重置时间之前不再使用它。它从不共享登录，也不轮换账号；已经用完额度的 Claude Code 交互式会话，它也挪不走，它挪的是它自己的任务和对话。真正省额度的是把长篇阅读和代码审查交给其他模型（在我们总结三篇论文的测试里，Claude 少用了 59% 的 token）。
+
 **我只有一个订阅，farmout 适合我吗？** 适合，只是订阅越多能做的越多。一个订阅里就有好几个模型：Claude 的 Opus、Sonnet 和 Haiku，几个 Codex 模型，或者 Copilot 里来自多家厂商的模型。`farmout bench -w claude:opus,claude:sonnet --apply` 告诉你更大的模型能不能在你自己过去的 bug 上找得更多，并把更合适的那个设为默认；`farmout review -w claude:opus,claude:sonnet`（或 `-w codex,codex`）用一个订阅拿到两份独立的审查；`fallback = ["claude:sonnet"]` 让你在 Opus 触及上限时继续工作；遇到难题时，`farmout send <session> --model opus` 把对话换到更大的模型上。再通过 `api` worker 接一个本地模型（Ollama），就多了一个免费的第二意见。
 
 **我把项目文件夹改名了，还能接着聊吗？** 能。Claude Code 的 `--continue` 和 `/resume` 列表只看当前文件夹的历史，但 farmout 按名字找会话：在改名后的仓库里任何地方运行 `farmout send <session> "..."`，会话就会跟着文件夹走，并恢复 worker 自己的对话。`farmout ls` 会标出文件夹已不存在的会话，git 之外的文件夹用 `--here`。
