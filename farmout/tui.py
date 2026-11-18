@@ -254,9 +254,8 @@ class App:
         snap = ui.snapshot(self.here)
         self.workers = list(snap["workers"])
         self.roots = graph.forest(snap["sessions"], self.everything)
-        if self.only:  # this project's conversations: started in it, or in a worktree inside it
-            top = str(config.project_root(self.here))
-            self.roots = [r for r in self.roots if (os.path.realpath(r["cwd"]) + os.sep).startswith(top + os.sep)]
+        if self.only:
+            self.roots = graph.in_project(self.roots, str(config.project_root(self.here)))
         self.by = {}
 
         def index(node):

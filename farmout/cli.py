@@ -205,6 +205,8 @@ def cmd_tree(a):
     if a.session:
         sessions.load(a.session)  # an unknown name stops here
     roots = graph.forest(ui.snapshot(a.cwd, None)["sessions"], everything=a.all or bool(a.session))
+    if a.here:
+        roots = graph.in_project(roots, str(project_root(a.cwd)))
     roots = [r for r in roots if a.session in [x["name"] for x in graph.nodes(r)]] if a.session else roots[:a.limit]
     roots.reverse()  # the most recently active last, next to your prompt, as in `farmout ls`
     if a.json:
@@ -989,6 +991,7 @@ def parser():
     tr.add_argument("session", nargs="?", help="only the tree this session belongs to")
     tr.add_argument("-n", dest="limit", type=int, default=10, help="how many conversations (default 10)")
     tr.add_argument("--all", action="store_true", help="also review, ask, race and pipeline runs")
+    tr.add_argument("--here", action="store_true", help="only the conversations started in this project")
     ui = add("ui", "every conversation as a graph in the terminal: read any turn, continue a conversation or branch "
              "off any turn", cmd_ui)
     ui.add_argument("session", nargs="?", help="start at this session's newest turn")

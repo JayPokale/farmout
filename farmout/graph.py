@@ -85,6 +85,12 @@ def forest(rows, everything=False):
     return sorted((r for r in roots if everything or not r.get("group")), key=active, reverse=True)
 
 
+def in_project(roots, top):
+    """The conversations started in top or in a folder inside it (its worktrees too)."""
+    top = os.path.realpath(top) + os.sep
+    return [r for r in roots if (os.path.realpath(r["cwd"]) + os.sep).startswith(top)]
+
+
 def items(node):
     """node's turns in order, each followed by the branches off it (an older fork that recorded no turn hangs at the
     end, and one that kept no turns comes first)."""

@@ -1793,6 +1793,17 @@ class HistoryTest(CliBase):
         self.assertIn("+++ b/c.py", patch)
         self.assertIn(iso["worktree"], self.git("worktree", "list", cwd=moved), "git's links were repaired")
 
+    def test_tree_here_shows_this_projects_conversations(self):
+        self.repo()
+        away = self.tmp / "elsewhere"
+        away.mkdir()
+        self.fo("run", "codex", "say away", "-n", "away", cwd=away)
+        self.fo("run", "codex", "say home", "-n", "home", cwd=self.work)
+        self.assertIn("away", self.fo("tree").stdout)
+        here = self.fo("tree", "--here").stdout
+        self.assertIn("home", here)
+        self.assertNotIn("away", here)
+
     def test_branch_off_any_turn_and_see_the_tree(self):
         self.fo("run", "codex", "say one", "-n", "t")
         self.fo("send", "t", "say two")
