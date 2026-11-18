@@ -61,7 +61,7 @@ def antigravity(t, key):
     res = parse_json(run(cmd, key, cwd, timeout=t.get("timeout")))
     text = res.get("response") or ""
     if res.get("status") != "SUCCESS":
-        if not text.strip():
+        if not text.strip() or t.get("write"):  # a write task that ended in ERROR may have edited only half
             raise RuntimeError(json.dumps(res)[:1500])
         # agy sometimes ends with ERROR after writing its whole answer: keep the answer, and say how it ended
         rest = {k: v for k, v in res.items() if k not in ("response", "conversation_id", "usage")}

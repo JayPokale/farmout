@@ -59,15 +59,16 @@ def parse(text, worker):
 
 
 PLACEHOLDER = {"path", "file", "filename", "path/to/file", "path/to/file.py", "<path>", "<file>"}
-LABEL = {"defect", "bug", "issue", "problem", "finding", "what is wrong"}  # column names some models copy as a value
+LABEL = {"defect", "what is wrong"}  # the brief's column names, which some models copy as a value
 
 
 def diff_positions(diff_text):
     """{line number in the diff file: (path, line number in the new file)} for the diff's context and added lines.
     Some models cite where a line sits in the diff they were given, not in the file."""
-    out, path, new = {}, None, 0
+    out, path, new, prev = {}, None, 0, ""
     for n, line in enumerate(diff_text.splitlines(), 1):
-        if line.startswith("+++ "):
+        header, prev = line.startswith("+++ ") and prev.startswith("--- "), line  # an added "++ x" also starts "+++ "
+        if header:
             path = line[6:] if line.startswith("+++ b/") else None
         elif line.startswith("@@"):
             m = re.search(r"\+(\d+)", line)
@@ -224,12 +225,20 @@ def merge(found, near=NEAR):
     return clusters
 
 
+def length(path):
+    """Lines in a file; 0 if it isn't a readable file (a path the change deleted, a directory)."""
+    try:
+        with open(path, errors="replace") as fh:
+            return sum(1 for _ in fh)
+    except OSError:
+        return 0
+
+
 def check_lines(clusters, root):
-    """Drop findings that cite a line past the end of the file."""
+    """Drop findings that cite a line past the end of the file, or a file that isn't there."""
     for c in clusters:
         if c["valid"]:
-            with open(Path(root, c["path"]), errors="replace") as fh:
-                c["valid"] = 1 <= c["line"] <= sum(1 for _ in fh)
+            c["valid"] = 1 <= c["line"] <= length(Path(root, c["path"]))
 
 
 def ranked(clusters):
@@ -277,8 +286,7 @@ def review(cwd, workers=None, base=None, staged=False, focus=None, since=None, r
     for f in found:
         f["rel"] = resolve(top, f["path"], changed, known)
         if f["rel"] and f["rel"] not in sizes:
-            with open(Path(top, f["rel"]), errors="replace") as fh:
-                sizes[f["rel"]] = sum(1 for _ in fh)
+            sizes[f["rel"]] = length(Path(top, f["rel"]))
         at = positions.get(f["line"])
         if f["rel"] and f["line"] > sizes[f["rel"]] and at and at[0] == f["rel"]:
             f["line"] = at[1]  # past the end of the file, but that diff line is in this file: a diff position

@@ -103,7 +103,11 @@ def execute(t, key, where=None, on_iso=None):
             break
         notes.append(f"{w} hit a usage limit; retried on {nxt}")
         if iso and iso is not where:  # a worktree this task made: the next worker starts from its base, not from
-            isolate.reset(iso)        # whatever the limited one had half done
+            try:                      # whatever the limited one had half done
+                isolate.reset(iso)
+            except Exception as e:
+                notes.append(f"couldn't reset the worktree for {nxt} ({type(e).__name__}: {e}); stopped there")
+                break
         persist = t.get("persist") and nxt in ("claude", "copilot")
         t = {**t, "worker": nxt, "model": None, "session_id": str(uuid.uuid4()) if persist else None}
     if iso and res["ok"]:  # only the worker's own changes, ready for `git apply` in the user's tree

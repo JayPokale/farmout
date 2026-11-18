@@ -133,24 +133,29 @@ def add(name, where=None, force=False):
     files = download(where, e)
     dest.parent.mkdir(parents=True, exist_ok=True)
     staged = Path(tempfile.mkdtemp(prefix=f".{e['name']}.", dir=dest.parent))  # fresh and private: not a planted link
-    for rel, data in files:
-        target = staged / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
-        if rel.endswith((".py", ".sh")):
-            target.chmod(0o755)
-    if e["kind"] == "hook":
-        h = e["hook"]
-        spec = {"name": e["name"], "events": h["events"], "command": command(h["command"], dest),
-                "matcher": h.get("matcher"), "timeout": h.get("timeout")}
-        (staged / "hook.json").write_text(json.dumps(spec, indent=1))
-    if e["kind"] == "tool":
-        (staged / "tool.json").write_text(json.dumps({"name": e["name"], "command": command(e["tool"]["command"], dest)}, indent=1))
-    meta = {k: e.get(k) for k in ("name", "kind", "version", "description", "files")}
-    (staged / ".farmout-store.json").write_text(json.dumps({**meta, "index": where, "installed": time.strftime("%Y-%m-%d %H:%M")}, indent=1))
-    shutil.rmtree(dest, ignore_errors=True)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    staged.rename(dest)
+    try:
+        for rel, data in files:
+            target = staged / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            if rel.endswith((".py", ".sh")):
+                target.chmod(0o755)
+        if e["kind"] == "hook":
+            h = e["hook"]
+            spec = {"name": e["name"], "events": h["events"], "command": command(h["command"], dest),
+                    "matcher": h.get("matcher"), "timeout": h.get("timeout")}
+            (staged / "hook.json").write_text(json.dumps(spec, indent=1))
+        if e["kind"] == "tool":
+            (staged / "tool.json").write_text(json.dumps({"name": e["name"], "command": command(e["tool"]["command"], dest)}, indent=1))
+        meta = {k: e.get(k) for k in ("name", "kind", "version", "description", "files")}
+        (staged / ".farmout-store.json").write_text(json.dumps({**meta, "index": where, "installed": time.strftime("%Y-%m-%d %H:%M")}, indent=1))
+        shutil.rmtree(dest, ignore_errors=True)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        staged.chmod(0o755)  # mkdtemp's 0700 would follow it to dest
+        staged.rename(dest)
+    except BaseException:
+        shutil.rmtree(staged, ignore_errors=True)
+        raise
     return e, dest
 
 

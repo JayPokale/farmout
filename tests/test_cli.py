@@ -230,6 +230,22 @@ class SessionTest(CliBase):
 
 
 class ReviewTest(CliBase):
+    def test_a_finding_on_a_deleted_file_doesnt_sink_the_review(self):
+        self.repo()
+        (self.work / "b.py").write_text("z = 1\n")
+        self.git("add", "b.py")
+        self.git("commit", "-qm", "b")
+        (self.work / "b.py").unlink()
+        (self.work / "a.py").write_text("x = 1\ny = 3\n")
+        self.reviewers_say(claude="b.py:1 | high | z is gone | import b | restore it\na.py:2 | low | y changed | always | y = 2\n")
+        r = self.json("review", "-w", "claude")
+        self.assertEqual(sorted((c["path"], c["valid"]) for c in r["clusters"]), [("a.py", True), ("b.py", False)])
+
+    def test_parsing_keeps_one_word_defects_and_plus_lines(self):
+        self.assertEqual(review_mod.parse("a.py:10 | high | bug | always | fix it", "codex")[0]["defect"], "bug")
+        diff = "--- a/x.py\n+++ b/x.py\n@@ -1,1 +1,2 @@\n a\n+++ b  (an added line starting ++)\n"
+        self.assertEqual(review_mod.diff_positions(diff), {4: ("x.py", 1), 5: ("x.py", 2)})
+
     def test_a_line_cited_as_a_diff_position_is_mapped_to_the_file(self):
         self.repo()
         (self.work / "a.py").write_text("x = 1\ny = 3\n")

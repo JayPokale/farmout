@@ -330,9 +330,11 @@ class DelegateTest(Base):
             {"worker": "claude", "prompt": "say hi", "files": ["missing.txt"], "cwd": str(self.work)},
             {"worker": "antigravity", "prompt": "agyerror"},
             {"worker": "antigravity", "prompt": "say fine"},
-            {"worker": "antigravity", "prompt": "agyerror the whole answer"})
+            {"worker": "antigravity", "prompt": "agyerror the whole answer"},
+            {"worker": "antigravity", "prompt": "agyerror wrote half of it", "write": True, "cwd": str(self.work)})
         self.assertFalse(is_error, "one task succeeded")
-        self.assertEqual([r[1] for r in results], [False, False, False, False, True, True])
+        self.assertEqual([r[1] for r in results], [False, False, False, False, True, True, False],
+                         "a write task that ended in ERROR may be half done: it fails")
         self.assertEqual(results[5][3], 'the whole answer\n\n[farmout] agy ended with {"status": "ERROR"}',
                          "an answer agy wrote before ending with ERROR is kept, with how it ended")
         bodies = [r[3] for r in results]
