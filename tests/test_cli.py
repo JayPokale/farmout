@@ -242,6 +242,21 @@ class SessionTest(CliBase):
         self.assertIn("removed plain", p.stdout, "the rest are removed anyway")
         self.fo("stop", "iso-1")
 
+    def test_rm_keeps_a_session_with_messages_waiting_and_goes_on_past_errors(self):
+        self.fo("run", "codex", "say one", "-n", "old")
+        self.fo("run", "codex", "say two", "-n", "waits")
+        self.fo("run", "codex", "say three", "-n", "stuck")
+        inbox = self.state / "sessions" / "waits" / "inbox"
+        inbox.mkdir(exist_ok=True)
+        (inbox / "0001.json").write_text(json.dumps({"id": "m", "prompt": "say late"}))
+        turns = self.state / "sessions" / "stuck" / "turns"
+        turns.chmod(0o500)  # its files can't be deleted
+        self.addCleanup(turns.chmod, 0o700)
+        p = self.fo("rm", "old", "waits", "stuck", rc=1)
+        self.assertIn("waits has messages waiting", p.stderr)
+        self.assertRegex(p.stderr, r"stuck: .*Permission denied")
+        self.assertIn("removed old", p.stdout, "the rest go anyway")
+
     def test_rm_removes_the_session_and_its_worktree(self):
         self.repo()
         self.fo("run", "codex", "write f.txt hi", "--isolate", "-n", "gone")
@@ -734,6 +749,13 @@ class OneSubscriptionTest(CliBase):
         (self.state / "limits.json").unlink()
         p = self.fo("run", "codex", "loggedout codex say x", "--fallback", "", rc=1)
         self.assertIn("run `codex login`", p.stdout, "with nowhere to go, it says how to fix it")
+
+    def test_doctor_says_where_a_task_at_its_limit_goes(self):
+        self.assertRegex(self.fo("doctor").stdout,
+                         r"\d subscriptions ready\. .* a task at its limit moves on in this order here: antigravity, codex,")
+        (self.work / ".farmout").mkdir()
+        (self.work / ".farmout" / "settings.json").write_text(json.dumps({"fallback": ["copilot", "claude:opus"]}))
+        self.assertIn("in this order here: copilot, claude:opus.", self.fo("doctor").stdout, "this repository's own order")
 
     def test_a_conversation_moves_to_another_worker_at_a_limit_with_its_history(self):
         self.fo("run", "codex", "say first answer", "-n", "c", "--fallback", "claude")

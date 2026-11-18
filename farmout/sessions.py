@@ -516,6 +516,8 @@ def remove(name):
     meta = load(name)
     if busy(name):
         raise RuntimeError(f"{name} is running; `farmout stop {name}` first")
+    if pending(name):  # a message that arrived moments ago would go with it, unanswered
+        raise RuntimeError(f"{name} has messages waiting; `farmout stop {name}` drops them")
     if meta.get("iso"):
         top = os.path.realpath(meta["iso"]["worktree"])
         inside = [m["name"] for m in (read_json(path(n) / "meta.json") for n in names() if n != name)

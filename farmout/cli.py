@@ -450,7 +450,7 @@ def cmd_rm(a):
         try:
             sessions.remove(n)
             print(f"removed {n}")
-        except (KeyError, RuntimeError, ValueError) as e:  # say so, and go on with the rest
+        except (KeyError, RuntimeError, ValueError, OSError) as e:  # say so, and go on with the rest
             err(f"{n}: {e.args[0] if isinstance(e, KeyError) and e.args else e}")
             rc = 1
     return rc
@@ -902,11 +902,17 @@ def cmd_doctor(a):
                   " see Terms of service in the README")
     for w in usage.limits():
         print(f"  skipped  {usage.describe(w)}")
-    if len([w for w in ENABLED if w != "api"]) == 1:
-        w = next(w for w in ENABLED if w != "api")
+    ready = [w for w in ENABLED if w != "api"]
+    if len(ready) == 1:
+        w = ready[0]
         print(f"One subscription is enough: compare its models (`farmout bench -w {w}:<model>,{w}:<model>`), review "
               f"with two of them (`farmout review -w {w}:<model>,{w}:<model>`), and set a fallback model for its limits "
               "(`fallback = [\"" + w + ":<model>\"]` in your settings).")
+    elif ready:
+        order = [f"{w}:{m}" if m else w for w, m in engine.fallbacks({"worker": None, "cwd": a.cwd})]
+        print(f"{len(ready)} subscriptions ready. `farmout review` has them all review your change, and a task at its "
+              f"limit moves on in this order here: {', '.join(order) or 'none (fallback is off)'}. The `fallback` "
+              "setting changes it.")
     if not a.live:
         print("Logins are not checked. `farmout doctor --live` sends each ready worker one tiny prompt.")
         return 0
