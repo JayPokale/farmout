@@ -124,11 +124,11 @@ Disclosure for both head benchmarks: the head account had the [Chisle](https://g
 
 ## Bug-Finding Leaderboard (tooling ready, not run yet)
 
-`leaderboard.py` scales the real-regression idea up: recent bug fixes (since August 2026) from ten well-known projects in Python, TypeScript, Go and Rust (41 fixes in `leaderboard/suite.json`: every subject screened by hand, doubtful diffs read, then a second opinion from Claude Opus and Codex on each, in `leaderboard/screening.md`; 13 picks rejected), each undone in a fresh repository and reviewed by every lane: a worker on its default model or a named one, such as `copilot:gpt-6.1-sol`. Only a fix's source files are undone, so no deleted regression test or changelog line names the bug, and the copy's only commit is "snapshot", so `git log` can't either. Each (fix, lane) is one review, results are kept per file so a run resumes, and a new model is one more lane:
+`leaderboard.py` scales the real-regression idea up: recent bug fixes (since August 2026) from ten well-known projects in Python, TypeScript, Go and Rust (41 fixes in `leaderboard/suite.json`: every subject screened by hand, doubtful diffs read, then a second opinion from Claude Opus and Codex on each, in `leaderboard/screening.md`; 13 picks rejected), each undone in a fresh repository and reviewed by every lane: a worker on its default model or a named one, such as `claude:opus` or a model your Copilot plan offers. Only a fix's source files are undone, so no deleted regression test or changelog line names the bug, and the copy's only commit is "snapshot", so `git log` can't either. Each (fix, lane) is one review, results are kept per file so a run resumes, and a new model is one more lane:
 
 ```bash
 python3 bench/leaderboard.py run -l claude:opus,codex,antigravity:gemini-3.8-flash-high,copilot
-python3 bench/leaderboard.py run -l copilot:gemini-4-carbon     # a model that shipped today: one more lane
+python3 bench/leaderboard.py run -l copilot:<new-model>        # a model that shipped today: one more lane
 python3 bench/leaderboard.py render                              # leaderboard/README.md, leaderboard.json, card.svg/.png
 ```
 

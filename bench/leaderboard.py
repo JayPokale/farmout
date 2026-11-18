@@ -4,7 +4,7 @@ time, and every lane (a worker, optionally on a named model) asked to find each 
   python3 bench/leaderboard.py pick [--per-repo 5] [--since 2026-08-01]   # choose fixes into suite.json, then READ them
                                                      # (a rejected fix goes in the repo's "skip" list; pick --refresh --only)
   python3 bench/leaderboard.py check                                      # every fix undoes cleanly (no quota)
-  python3 bench/leaderboard.py run [-l codex,claude:opus,copilot:gpt-6.1-sol] [--only owner/repo] [--max N]
+  python3 bench/leaderboard.py run [-l codex,claude:opus,copilot:<model>] [--only owner/repo] [--max N]
   python3 bench/leaderboard.py rescore                                    # after a parser fix: score saved replies again
   python3 bench/leaderboard.py render                                     # README.md, leaderboard.json, card.svg/.png
 

@@ -1190,6 +1190,24 @@ class MoreTest(CliBase):
         self.assertTrue(Path(shared["svg"]).exists())
         self.assertLessEqual(len(shared["text"]), 280, "fits in one post")
 
+    def test_bench_compares_models_of_one_worker(self):
+        self.repo()
+        (self.work / "m.py").write_text("def ratio(a, b):\n    return a / b\n")
+        self.git("add", "m.py")
+        self.git("commit", "-qm", "add ratio")
+        (self.work / "m.py").write_text("def ratio(a, b):\n    if b == 0:\n        return 0\n    return a / b\n")
+        self.git("commit", "-qam", "fix division by zero in ratio")
+        self.reviewers_say(codex="m.py:2 | high | divides by zero | ratio(1, 0) | guard\n", copilot="NO FINDINGS")
+        out = self.json("bench", "-n", "1", "-w", "codex,copilot:gpt-x,copilot:other-model")
+        board = {b["worker"]: (b["found"], b["of"]) for b in out["scoreboard"]}
+        self.assertEqual(board, {"codex": (1, 1), "copilot:gpt-x": (0, 1), "copilot:other-model": (0, 1)})
+        models = [r["argv"][r["argv"].index("--model") + 1] for r in self.runs() if r["name"] == "copilot"]
+        self.assertEqual(sorted(models), ["gpt-x", "other-model"], "one review per model, each on its own model")
+        self.assertEqual(self.json("ls"), [], "both rounds' sessions are cleaned up")
+        card = self.json("bench", "-n", "1", "-w", "copilot:gpt-x", "--share")["share"]["text"]
+        self.assertIn("Copilot · gpt-x", card)
+        self.assertIn("unavailable worker(s): nope", self.fo("bench", "-w", "nope:m", rc=1).stderr)
+
     def test_bench_ranks_your_main_claude_login_when_there_is_no_second_account(self):
         self.repo()
         (self.work / "m.py").write_text("def ratio(a, b):\n    return a / b\n")

@@ -586,15 +586,17 @@ def cmd_tool(a):
 
 
 def cmd_bench(a):
-    asked = split(a.workers)
-    if (not asked or "claude" in asked) and use_main_claude() and not a.json:
+    asked = list(dict.fromkeys(split(a.workers)))  # lanes: codex, or claude:opus to name a model
+    if (not asked or "claude" in [bench.lane(x)[0] for x in asked]) and use_main_claude() and not a.json:
         err("farmout bench: your main Claude login takes part, on its own quota (no second account in FARMOUT_CLAUDE_DIR)")
-    workers = everyone(a.workers)
+    if asked:
+        check_workers(list(dict.fromkeys(bench.lane(x)[0] for x in asked)))
+    workers = asked or everyone(None)
     n = len(workers)
     if not a.json:
-        err(f"farmout bench: up to {a.commits} commit{'s' * (a.commits != 1)} x {n} worker{'s' * (n != 1)}"
+        err(f"farmout bench: up to {a.commits} commit{'s' * (a.commits != 1)} x {n} lane{'s' * (n != 1)}"
             f" = up to {a.commits * n} review{'s' * (a.commits * n != 1)} on your subscriptions")
-    lanes = (lambda g, t: live.Lanes(g, workers, "reviewing", title=t, findings=True)) if live.enabled(a) else None
+    lanes = (lambda g, t, ws: live.Lanes(g, ws, "reviewing", title=t, findings=True)) if live.enabled(a) else None
     rows, report = bench.run(a.cwd, a.commits, workers, a.scan, progress=(lambda m: None) if a.json else err,
                              lanes=lanes)
     board = bench.scoreboard(rows)
@@ -896,7 +898,8 @@ def parser():
     sa.add_argument("--days", type=int, default=7)
     bn = add("bench", "which of your subscriptions reviews best on your own code (replays past bug fixes)", cmd_bench)
     bn.add_argument("-n", "--commits", type=int, default=3, help="how many bug-fix commits to replay (default 3)")
-    bn.add_argument("-w", "--workers", metavar="W1,W2", help="only these workers")
+    bn.add_argument("-w", "--workers", metavar="W1,W2", help="only these workers; worker:model names a model, and one "
+                    "worker on several models compares them (claude:opus,claude:sonnet)")
     bn.add_argument("--scan", type=int, default=400, help="how far back to look for them (default 400 commits)")
     bn.add_argument("--share", action="store_true", help="also make a post and an image card of the scores (no code)")
 

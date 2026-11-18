@@ -20,7 +20,7 @@ import urllib.parse
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-from . import review, sessions
+from . import flows, review, sessions
 from .config import STATE, repo_root
 from .isolate import git
 
@@ -114,7 +114,7 @@ def replay(top, c, workers=None, group=None, models=None, lanes=None, title="", 
         prepare(top, c, wt, fresh, settings)
         changed = changed_lines(str(wt))
         t0 = time.time()
-        with lanes(group, title) if lanes else contextlib.nullcontext():
+        with lanes(group, title, workers or flows.default_workers()) if lanes else contextlib.nullcontext():
             r = review.review(str(wt), workers=workers, group=group, models=models)
         mine = {w: [{k: f.get(k) for k in ("rel", "path", "line", "severity", "defect")}
                     for cl in r["clusters"] for f in cl["findings"] if f["worker"] == w] for w in r["workers"]}
@@ -130,9 +130,29 @@ def replay(top, c, workers=None, group=None, models=None, lanes=None, title="", 
                 with contextlib.suppress(RuntimeError, OSError):
                     sessions.remove(name)
 
+def lane(text):
+    """`codex` or `claude:opus` -> (worker, model or None); an api model may hold colons (`api:qwen3:32b`)."""
+    worker, _, model = text.partition(":")
+    return worker, model or None
+
+
+def rounds(lanes):
+    """Lanes split into review rounds in which no worker appears twice (a review has one session per worker)."""
+    out, rest = [], list(dict.fromkeys(lanes))
+    while rest:
+        rnd = []
+        for x in rest:
+            if lane(x)[0] not in {lane(y)[0] for y in rnd}:
+                rnd.append(x)
+        rest = [x for x in rest if x not in rnd]
+        out.append(rnd)
+    return out
+
+
 def run(cwd, n=3, workers=None, scan=400, progress=print, lanes=None):
-    """lanes(group, title), if given, returns a context manager that shows each commit's reviews as they run
-    (the CLI's live lanes); otherwise progress(line) hears about each commit."""
+    """workers: lanes, each `worker` or `worker:model` (one worker on several models compares those models).
+    lanes(group, title, workers), if given, returns a context manager that shows each review as it runs (the CLI's
+    live lanes); otherwise progress(line) hears about each commit."""
     top = repo_root(cwd)
     if not top:
         raise ValueError("farmout bench works on a git repository; run it inside one")
@@ -141,16 +161,31 @@ def run(cwd, n=3, workers=None, scan=400, progress=print, lanes=None):
         raise ValueError(f"no small bug-fix commits in the last {scan}: bench needs a subject like 'fix ...', 1-80 changed "
                          f"lines in at most 4 source files, and nothing else changed but tests and docs. Look further back "
                          f"with --scan {scan * 5}")
-    group, rows = sessions.new_group("bench"), []
+    group, rows, plan = sessions.new_group("bench"), [], rounds(workers or flows.default_workers())
     for i, c in enumerate(picks, 1):
         title = f"[{i}/{len(picks)}] {c['sha'][:9]} {c['subject'][:70]}"
         if not lanes:
             progress(title)
-        rows.append(replay(str(top), c, workers, f"{group}-{i}", lanes=lanes, title=title))
+        row = None
+        for j, rnd in enumerate(plan):
+            ws = [lane(x)[0] for x in rnd]
+            got = replay(str(top), c, ws, f"{group}-{i}" + (f"-{j + 1}" if j else ""), lanes=lanes,
+                         models={lane(x)[0]: lane(x)[1] for x in rnd if lane(x)[1]},
+                         title=title + (f"  ({', '.join(rnd)})" if len(plan) > 1 else ""))
+            keyed = {k: {x: got[k][w] for x, w in zip(rnd, ws) if w in got[k]}
+                     for k in ("found", "failed", "findings", "worker_secs", "replies")}
+            if row is None:
+                row = {**got, **keyed}
+            else:
+                row["secs"] += got["secs"]
+                for k, v in keyed.items():
+                    row[k].update(v)
+        rows.append(row)
     out = STATE / "bench" / f"{time.strftime('%Y%m%d-%H%M%S')}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"repo": str(top), "commits": rows}, indent=1))
     return rows, out
+
 
 def scoreboard(rows):
     """[(worker, found, out of, failed)] best first."""
