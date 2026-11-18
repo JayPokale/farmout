@@ -35,6 +35,10 @@
 | `store/` | the store's entries and `index.json` (rebuilt by `scripts/build_store_index.py`) |
 | `site/` | the landing page (Next.js, not part of the Python package); see [site/README.md](site/README.md) |
 | `farmout/mcp.py`, `cli.py` | the two front ends |
+| `farmout/graph.py` | conversations as trees and their rows in lanes, shared by `farmout tree` and `farmout ui`; `clean()` makes any text safe for a terminal |
+| `farmout/tui.py` | `farmout ui`: an `App` that draws into a `Canvas` and takes keys by name (the tests drive it without a terminal), then curses shows it |
+| `farmout/ui.py` | `farmout ui --web`, and the snapshot, detail and send helpers the terminal UI uses too |
+| `farmout/live.py` | the live rows commands draw on stderr while workers run |
 
 ## Setup
 
