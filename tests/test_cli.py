@@ -1219,6 +1219,19 @@ class HooksAndSkillsTest(CliBase):
         self.fo("trust", "--revoke")
         self.assertIn("haven't trusted", self.fo("trust", "--list").stdout)
 
+    def test_a_branch_start_hook_can_message_the_parent(self):
+        hook = self.tmp / "tell_parent.py"
+        hook.write_text("import json, subprocess, sys\n"
+                        "e = json.load(sys.stdin)\n"
+                        "if e.get('parent'):\n"
+                        f"    subprocess.run([sys.executable, {str(SERVER)!r}, 'send', e['parent'], 'say hooked', '--bg'])\n")
+        self.settings({"hooks": [{"event": "SessionStart", "command": f"{sys.executable} {hook}", "timeout": 20}]})
+        self.fo("run", "codex", "say one", "-n", "t")
+        t0 = time.time()
+        self.fo("fork", "t", "say branch")
+        self.assertLess(time.time() - t0, 15, "the hook's send didn't wait on the branch being made")
+        self.assertTrue(wait_until(lambda: "say hooked" in [x["prompt"] for x in self.json("log", "t")], 20))
+
     def test_redaction_and_bad_hooks(self):
         self.settings({"redact": True, "hooks": [{"event": "TaskEnd", "command": "exit 7"}]})
         p = self.fo("run", "codex", "say key sk-ant-abcdefghijklmnopqrstuvwxyz0123 and password=hunter2hunter2")

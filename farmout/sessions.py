@@ -161,10 +161,10 @@ def rehome(name, cwd, force=False):
 
 
 def create(worker, cwd, name=None, write=False, isolate=False, model=None, effort=None, group=None, parent=None,
-           fork_of=None, fallback=None, lane=None, fork_at=None, base=0, kind=None):
+           fork_of=None, fallback=None, lane=None, fork_at=None, base=0, kind=None, announce=True):
     """A new session, named <kind>-<n> (kind: the worker) unless named. A branch (fork) names its parent, the
     parent's turn it continues from (fork_at) and how many turns came before its first one (base), which numbers its
-    turns along the whole conversation."""
+    turns along the whole conversation. announce=False leaves firing its SessionStart hooks to the caller."""
     if worker not in ENABLED:
         raise ValueError(f"unknown or unavailable worker {worker!r}; available: {', '.join(ENABLED) or 'none'}")
     ROOT.mkdir(parents=True, exist_ok=True)
@@ -185,8 +185,13 @@ def create(worker, cwd, name=None, write=False, isolate=False, model=None, effor
             "fallback": fallback, "lane": lane, "native_id": None,
             "iso": None, "turns": 0, "created": time.time(), "last": None}
     save(meta)
-    event(name, "SessionStart", {k: meta[k] for k in ("worker", "cwd", "write", "isolate", "group", "parent")})
+    if announce:
+        started(meta)
     return meta
+
+
+def started(meta):
+    event(meta["name"], "SessionStart", {k: meta[k] for k in ("worker", "cwd", "write", "isolate", "group", "parent")})
 
 
 def event(name, kind, payload):
@@ -611,9 +616,11 @@ def fork(name, new_name=None, worker=None, at=None, model=None):
             meta = create(worker, cwd, name=new_name, effort=parent["effort"], group=parent.get("group"), parent=name,
                           kind=root["name"] if len(root["name"]) <= 56 else None,
                           model=model or (parent["model"] if worker == parent["worker"] else None),
-                          fork_of=parent["native_id"] if native else None, fork_at=at, base=(parent.get("base") or 0) + at)
+                          fork_of=parent["native_id"] if native else None, fork_at=at, base=(parent.get("base") or 0) + at,
+                          announce=False)
     except FileNotFoundError:
         raise KeyError(f"no session named {name!r} (it was just removed)") from None
+    started(meta)  # its hooks run outside the lock: one that messages the parent mustn't wait on it
     if parent.get("moved_from"):  # its folder moved and nobody has been told yet: the branch tells its worker
         meta["moved_from"] = parent["moved_from"]
         save(meta)
