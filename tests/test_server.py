@@ -108,7 +108,7 @@ def alive(pid):
         return False
     try:  # Linux: /proc, since minimal images (python:*-slim) have no ps
         return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] != "Z"
-    except FileNotFoundError:
+    except (FileNotFoundError, ProcessLookupError):  # gone, maybe between the open and the read
         if Path("/proc/self").exists():
             return False
     stat = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()

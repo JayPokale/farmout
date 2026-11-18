@@ -27,11 +27,12 @@ from .isolate import git
 FIX = re.compile(r"\b(fix(e[sd])?|bug|regression|crash(es)?|broken|wrong|leak|race)\b", re.I)
 CODE = {".py", ".js", ".mjs", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt", ".rb", ".php", ".c", ".cc", ".cpp",
         ".h", ".hpp", ".cs", ".swift", ".scala", ".sh", ".lua", ".m", ".ex", ".exs", ".dart", ".vue", ".svelte"}
-TEST = re.compile(r"(^|/)(tests?|specs?|__tests__|testdata|fixtures?)/|(^|/)(test_[^/]*|conftest\.py)$|_(test|spec)\.\w+$"
-                  r"|\.(test|spec)\.\w+$", re.I)
+TEST = re.compile(r"(^|/)(tests?|specs?|__tests__|testdata|fixtures?)/|(^|/)(test_[^/]*|tests?\.\w+|conftest\.py)$"
+                  r"|_(test|spec)\.\w+$|\.(test|spec)\.\w+$", re.I)  # tests?.py: Django apps keep theirs in tests.py
 DOC = re.compile(r"(^|/)(docs?|changelog\.?d?|changes|news|releases?)/|\.(md|rst|txt|adoc)$|(^|/)(CHANGES|CHANGELOG|NEWS|HISTORY)[^/]*$",
                  re.I)
 NEAR = 3
+RAW = ("-c", "core.quotePath=false")  # non-ASCII file names as they are, not "caf\303\251.py"
 SNAPSHOT = ("-c", "user.name=farmout", "-c", "user.email=farmout@localhost", "-c", "core.hooksPath=/dev/null")
 
 def candidates(top, n, scan=400, since=None):
@@ -44,10 +45,10 @@ def candidates(top, n, scan=400, since=None):
         sha, parents, subject = (line.split("\t", 2) + ["", ""])[:3]
         if not parents or " " in parents.strip() or not FIX.search(subject):
             continue
-        moved = git(top, "show", "--diff-filter=ADR", "--name-only", "--format=", sha).splitlines()
+        moved = git(top, *RAW, "show", "--diff-filter=ADR", "--name-only", "--format=", sha).splitlines()
         if any(f.strip() and not TEST.search(f) for f in moved):
             continue  # a fix that adds, deletes or renames source files leaves no lines to point at once undone
-        rows = [r.split("\t") for r in git(top, "show", "--numstat", "--format=", sha).splitlines() if r.strip()]
+        rows = [r.split("\t") for r in git(top, *RAW, "show", "--numstat", "--format=", sha).splitlines() if r.strip()]
         src = [r for r in rows if len(r) == 3 and r[0].isdigit() and r[1].isdigit()
                and Path(r[2]).suffix.lower() in CODE and not TEST.search(r[2])]
         if any(r not in src and not TEST.search(r[-1]) and not DOC.search(r[-1]) for r in rows):
@@ -169,9 +170,14 @@ def run(cwd, n=3, workers=None, scan=400, progress=print, lanes=None):
         row = None
         for j, rnd in enumerate(plan):
             ws = [lane(x)[0] for x in rnd]
-            got = replay(str(top), c, ws, f"{group}-{i}" + (f"-{j + 1}" if j else ""), lanes=lanes,
-                         models={lane(x)[0]: lane(x)[1] for x in rnd if lane(x)[1]},
-                         title=title + (f"  ({', '.join(rnd)})" if len(plan) > 1 else ""))
+            try:
+                got = replay(str(top), c, ws, f"{group}-{i}" + (f"-{j + 1}" if j else ""), lanes=lanes,
+                             models={lane(x)[0]: lane(x)[1] for x in rnd if lane(x)[1]},
+                             title=title + (f"  ({', '.join(rnd)})" if len(plan) > 1 else ""))
+            except Exception as e:  # one fix that won't undo cleanly mustn't lose the reviews already paid for
+                got = {"commit": c["sha"], "subject": c["subject"], "secs": 0, "found": {}, "findings": {},
+                       "failed": {w: f"replay failed: {type(e).__name__}: {e}"[:300] for w in ws}, "worker_secs": {},
+                       "replies": {}}
             keyed = {k: {x: got[k][w] for x, w in zip(rnd, ws) if w in got[k]}
                      for k in ("found", "failed", "findings", "worker_secs", "replies")}
             if row is None:

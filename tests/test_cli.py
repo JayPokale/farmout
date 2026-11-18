@@ -1119,6 +1119,12 @@ class MoreTest(CliBase):
                 self.assertIn("no workers are ready here", p.stderr)
                 self.assertNotIn("No findings", p.stdout, "an empty review must not look like a clean change")
 
+    def test_an_isolated_session_isnt_told_to_delete_its_own_worktree(self):
+        self.repo()
+        out = self.fo("run", "codex", "write x.txt 1", "--isolate", "-n", "iso").stdout
+        self.assertIn("farmout rm iso removes it with the session", out)
+        self.assertNotIn("worktree remove", out, "the session's next turn still works in that worktree")
+
     def test_a_turn_left_by_a_killed_runner_is_never_overwritten(self):
         self.fo("run", "codex", "say first", "-n", "k")
         turns = self.state / "sessions" / "k" / "turns"
@@ -1618,6 +1624,30 @@ class BenchCopyTest(unittest.TestCase):
     def git(self, *args, cwd=None):
         return subprocess.run(["git", "-C", str(cwd or self.top), *args], check=True, capture_output=True, text=True,
                               env=self.env).stdout
+
+    def test_non_ascii_names_and_django_tests_py(self):
+        from farmout import bench
+        (self.top / "café.py").write_text("def f(x):\n    return x\n")
+        (self.top / "tests.py").write_text("def test_f():\n    pass\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "add f")
+        (self.top / "café.py").write_text("def f(x):\n    return x or 0\n")
+        (self.top / "tests.py").write_text("def test_f():\n    pass\n\ndef test_f_none():\n    pass\n")
+        self.git("commit", "-qam", "fix f for None")
+        c = bench.candidates(str(self.top), 1)[0]
+        self.assertEqual(c["files"], ["café.py"], "tests.py stays as fixed; the name isn't C-quoted")
+        wt = self.tmp / "wt-cafe"
+        bench.prepare(str(self.top), c, wt, fresh=True)
+        self.assertEqual((wt / "café.py").read_text(), "def f(x):\n    return x\n")
+
+    def test_one_fix_that_wont_undo_doesnt_lose_the_others(self):
+        from unittest import mock
+        from farmout import bench
+        with mock.patch.object(bench, "replay", side_effect=RuntimeError("apply -R failed")), \
+                mock.patch.object(bench, "STATE", self.tmp / "state"):
+            rows, report = bench.run(str(self.top), 1, ["codex"], progress=lambda m: None)
+        self.assertTrue(rows[0]["failed"]["codex"].startswith("replay failed: RuntimeError: apply -R failed"))
+        self.assertTrue(report.exists(), "the report is still written")
 
     def test_cards_name_the_models_farmout_picks_and_fit_one_post(self):
         from farmout import bench, review
