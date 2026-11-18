@@ -29,7 +29,8 @@ Rules:
 - Read-only by default. write:true allows edits inside cwd; parallel writers on one repo need isolate:true (a private git worktree each, returned as a patch).
 - Put independent subtasks in one delegate call; they run in parallel. background:true returns at once so you can keep working; read the result files when they appear.
 - Each result is saved to the file named in its header. To chain workers, pass that path in a later task's files instead of reading it yourself.
-- For a back-and-forth with one worker, use `send` with a session name: the worker remembers earlier turns. `pipeline` starts multi-stage runs (review, fix, verify) in the background.
+- For a back-and-forth with one worker, use `send` with a session name: the worker remembers earlier turns; `worker` or `model` on an existing session moves the conversation there. `pipeline` starts multi-stage runs (review, fix, verify) in the background.
+- A worker at its usage limit or logged out hands the task to the next ready one (the header then reads `codex→claude`).
 - Verify worker output before relying on it; cheaper models fail quietly. On FAILED, retry another worker or do it yourself."""
 
 if ENABLED:

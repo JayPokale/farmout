@@ -20,8 +20,14 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 - **MCP tools** `send`, `sessions` and `pipeline`, next to `delegate` (which gains `effort`).
 - **The official MCP Registry:** `server.json` (`io.github.JayPokale/farmout`, run as `uvx farmout mcp`); each release is listed there by the release workflow once PyPI has it.
 - **`farmout fix-pr --dry-run`** prints the brief the workers would get from a pull request's feedback, and starts nothing.
-- **Model lanes in `farmout bench`:** `-w claude:opus,claude:sonnet,codex` (or `copilot:<model>` for a model your Copilot plan has enabled) names a model per lane, and one worker on several models compares them (separate review rounds); the card names each model. Cards also name the models farmout picks by default (Gemini Flash low, Claude Sonnet).
-- `-w claude:opus,codex` picks a worker's model in `ask`, `review`, `race` and `fix-pr` too (one model per worker there).
+- **Model lanes in `farmout bench`:** `-w claude:opus,claude:sonnet,codex` (or `copilot:<model>` for a model your Copilot plan has enabled) names a model per lane, and one worker on several models compares them side by side; the card names each model. Cards also name the models farmout picks by default (Gemini Flash low, Claude Sonnet).
+- **One subscription fills several lanes** in `ask`, `review`, `race`, `fix-pr`, `debate` and pipeline stages: `-w claude:opus,claude:sonnet`, or `-w codex,codex` for two runs of one model (labelled `codex#2`). Results and sessions are kept per lane.
+- **`farmout bench --apply`** makes the measured winners this repository's defaults: each compared worker's best model (`models`) and a best-first `fallback` order in `.farmout/settings.json` (ties go to the quicker lane). `--apply --last` applies the newest saved run without spending anything.
+- **A conversation can change model or worker:** `farmout send <session> --model opus` keeps the conversation and changes the model; `-w codex[:model]` moves it to another worker, which gets the turns so far as a file. The MCP `send` tool takes `worker` / `model` for an existing session too.
+- **Fallback by default:** with no order set, a task whose worker is at a usage limit or logged out goes to the next ready worker (never `api`, never one the repository forbids); `fallback = []` or `--fallback ""` turns it off. Entries can name a model (`claude:sonnet` after `claude:opus`), limits are kept per model, and a limit in the middle of a conversation hands the turns so far to the next worker. Reviews never fall back, and with no `-w` they leave out workers known to be limited.
+- **Logged out or subscription ended** (a 401, "Not logged in", an expired token) is handled like a limit: skipped for 30 minutes, shown by `status`, `stats` and `doctor`, with a log-in hint when nothing can take over.
+- **Reset times** are read from more wordings: "try again in 4 days 2 hours", "retry in 32.5s", Unix and ISO times, and clock times with a weekday and time zone ("resets 3pm (Asia/Kolkata)").
+- A **`models` setting** picks each worker's default model; `farmout run claude:opus` names one inline, and `run auto` follows model lanes in the fallback order. `farmout doctor` suggests what to do with one subscription.
 - `farmout review --json` (and `bench`'s report) include each worker's raw reply, next to the parsed findings.
 - **Bug-Finding Leaderboard tooling** (`bench/leaderboard.py`, in the repository): 41 recent real fixes from 10 well-known projects, each screened by hand and by two models, reviewed per lane (a worker on its default model or a named one, such as `claude:opus`), with resumable runs, a no-quota `check`, `rescore` after a parser fix, and a Markdown table, JSON and card from `render`.
 - `--effort` for every worker (`--effort`, `--reasoning-effort`, `model_reasoning_effort`).
@@ -58,6 +64,9 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 
 ### Fixed
 
+- An empty answer from `agy` (headless mode denied a tool it wanted) was reported as a successful, empty reply; it's now a failure that names the denied tool.
+- A `claude` worker that exits with an error now shows Claude's own message ("Not logged in · Please run /login"), not its whole JSON report.
+- With a fallback order set, a reviewer at its limit could fall back to a worker already in the review, filing two answers under one name; reviews no longer fall back.
 - The `claude` worker could never search the web: headless Claude Code denies any tool that would ask for permission, so WebSearch is now pre-approved (`--allowedTools`).
 - Isolated tasks corrupted files with CRLF line endings: diffs were read as text, which turned CRLF into LF; patches now move as bytes.
 - farmout's own git hook ran a full review on every worktree farmout made; farmout's internal git calls now run no hooks at all (`--no-verify` alone still ran post-commit and post-checkout hooks).

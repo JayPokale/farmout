@@ -22,7 +22,8 @@ cd your-repo && farmout bench --share   # 哪个 AI 订阅最能在你自己的�
 - **`farmout bench`**：在你自己的代码上，哪个 AI 最强？farmout 会在临时 worktree 里撤销你 git 历史中最近的 bug 修复，让你的每个订阅去把 bug 找出来；加上 `--share`，还能把得分做成一篇帖子和一张图片卡片（只有分数，绝不包含你的代码）。
 - **`farmout review`**：Codex、Gemini（通过 Antigravity）、GitHub Copilot 和第二个 Claude 账号同时以只读方式审查你的改动。各模型的发现会合并在一起，并标出有几个模型意见一致；凡是引用了不存在的文件或行号的发现，在你看到之前就会被剔除。在[我们的基准测试](../bench/README.md)中，32 个 bug（23 个人为植入，9 个是来自开源项目的真实回归）每一个都被四个模型中的至少三个指出。
 - **`farmout race "<task>" --test "pytest -x"`**：每个模型都在各自的 git worktree 里尝试同一处改动，由你的测试选出胜者；在你执行 `farmout apply` 之前，你的工作区不会有任何改动。
-- **`farmout run` / `send` / `fork`**：和任意 worker 开启命名会话。会话会记住对话内容，忙碌时把新消息排进队列，还能把一个会话的回复转交给另一个会话。
+- **只有一个订阅也够用**：同一个订阅里的多个模型可以各占一条线路（`farmout review -w claude:opus,claude:sonnet`，或用 `-w codex,codex` 让同一个模型审查两次）；`farmout bench --apply` 会把在你自己代码上表现最好的模型设为默认；某个模型触及上限时，交给你指定的下一个模型（`fallback = ["claude:sonnet"]`）。
+- **`farmout run` / `send` / `fork`**：和任意 worker 开启命名会话。会话会记住对话内容，忙碌时把新消息排进队列，还能把一个会话的回复转交给另一个会话。对话中途可以换模型或换 worker（`farmout send dates --model opus`，或 `-w codex`，新 worker 会拿到此前的对话）；某个订阅触及上限或登录失效时，任务会交给下一个可用的 worker，而不是直接失败。
 - **`farmout pipe run fix`**：先审查你的改动，再在 worktree 里修复两个及以上模型一致指出的问题，然后审查这次修复。你也可以自己编写流水线，支持门禁（gate）、审批和并行阶段。
 - **技能、钩子和商店**：在任意 worker 上运行 `SKILL.md` 技能（Claude Code、Codex 和 Copilot 通用的格式），挂接 farmout 的各类事件，还能安装经过审核的钩子、技能和工具，每个文件都用 SHA-256 锁定。
 - **在 Claude Code 里**：Claude 会把长篇阅读和样板代码交给最合适的订阅。用这种方式总结三篇论文，答案完全相同，Claude 却少用了 **59% 的 token**（成本降低 74%）。
@@ -78,6 +79,12 @@ farmout ask "Is this migration safe to run online?" -f migrations/0042.sql
 git diff | farmout ask "Anything here that could lose data?"
 farmout race "Make the flaky test in tests/test_sync.py deterministic" --test "pytest tests/test_sync.py -x"
 
+# One subscription, several models
+farmout review -w claude:opus,claude:sonnet          # two models of one plan; agreement counted per model
+farmout bench -w claude:opus,claude:sonnet --apply   # the one that found more of your past bugs becomes the default here
+farmout send dates --model opus                      # the same conversation on a bigger model
+farmout send dates -w codex                          # or on another worker, which gets the conversation so far
+
 # Sessions talk to each other
 farmout send dates --attach review-1-claude "Fix what this review found"
 farmout fork review-1-codex "Why do you think line 42 races?"     # a side question, same context
@@ -112,13 +119,13 @@ farmout hook install          # review every commit; block it when 2+ models fla
 | 命令 | 作用 |
 |---|---|
 | `run <worker> "<prompt>"` | 启动一个会话：`-n name`、`--write`（直接修改当前目录）、`--isolate`（在私有 worktree 中修改并生成补丁）、`--model`、`--effort`、`--fallback w1,w2`、`--bg`、`-f file`。worker 填 `auto` 时，会选第一个允许使用且未触及用量上限的 worker |
-| `send <session> "<msg>"` | 发送下一条消息；会话忙碌时消息会排队。`--attach <session>` 把那个会话的最后一条回复一并交过去，`-f` 附加文件，`--bg` 立即返回 |
+| `send <session> "<msg>"` | 发送下一条消息；会话忙碌时消息会排队。`--attach <session>` 把那个会话的最后一条回复一并交过去，`-f` 附加文件，`--bg` 立即返回。`--model opus` 换个模型继续，`-w codex[:model]` 换个 worker 继续（它会以文件形式拿到此前的对话） |
 | `fork <session> "<msg>"` | 以该会话的对话为起点开一个新会话；`--worker` 换一个模型接着聊 |
-| `ask "<question>"` | 把同一个问题发给每个 worker（用 `-w` 挑选，`-w claude:opus,codex` 还能指定模型），答案并排展示；`--debate` 让每个 worker 读完其他人的回答后再答一次 |
-| `review [focus]` | 每个 worker 审查 `--staged`、`--base <ref>` 或你未提交的改动；`--min-agree N`，以及决定退出码的 `--fail-on high\|medium\|low` |
+| `ask "<question>"` | 把同一个问题发给每个 worker（用 `-w` 挑选，`-w claude:opus,codex` 还能指定模型，`-w claude:opus,claude:sonnet` 用同一个订阅的两个模型），答案并排展示；`--debate` 让每个 worker 读完其他人的回答后再答一次 |
+| `review [focus]` | 每个 worker 审查 `--staged`、`--base <ref>` 或你未提交的改动；`-w` 的写法与 `ask` 相同，`codex,codex` 让同一个模型审查两次；`--min-agree N`，以及决定退出码的 `--fail-on high\|medium\|low` |
 | `race "<task>"` | 每个 worker 在各自的 worktree 中尝试这个任务；`--test <cmd>` 选出胜者，`--apply` 直接应用 |
 | `fix-pr <number>` | 把一个 pull request 的审查评论和失败的检查（通过 `gh` 获取；不含机器人、PR 作者自己的回复和批准）变成一场竞速；请先把该 PR 检出到本地。`--dry-run` 只打印将交给 worker 的说明，不开始 |
-| `bench [-n N]` | 重放你历史中最近 N 次小型 bug 修复，按能否找出 bug 给每个 worker 打分 |
+| `bench [-n N]` | 重放你历史中最近 N 次小型 bug 修复，按能否找出 bug 给每个 worker（或 `worker:model` 线路）打分。`--apply` 把胜出者设为本仓库的默认，`--apply --last` 应用上一次的结果 |
 | `ls [--watch]`, `log`, `attach`, `wait`, `stop`, `rm` | 列出（或以仪表盘形式实时查看）、阅读、观看、等待、停止和删除会话（`rm` 还会删除会话的 worktree 和分支） |
 | `diff`, `apply [--pr]`, `undo` | 处理隔离会话的补丁：查看、应用（可按顺序应用多个，遇到第一个应用不上的就停下）、用 `gh` 开 pull request，或把已应用的补丁撤回 |
 | `export <session> [--html]` | 把一段对话导出为 Markdown 或独立的 HTML 页面 |
@@ -235,7 +242,9 @@ timeout = 30
 
 ## 哪个模型最懂你的代码
 
-`farmout bench -n 3` 会在你的提交历史中找出最近的小型 bug 修复提交（标题像是修复，最多 4 个源码文件、1 到 80 行改动，除此之外只改了测试和文档），在临时 worktree 里撤销每次修复的代码，让 bug 以未提交改动的形式回到它真实所在的代码库，再让每个 worker 审查；只要某个 worker 有一条发现落在改动处的 3 行以内，就给它计分。修复附带的测试和 changelog 保持原样，临时副本的提交历史也不会出现这次修复，所以 diff 里没有任何东西会泄露 bug 在哪里。`-w` 接受多条线路：`codex`，或用 `claude:opus` 指定模型；同一个 worker 写上几个模型，就能比较这些模型（分轮运行）。代价是每个提交、每条线路各一次审查；报告（含每条原始回复）保存在 `~/.local/state/farmout/bench/` 下。在 tqdm 的两次修复上，Claude、Codex 和 Copilot 两次都找到了，Antigravity 的快速模型找到了一次。
+`farmout bench -n 3` 会在你的提交历史中找出最近的小型 bug 修复提交（标题像是修复，最多 4 个源码文件、1 到 80 行改动，除此之外只改了测试和文档），在临时 worktree 里撤销每次修复的代码，让 bug 以未提交改动的形式回到它真实所在的代码库，再让每个 worker 审查；只要某个 worker 有一条发现落在改动处的 3 行以内，就给它计分。修复附带的测试和 changelog 保持原样，临时副本的提交历史也不会出现这次修复，所以 diff 里没有任何东西会泄露 bug 在哪里。`-w` 接受多条线路：`codex`，或用 `claude:opus` 指定模型；同一个 worker 写上几个模型，就能比较这些模型（在同一次审查中并排进行）。代价是每个提交、每条线路各一次审查；报告（含每条原始回复）保存在 `~/.local/state/farmout/bench/` 下。在 tqdm 的两次修复上，Claude、Codex 和 Copilot 两次都找到了，Antigravity 的快速模型找到了一次。
+
+`--apply` 会把结果用到这个仓库：各线路先比找到的 bug 数，再比失败次数，最后比典型审查耗时（打平时更快的模型胜出）；`.farmout/settings.json` 会写入每个参与比较的 worker 的最佳模型（`models`）和从优到劣的 `fallback` 顺序，`farmout run auto` 也按这个顺序来。bench 没有测试的 worker 排在最后。`farmout bench --apply --last` 直接应用最近一次保存的结果，不再消耗额度。只有一个订阅时，它能用你自己的历史回答“大模型在这份代码上值不值得花额度”。
 
 ## 设置
 
@@ -245,7 +254,8 @@ timeout = 30
 workers = ["codex", "claude"]   # which subscriptions may see this repo, e.g. keep work code off personal accounts
 write = false                   # forbid write and isolate here
 web = false                     # forbid web access (agy can't turn its search off, so it's refused)
-fallback = ["codex", "copilot", "claude"]   # who takes over when one hits its usage limit
+fallback = ["codex", "claude:sonnet"]   # 触及上限或登录失效时由谁接手（默认：其他所有可用 worker；[] 表示不接手）
+models = { claude = "sonnet", codex = "gpt-5.6-terra" }   # 每个 worker 的默认模型（`bench --apply` 会写入）
 timeout = 900                   # seconds per task
 redact = true                   # strip credentials from briefs and piped input
 # [[hooks]] tables (see Hooks); in your own settings only: store = "<index URL or path>"
@@ -257,7 +267,7 @@ redact = true                   # strip credentials from briefs and piped input
 
 ## 用量上限与统计
 
-当某个 worker 因订阅触及用量上限而失败时，farmout 会记下该让它歇多久（报错里如果有 “try again in 20 minutes” 这样的提示就照办，否则按 15 分钟算）；如果你指定了 `--fallback`（或阶段的 `fallback`，或 `fallback` 设置），就改由下一个 worker 执行该任务。在限制解除之前，发给这个 worker 的任务会直接转给下一个，`farmout run auto` 也会跳过它。`farmout stats` 根据用量日志（`~/.local/state/farmout/usage.jsonl`，从不记录 prompt 或输出内容）显示每个订阅的运行次数、失败次数、限额情况、耗时和 token 数。
+当某个 worker 因订阅触及用量上限而失败时，farmout 会记下该让它歇多久，并改由下一个 worker 执行该任务。重置时间从 CLI 的报错里读取（“try again in 4 days 2 hours”、“retry in 32.5s”、“resets 3pm (Asia/Kolkata)”、“try again at 3:04 PM”），读不到就按 15 分钟算。未登录、登录过期或订阅已结束的 worker 也按同样方式处理，暂停 30 分钟；如果没有别的 worker 能接手，会提示如何重新登录。下一个 worker 依次取自 `--fallback`、阶段的 `fallback` 或 `fallback` 设置，都没有时就是除 `api` 以外的其他所有可用 worker（`[]` 或 `--fallback ""` 可关闭）。条目可以指定模型，比如 `claude:opus` 触及上限后交给 `claude:sonnet`；上限按模型分别记录。对话进行到一半时，下一个 worker 会以文件形式拿到此前的对话，会话由它继续。审查从不改换 worker，因为“意见一致”必须来自不同的审查者；不加 `-w` 时，已知触及上限的 worker 会被排除在审查之外。在限制解除之前，发给这个 worker 的任务会直接转给下一个，`farmout run auto` 会跳过它，`farmout status` 和 `farmout doctor` 也会显示出来。`farmout stats` 根据用量日志（`~/.local/state/farmout/usage.jsonl`，从不记录 prompt 或输出内容）显示每个订阅的运行次数、失败次数、限额情况、耗时和 token 数。
 
 ## git 钩子
 
@@ -283,7 +293,7 @@ farmout 同时也是一个 MCP 服务器（`farmout mcp`，或 `python3 server.p
 | 工具 | 作用 |
 |---|---|
 | `delegate` | 并行执行一次性子任务（最多 8 个）：`worker`、`prompt`、`files`、`cwd`、`write`、`isolate`、`model`、`effort`；`background: true` 会立即返回。完整输出写入 `~/.cache/farmout/`，主控拿到的是截断后的副本和文件路径 |
-| `send` | 向命名会话发送消息（给出 `worker` 则新开一个会话）；worker 会记住对话内容 |
+| `send` | 向命名会话发送消息（给出 `worker` 则新开一个会话）；worker 会记住对话内容。对已有会话给出 `worker` 或 `model`，对话就转到那里继续 |
 | `sessions` | 列出所有会话，或某个会话的各轮对话和输出文件 |
 | `pipeline` | 列出、运行、查看状态、批准、拒绝、恢复或停止流水线运行（它们在后台运行） |
 
@@ -370,6 +380,8 @@ farmout 在你的机器上以你的登录身份，按各厂商文档中说明的
 ## 常见问题
 
 **它和 OpenAI 为 Claude Code 推出的 Codex 插件有什么不同？** 那个插件只能在 Claude Code 里驱动 Codex。farmout 能驱动你拥有的任何订阅（Codex、通过 Antigravity 使用的 Gemini、Copilot、第二个 Claude 账号、本地模型），可以同时用好几个，在终端或任何 MCP 客户端里都能用，还支持会话和流水线。
+
+**我只有一个订阅，farmout 适合我吗？** 适合，只是订阅越多能做的越多。一个订阅里就有好几个模型：Claude 的 Opus、Sonnet 和 Haiku，几个 Codex 模型，或者 Copilot 里来自多家厂商的模型。`farmout bench -w claude:opus,claude:sonnet --apply` 告诉你更大的模型能不能在你自己过去的 bug 上找得更多，并把更合适的那个设为默认；`farmout review -w claude:opus,claude:sonnet`（或 `-w codex,codex`）用一个订阅拿到两份独立的审查；`fallback = ["claude:sonnet"]` 让你在 Opus 触及上限时继续工作；遇到难题时，`farmout send <session> --model opus` 把对话换到更大的模型上。再通过 `api` worker 接一个本地模型（Ollama），就多了一个免费的第二意见。
 
 **会不会把我其他订阅的额度烧光？** 每个任务消耗的是执行它的那个 worker 的额度。`review`、`ask` 和 `race` 会给每个 worker 各发一个任务；`farmout stats` 会显示每个 worker 做了什么。用 `-w` 挑选要用的 worker。
 

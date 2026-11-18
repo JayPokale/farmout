@@ -791,6 +791,12 @@ class OneSubscriptionTest(CliBase):
         (self.work / ".farmout" / "settings.toml").write_text('web = true\n')
         self.assertIn('[models]\nclaude = "sonnet"', self.fo("bench", "--apply", "--last", rc=1).stderr)
 
+    def test_claudes_own_error_message_is_shown(self):
+        p = self.fo("run", "claude", "claudeout", "--fallback", "", rc=1)
+        self.assertTrue(p.stdout.startswith("RuntimeError: claude: Not logged in · Please run /login\n"), p.stdout)
+        self.assertNotIn("terminal_reason", p.stdout)
+        self.assertEqual(json.loads((self.state / "limits.json").read_text())["claude"]["why"], "login")
+
     def test_an_empty_answer_from_agy_is_a_failure(self):
         p = self.fo("run", "antigravity", "agyempty", "--fallback", "", rc=1)
         self.assertIn("agy returned an empty answer (it wanted a tool headless mode denies: command)", p.stdout)

@@ -127,7 +127,13 @@ def claude(t, key):
     # Headless, nobody can answer a permission prompt, so a tool that asks is simply denied: pre-approve search.
     cmd += ["--allowedTools", "WebSearch"] if web else []
     cmd += dirs + opt("--effort", t.get("effort"))
-    out = run(cmd, key, cwd, stdin=brief, env=env, timeout=t.get("timeout"))
+    try:
+        out = run(cmd, key, cwd, stdin=brief, env=env, timeout=t.get("timeout"))
+    except RuntimeError as e:  # it exits 1 with its JSON on stdout ("Not logged in"): show the message, not the JSON
+        said = re.search(r'"result":\s*("(?:[^"\\]|\\.)*")', str(e))
+        if said:
+            raise RuntimeError(f"claude: {json.loads(said.group(1))}"[:1500]) from None
+        raise
     res = parse_json(out)
     if not res:
         return {"text": out, "native_id": t.get("session_id") or t.get("resume"), "usage": None}

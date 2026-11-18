@@ -24,7 +24,8 @@ cd your-repo && farmout bench --share   # which of your AI subscriptions finds r
 - **`farmout bench`**: which AI is best on *your* code? Recent bug fixes from your git history are undone in a scratch worktree, each of your subscriptions is asked to find the bug, and `--share` turns the scores into a post and an image card (scores only, never your code). Name models to compare them: `-w claude:opus,claude:sonnet,codex`, or `copilot:<model>` for any model your Copilot plan has enabled (`/model` in Copilot lists them).
 - **`farmout review`**: Codex, Gemini (through Antigravity), GitHub Copilot and a second Claude account review your change at the same time, read-only. Findings are merged across models with agreement counts, and any finding that cites a file or line that doesn't exist is dropped before you see it. In [our benchmark](https://github.com/JayPokale/farmout/blob/main/bench/README.md), each of 32 bugs (23 planted, 9 real regressions from open-source projects) was flagged by at least three of the four models.
 - **`farmout race "<task>" --test "pytest -x"`**: every model attempts the same change in its own git worktree; your tests pick the winner, and nothing touches your tree until you `farmout apply` it.
-- **`farmout run` / `send` / `fork`**: named sessions with any worker that remember the conversation, queue messages while busy, and hand one session's reply to another.
+- **One subscription is enough**: its models fill the lanes (`farmout review -w claude:opus,claude:sonnet`, or `-w codex,codex` for two runs of one model), `farmout bench --apply` makes the model that did best on your own code the default, and a model at its limit hands over to the next one you name (`fallback = ["claude:sonnet"]`).
+- **`farmout run` / `send` / `fork`**: named sessions with any worker that remember the conversation, queue messages while busy, and hand one session's reply to another. A conversation can change model or worker mid-way (`farmout send dates --model opus`, or `-w codex`, which gets the turns so far), and when a subscription hits its limit or is logged out, the task goes to the next ready worker instead of failing.
 - **`farmout pipe run fix`**: review your change, fix what two or more models agree on in a worktree, then review the fix. Write your own pipelines with gates, approvals and parallel stages.
 - **Skills, hooks and a store**: run `SKILL.md` skills (the format Claude Code, Codex and Copilot share) on any worker, hook into farmout's events, and install reviewed hooks, skills and tools with every file pinned by SHA-256.
 - **Inside Claude Code**: Claude hands long reads and boilerplate to whichever subscription fits. Summarizing three papers this way cost Claude **59% fewer tokens** (74% less cost) for the same answers.
@@ -80,6 +81,12 @@ farmout ask "Is this migration safe to run online?" -f migrations/0042.sql
 git diff | farmout ask "Anything here that could lose data?"
 farmout race "Make the flaky test in tests/test_sync.py deterministic" --test "pytest tests/test_sync.py -x"
 
+# One subscription, several models
+farmout review -w claude:opus,claude:sonnet          # two models of one plan; agreement counted per model
+farmout bench -w claude:opus,claude:sonnet --apply   # the one that found more of your past bugs becomes the default here
+farmout send dates --model opus                      # the same conversation on a bigger model
+farmout send dates -w codex                          # or on another worker, which gets the conversation so far
+
 # Sessions talk to each other
 farmout send dates --attach review-1-claude "Fix what this review found"
 farmout fork review-1-codex "Why do you think line 42 races?"     # a side question, same context
@@ -113,14 +120,14 @@ farmout hook install          # review every commit; block it when 2+ models fla
 
 | command | what it does |
 |---|---|
-| `run <worker> "<prompt>"` | start a session: `-n name`, `--write` (edit the current directory), `--isolate` (edit a private worktree, make a patch), `--model`, `--effort`, `--fallback w1,w2`, `--bg`, `-f file`. `auto` picks the first allowed worker that isn't at a usage limit |
-| `send <session> "<msg>"` | the next message; a busy session queues it. `--attach <session>` hands over that session's last reply, `-f` adds files, `--bg` returns at once |
+| `run <worker> "<prompt>"` | start a session: `-n name`, `--write` (edit the current directory), `--isolate` (edit a private worktree, make a patch), `--model` (or `claude:opus` as the worker), `--effort`, `--fallback w1,w2` (who takes over at a limit or a lost login; default: every other ready worker, `""` for none), `--bg`, `-f file`. `auto` picks the first allowed worker that isn't at a usage limit |
+| `send <session> "<msg>"` | the next message; a busy session queues it. `--attach <session>` hands over that session's last reply, `-f` adds files, `--bg` returns at once. `--model opus` continues on another model, `-w codex[:model]` on another worker (it gets the conversation so far as a file) |
 | `fork <session> "<msg>"` | a new session that starts from this one's conversation; `--worker` continues with a different model |
-| `ask "<question>"` | the same question to every worker (`-w` to choose, `-w claude:opus,codex` to pick a model too), answers side by side; `--debate` lets each read the others and answer again |
-| `review [focus]` | every worker reviews `--staged`, `--base <ref>` or your uncommitted change; `--min-agree N`, `--fail-on high\|medium\|low` for exit codes |
+| `ask "<question>"` | the same question to every worker (`-w` to choose, `-w claude:opus,codex` to pick a model too, `-w claude:opus,claude:sonnet` for two models of one subscription), answers side by side; `--debate` lets each read the others and answer again |
+| `review [focus]` | every worker reviews `--staged`, `--base <ref>` or your uncommitted change; `-w` takes the same lanes as `ask`, and `codex,codex` reviews twice with one model; `--min-agree N`, `--fail-on high\|medium\|low` for exit codes |
 | `race "<task>"` | every worker attempts the task in its own worktree; `--test <cmd>` picks the winner, `--apply` lands it |
 | `fix-pr <number>` | a pull request's review comments and failing checks (via `gh`; bots, the author's own replies and approvals left out) become a race; check the PR out first. `--dry-run` prints the brief and stops |
-| `bench [-n N]` | replay N recent small bug fixes from your history; each worker is scored on finding the bug |
+| `bench [-n N]` | replay N recent small bug fixes from your history; each worker (or `worker:model` lane) is scored on finding the bug. `--apply` makes the winners this repo's defaults, `--apply --last` applies your last run |
 | `ls [--watch]`, `log`, `attach`, `wait`, `stop`, `rm` | list (or watch, as a dashboard), read, watch, wait for, stop and delete sessions (`rm` also removes a session's worktree and branch) |
 | `diff`, `apply [--pr]`, `undo` | an isolated session's patch: show it, apply it (several in order, stopping at the first that doesn't apply), open a pull request with `gh`, or take an applied one back out |
 | `export <session> [--html]` | a conversation as Markdown or a standalone HTML page |
@@ -237,7 +244,9 @@ The store is [`store/`](https://github.com/JayPokale/farmout/tree/main/store) in
 
 ## Which model is best on your code
 
-`farmout bench -n 3` finds recent small bug-fix commits in your history (a fix-like subject, 1-80 changed lines in at most 4 source files, and nothing else changed but tests and docs), undoes each fix's code in a scratch worktree so the bug is back as an uncommitted change in its real codebase, has every worker review it, and scores a worker when one of its findings lands within 3 lines of the change. The fix's tests and changelog stay as they are and the scratch copy's history doesn't name it, so nothing in the diff gives the bug away. `-w` takes lanes: `codex`, or `claude:opus` to name a model, and one worker on several models compares those models (they run in separate rounds). A model the plan doesn't offer shows as failed, with the CLI's reason. It costs one review per lane per commit; the report, with every reply, is saved under `~/.local/state/farmout/bench/`. On two tqdm fixes, Claude, Codex and Copilot found both and Antigravity's fast model one.
+`farmout bench -n 3` finds recent small bug-fix commits in your history (a fix-like subject, 1-80 changed lines in at most 4 source files, and nothing else changed but tests and docs), undoes each fix's code in a scratch worktree so the bug is back as an uncommitted change in its real codebase, has every worker review it, and scores a worker when one of its findings lands within 3 lines of the change. The fix's tests and changelog stay as they are and the scratch copy's history doesn't name it, so nothing in the diff gives the bug away. `-w` takes lanes: `codex`, or `claude:opus` to name a model, and one worker on several models compares those models (side by side, in one review). A model the plan doesn't offer shows as failed, with the CLI's reason. It costs one review per lane per commit; the report, with every reply, is saved under `~/.local/state/farmout/bench/`. On two tqdm fixes, Claude, Codex and Copilot found both and Antigravity's fast model one.
+
+`--apply` then puts the result to work in this repository: lanes are ranked by bugs found, then failures, then typical review time (so on a tie the quicker model wins), and `.farmout/settings.json` gets each compared worker's best model as its default (`models`) and a best-first `fallback` order, which `farmout run auto` follows too. Workers the bench didn't try stay at the end of the order. `farmout bench --apply --last` applies the newest saved run without spending anything. With one subscription this answers "is the big model worth my quota on this code?" with your own history instead of opinions.
 
 ## Settings
 
@@ -247,19 +256,20 @@ The store is [`store/`](https://github.com/JayPokale/farmout/tree/main/store) in
 workers = ["codex", "claude"]   # which subscriptions may see this repo, e.g. keep work code off personal accounts
 write = false                   # forbid write and isolate here
 web = false                     # forbid web access (agy can't turn its search off, so it's refused)
-fallback = ["codex", "copilot", "claude"]   # who takes over when one hits its usage limit
+fallback = ["codex", "claude:sonnet"]   # who takes over at a usage limit or a lost login (default: every other ready worker; [] for none)
+models = { claude = "sonnet", codex = "gpt-5.6-terra" }   # each worker's default model (`bench --apply` writes it)
 timeout = 900                   # seconds per task
 redact = true                   # strip credentials from briefs and piped input
 # [[hooks]] tables (see Hooks); in your own settings only: store = "<index URL or path>"
 ```
 
-Neither file can loosen the other: worker lists intersect, `write` and `web` are off if either says so, and the shorter timeout wins. Settings are always read from the main working tree, so a worker editing its worktree's copy changes nothing.
+Neither file can loosen the other: worker lists intersect, `write` and `web` are off if either says so, and the shorter timeout wins. The project's `fallback` replaces yours and its `models` override yours (an explicit `--model` or `worker:model` always wins). Settings are always read from the main working tree, so a worker editing its worktree's copy changes nothing.
 
 **`.farmoutinclude`** at the repo root lists ignored files that isolated worktrees need (glob patterns, one per line, e.g. `.env` or `config/*.local`). They are copied in, and never end up in a patch.
 
 ## Usage limits and stats
 
-When a worker fails because its subscription hit a limit, farmout notes how long to leave it alone ("try again in 20 minutes" is honoured, otherwise 15 minutes) and, if you gave `--fallback` (or a stage `fallback`, or the `fallback` setting), runs the task on the next worker instead; until the limit passes, tasks for that worker go straight to the next one, and `farmout run auto` skips it. `farmout stats` shows each subscription's runs, failures, limits, time and tokens from the usage log (`~/.local/state/farmout/usage.jsonl`, which never records prompts or outputs).
+When a worker fails because its subscription hit a limit, farmout notes how long to leave it alone and runs the task on the next worker instead. The reset time is read from the CLI's message ("try again in 4 days 2 hours", "retry in 32.5s", "resets 3pm (Asia/Kolkata)", "try again at 3:04 PM"); if there's none, 15 minutes. A worker that isn't logged in, whose login expired or whose subscription ended gets the same treatment for 30 minutes, with a hint on how to log in again when nothing can take over. The next worker is the first available one from `--fallback`, a stage's `fallback` or the `fallback` setting, and otherwise every other ready worker except `api` (`[]` or `--fallback ""` turns it off). An entry can name a model, so `claude:opus` at its limit can hand over to `claude:sonnet`; limits are kept per model. In the middle of a conversation the next worker gets the turns so far as a file and the session carries on with it. Reviews never fall back, since agreement must count distinct reviewers; with no `-w`, a review leaves out workers known to be limited. Until a limit passes, tasks for that worker go straight to the next one, `farmout run auto` skips it, and `farmout status` and `farmout doctor` show it. `farmout stats` shows each subscription's runs, failures, limits, time and tokens from the usage log (`~/.local/state/farmout/usage.jsonl`, which never records prompts or outputs).
 
 ## The git hook
 
@@ -285,7 +295,7 @@ farmout is also an MCP server (`farmout mcp`, or `python3 server.py`), so Claude
 | tool | what it does |
 |---|---|
 | `delegate` | one-shot subtasks in parallel (up to 8): `worker`, `prompt`, `files`, `cwd`, `write`, `isolate`, `model`, `effort`; `background: true` returns at once. Full outputs land in `~/.cache/farmout/`, the head gets capped copies plus the paths |
-| `send` | a message to a named session (give `worker` to start one); the worker remembers the conversation |
+| `send` | a message to a named session (give `worker` to start one); the worker remembers the conversation. For an existing session, `worker` or `model` moves the conversation there |
 | `sessions` | list sessions, or one session's turns and output files |
 | `pipeline` | list, run, status, approve, reject, resume or stop pipeline runs (they run in the background) |
 
@@ -372,6 +382,8 @@ One-shot `delegate` outputs go to `~/.cache/farmout/` and are safe to delete. `f
 ## FAQ
 
 **How is this different from OpenAI's Codex plugin for Claude Code?** That plugin drives Codex only, from Claude Code. farmout drives whichever subscriptions you have (Codex, Gemini through Antigravity, Copilot, a second Claude, local models), several at once, from your terminal or any MCP client, with sessions and pipelines.
+
+**I only have one subscription. Is farmout for me?** Yes, though it does more with two. One plan holds several models: Claude's Opus, Sonnet and Haiku, several Codex models, or Copilot's models from several vendors. `farmout bench -w claude:opus,claude:sonnet --apply` tells you whether the bigger model finds more of your own past bugs and makes the better choice the default; `farmout review -w claude:opus,claude:sonnet` (or `-w codex,codex`) gets two independent reviews from one plan; `fallback = ["claude:sonnet"]` keeps you working when Opus hits its limit; and `farmout send <session> --model opus` moves a conversation up a model when it gets hard. A local model through the `api` worker (Ollama) adds a free second opinion.
 
 **Will it burn my other quotas?** Every task spends the quota of the worker that runs it. `review`, `ask` and `race` send one task per worker; `farmout stats` shows what each did. Use `-w` to pick workers.
 

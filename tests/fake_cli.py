@@ -21,6 +21,7 @@ farmout's review brief is answered from $FAKE_LOG/review-<cli>-<model>.txt, else
 FINDINGS).
   agyerror         agy reports a non-SUCCESS status
   agyempty         agy reports SUCCESS with an empty answer, as when headless mode denied a tool it wanted
+  claudeout        claude prints its JSON report of a failed login and exits 1, as the real one does
 """
 import json
 import os
@@ -79,6 +80,10 @@ elif cmd == "big":
     reply = "x" * int(reply)
 elif cmd == "fail":
     sys.exit(reply)
+elif cmd == "claudeout" and name == "claude":
+    print(json.dumps({"type": "result", "is_error": True, "usage": {"input_tokens": 0}, "terminal_reason": "api_error",
+                      "result": "Not logged in · Please run /login", "session_id": "x"}))
+    sys.exit(1)
 elif cmd == "limit" or (cmd == "limited" and reply.split()[0] == name):
     sys.exit("Error: you've hit your usage limit. Try again in 2 minutes.")
 elif cmd == "limited":
