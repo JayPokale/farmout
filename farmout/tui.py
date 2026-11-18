@@ -5,15 +5,17 @@ model. `farmout ui --web` serves the same in a browser page.
 App draws the screen into a Canvas, a grid of styled cells, and takes keys by name ("up", "enter", "^G", "x"), so the
 tests drive it without a terminal; run() shows it with curses.
 """
+import base64
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
 
-from . import graph, sessions, ui
+from . import flows, graph, sessions, ui, usage
 from .graph import ago, clean, clip, cols, lane, short, take
 
 SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -26,8 +28,9 @@ HELP = [("↑↓ j k", "move"), ("← → h l", "fold, unfold; ← also goes up 
         ("/", "find a question"),
         ("c", "continue from the newest turn"), ("b", "branch from this turn"),
         ("e", "ask this turn differently: a branch from the turn before"), ("n", "new conversation"),
-        ("x", "stop a running turn"), ("o", "open the turn in your pager"), ("a", "show review, ask and race runs too"),
-        ("r", "reload"), ("q", "quit")]
+        ("x", "stop a running turn"), ("o", "open the turn in your pager"), ("y", "copy the turn's answer"),
+        ("d", "an isolated session's patch, in your pager"), ("D", "delete a conversation or branch"),
+        ("a", "show review, ask and race runs too"), ("r q", "reload; quit")]
 
 
 class Canvas:
@@ -169,6 +172,57 @@ def wrap(text, width):
     return out
 
 
+INLINE = re.compile(r"\*\*(.+?)\*\*|`([^`]+)`")
+
+
+def marked(line, style=""):
+    """A line of an answer as (text, style) pieces: **bold** and `code` styled, their marks dropped."""
+    out, at = [], 0
+    for m in INLINE.finditer(line):
+        out += [(line[at:m.start()], style)] if m.start() > at else []
+        out.append((m.group(1), (style + " bold").strip()) if m.group(1) is not None else (m.group(2), "code"))
+        at = m.end()
+    return out + ([(line[at:], style)] if at < len(line) else [])
+
+
+def flowed(pieces, width):
+    """(text, style) pieces in lines of width columns, broken at spaces; a longer word is cut. A list item's later
+    lines hang under its text, and its - or * shows as a bullet."""
+    text = "".join(t for t, _ in pieces)
+    lead = re.match(r" *(?:[-*+] |\d{1,3}[.)] )?", text).group(0)
+    lead = lead if cols(lead) <= width // 2 else ""
+    room, words, word = max(1, width - cols(lead)), [], []
+    for c, s in [(c, s) for t, s in pieces for c in t][len(lead):] + [(" ", "")]:
+        if c != " ":
+            word.append((c, s))
+        elif word:
+            words.append(word)
+            word = []
+    lines, line, used = [], [], 0
+    for word in words:
+        while word:
+            n, gap = sum(cols(c) for c, _ in word), 1 if line else 0
+            if used + gap + n <= room:
+                line, used = line + [(" ", "")] * gap + word, used + gap + n
+                break
+            if line:  # it starts the next line
+                lines.append(line)
+                line, used = [], 0
+                continue
+            k = w = 0
+            while k < len(word) and w + cols(word[k][0]) <= room:
+                w, k = w + cols(word[k][0]), k + 1
+            lines.append(word[:max(k, 1)])
+            word = word[max(k, 1):]
+    out = []
+    for i, ln in enumerate(lines + [line] if line or not lines else lines):
+        merged = [(re.sub(r"[-*+] $", "• ", lead) if i == 0 else " " * cols(lead), "")]
+        for c, s in ln:
+            merged[-1:] = [(merged[-1][0] + c, s)] if merged[-1][1] == s else [merged[-1], (c, s)]
+        out.append([p for p in merged if p[0]])
+    return out
+
+
 def chop(line, width):
     """A line of code in pieces of width columns, its spacing kept."""
     out = []
@@ -207,6 +261,7 @@ class App:
                 index(b)
         for r in self.roots:
             index(r)
+        self.held = {k: (until, usage.reasons().get(k)) for k, until in usage.limits().items()}  # out of quota, or login
         self.loaded = time.time()
         if first:
             self.folded.update(r["name"] for r in self.roots[3:])  # the three most recent conversations open
@@ -321,8 +376,8 @@ class App:
                "enter": self.enter, " ": self.enter, "tab": self.swap, "btab": self.swap,
                "c": lambda: self.compose("continue"), "b": lambda: self.compose("branch"),
                "e": lambda: self.compose("edit"), "n": lambda: self.compose("new"), "x": self.stop,
-               "/": self.find, "o": self.page, "a": self.all_runs, "r": self.load, "?": self.open_help,
-               "q": self.quit}.get(k)
+               "/": self.find, "o": self.page, "y": self.yank, "d": self.patch, "D": self.delete, "a": self.all_runs,
+               "r": self.load, "?": self.open_help, "q": self.quit}.get(k)
         if act and (node or k in ("n", "a", "r", "?", "q")):
             act()
 
@@ -411,6 +466,38 @@ class App:
         if row["kind"] != "turn":
             return self.say("Pick a turn to open", "dim")
         self.external = ("pager", clean("\n".join("".join(t for t, _ in line) for line in self.reading(row, 100))))
+
+    def yank(self):
+        row = self.row()
+        if row["kind"] != "turn" or row["turn"]["status"] == "running":
+            return self.say("Pick a turn that has answered to copy", "dim")
+        t = row["turn"]
+        text = clean(self.detail(row["node"]["name"], t["n"], t["status"]).get("text") or "")
+        self.external = ("copy", text, f"turn {t['num']}'s answer ({len(text):,} characters)")
+
+    def patch(self):
+        name = self.row()["node"]["name"]
+        try:
+            path, stat, _ = flows.current_patch(name)
+            self.external = ("pager", clean(stat) + "\n\n" + clean(path.read_text(errors="replace")))
+        except (ValueError, OSError, KeyError) as e:
+            self.say(str(e), "dim")
+
+    def delete(self):
+        node = self.row()["node"]
+        if node.get("state") in ("running", "queued"):
+            return self.say(f"{node['name']} is running: x stops it first", "err")
+
+        def yes():
+            try:
+                sessions.remove(node["name"])
+                self.say(f"Deleted {node['name']}", "ok")
+            except (OSError, KeyError, RuntimeError) as e:
+                self.say(f"Couldn't delete {node['name']}: {e}", "err")
+            self.load()
+        n = len(node["turns"])
+        self.box = {"kind": "ask", "yes": yes, "text": f"Delete {node['name']} and its {n} turn{'s' * (n != 1)}"
+                    + (" and worktree" if node.get("isolate") else "") + "? Branches off it keep their copy."}
 
     def stop(self):
         node = self.row()["node"]
@@ -591,7 +678,9 @@ class App:
         style = "acc" if focus else "dim"
         busy, n = len(self.busy()), len(self.roots)
         info = f" {n} conversation{'s' * (n != 1)}" + (f" · {busy} running" if busy else "") + " "
-        self.border(c, x, y, w, h, style, [(" farmout ", "bold acc"), ("─", style), (info, "dim")])
+        foot = [p for k in sorted(self.held) for p in ((f" {self.out(k)} ", "err" if self.held[k][1] == "login" else "run"),
+                                                       ("─", style))][:-1]
+        self.border(c, x, y, w, h, style, [(" farmout ", "bold acc"), ("─", style), (info, "dim")], foot=foot)
         self.geo["graph"] = (x, y, w, h)
         iw, ih = w - 4, h - 2
         if not self.rows:
@@ -627,6 +716,14 @@ class App:
                 c.clear(yy, xx, x + 2 + iw, "sel")
             self.hit[yy] = ri
         self.bar(c, x + w - 1, y + 1, ih, self.top, len(self.lines), style)
+
+    def out(self, lane_name):
+        """"claude logged out till 23:51" if that lane can't run now (at its limit, or not logged in), else ""."""
+        k = next((k for k in (lane_name, lane_name.split(":")[0]) if k in self.held), None)
+        if not k:
+            return ""
+        until, why = self.held[k]
+        return f"{k} {'logged out' if why == 'login' else 'at its limit'} till {time.strftime('%H:%M', time.localtime(until))}"
 
     def draw_reader(self, c, x, y, w, h, focus):
         style = "acc" if focus else "dim"
@@ -692,9 +789,9 @@ class App:
                     elif fence:
                         out.extend([(part, "code")] for part in chop(line, w))
                     elif re.match(r"#{1,6} ", line):
-                        say(line.lstrip("#").strip(), "bold")
+                        out.extend(flowed(marked(line.lstrip("#").strip(), "bold"), w))
                     else:
-                        say(line, "err" if t["status"] == "failed" else "")
+                        out.extend(flowed(marked(line, "err" if t["status"] == "failed" else ""), w))
             if d.get("notes"):
                 out.append([])
                 for note in d["notes"]:
@@ -755,10 +852,12 @@ class App:
         top = h - shown - 2
         typed = b["lane"].text
         on = typed if typed or b["field"] == "lane" or "same" not in b else f"same ({b['same']})"
+        out = self.out(typed.strip() or b.get("same") or "")
         keys = " ⏎ send · ^J new line · Tab worker" + (" (↑↓ picks)" if b["field"] == "lane" else "")
         keys += " · ^G editor · Esc close "
         start = self.border(c, 0, top, w, shown + 2, "acc", [(" " + b["title"] + " ", "bold acc")],
-                            [(" on ", "dim"), (on or " ", "sel bold" if b["field"] == "lane" else "bold"), (" ", "")],
+                            [(" on ", "dim"), (on or " ", "sel bold" if b["field"] == "lane" else "bold"),
+                             (f" · {out} ", "err") if out else (" ", "")],
                             [(keys, "dim")])
         if not b["text"].text:
             c.put(top + 1, 2, "Write your message", "dim", w - 2)
@@ -943,9 +1042,27 @@ def escape(scr, curses):
     return ("paste", buf[:-6] if buf.endswith("\x1b[201~") else buf)
 
 
+def copy(text):
+    """Put text on the clipboard, through the system's clipboard tool or else the terminal (OSC 52, which most
+    terminals and tmux take, over ssh too). Says which."""
+    for cmd in (["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"], ["pbcopy"]):
+        if shutil.which(cmd[0]):
+            try:
+                subprocess.run(cmd, input=text.encode(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               timeout=5, check=True)
+                return cmd[0]
+            except (OSError, subprocess.SubprocessError):
+                continue
+    os.write(sys.stdout.fileno(), b"\x1b]52;c;" + base64.b64encode(text.encode()) + b"\x07")
+    return "your terminal"
+
+
 def outside(scr, app, curses):
-    """Leave the screen for the pager or the editor, then come back."""
-    kind, text = app.external
+    """Leave the screen for the pager or the editor, then come back; or copy, without leaving it."""
+    kind, text = app.external[:2]
+    if kind == "copy":
+        what, app.external = app.external[2], None
+        return app.say(f"Copied {what}, through {copy(text)}", "ok")
     app.external = None
     curses.def_prog_mode()
     curses.endwin()

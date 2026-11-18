@@ -1860,6 +1860,8 @@ app, screens = tui.App(sys.argv[5]), []
 for s in steps:
     if s == ["screen"]:
         screens.append(app.frame(w, h).text())
+    elif s == ["external"]:  # what the terminal would do next: open the pager or editor, or copy
+        screens.append(json.dumps(app.external))
     elif s == ["idle"]:  # until the message sent has its turn, and nothing runs
         deadline = time.time() + 60
         app.load()
@@ -1889,8 +1891,8 @@ class TerminalUiTest(CliBase):
 
     def ui(self, *steps, size=(120, 30)):
         """Drive the screen without a terminal. A step is a key name, ["type", text], ["paste", text],
-        ["mouse", x, y, kind], ["idle"] (until what was sent has its turn and nothing runs), ["running"] or ["screen"]
-        (keep the screen). Returns the screens kept."""
+        ["mouse", x, y, kind], ["idle"] (until what was sent has its turn and nothing runs), ["running"], ["screen"]
+        (keep the screen) or ["external"] (keep, as JSON, what the terminal would do next). Returns what was kept."""
         p = subprocess.run([sys.executable, "-c", DRIVER, str(SERVER.parent), json.dumps(steps), *map(str, size),
                             str(self.work)], cwd=self.work, env=self.env, capture_output=True, text=True, timeout=180)
         self.assertEqual(p.returncode, 0, p.stderr)
@@ -1983,6 +1985,53 @@ class TerminalUiTest(CliBase):
         self.assertIn("◉ 1  say hi there", screen)
         self.assertIn("│ hi there", screen, "the answer too")
         self.assertNotRegex(screen, "[\x00-\x09\x0b-\x1f\x7f-\x9f]")
+
+    def test_copy_a_turn_read_its_patch_and_delete_it(self):
+        self.repo()
+        self.fo("run", "codex", "say one", "-n", "t")
+        self.fo("run", "codex", "write f.txt hello", "-n", "iso", "--isolate")
+        patch, copied, ask, gone = self.ui("d", ["external"], "y", ["external"], "D", ["screen"], "y", ["screen"])
+        kind, text = json.loads(patch)
+        self.assertEqual(kind, "pager")
+        self.assertIn("f.txt", text)
+        self.assertIn("+hello", text, "the isolated session's patch, in the pager")
+        kind, text, what = json.loads(copied)
+        self.assertEqual((kind, what), ("copy", f"turn 1's answer ({len(text):,} characters)"))
+        self.assertIn("Delete iso and its 1 turn and worktree? Branches off it keep their copy.", ask)
+        self.assertIn("Deleted iso", gone)
+        self.assertEqual([r["name"] for r in self.json("ls")], ["t"])
+        self.assertIn("t has no worktree", self.ui("d", ["screen"])[0], "a session that isn't isolated says so")
+
+    def test_copy_uses_the_clipboard_tool_or_the_terminal(self):
+        from farmout import tui
+        bin_ = self.tmp / "clip-bin"
+        bin_.mkdir()
+        (bin_ / "wl-copy").write_text(f"#!/bin/sh\nexec /bin/cat > {self.tmp / 'clipboard'}\n")
+        (bin_ / "wl-copy").chmod(0o755)
+        old = os.environ["PATH"]
+        self.addCleanup(os.environ.__setitem__, "PATH", old)
+        os.environ["PATH"] = str(bin_)
+        self.assertEqual(tui.copy("a turn's answer"), "wl-copy")
+        self.assertEqual((self.tmp / "clipboard").read_text(), "a turn's answer")
+
+    def test_a_logged_out_or_limited_worker_shows(self):
+        self.fo("run", "codex", "say one", "-n", "t")
+        soon = time.time() + 900
+        (self.state / "limits.json").write_text(json.dumps({"claude": {"until": soon, "why": "login"},
+                                                             "codex": {"until": soon, "why": "limit"}}))
+        at = time.strftime("%H:%M", time.localtime(soon))
+        graph_, compose = self.ui(["screen"], "c", ["screen"])
+        self.assertIn(f"╰─ claude logged out till {at} ─ codex at its limit till {at} ─", graph_)
+        self.assertIn(f"on same (codex) · codex at its limit till {at}", compose, "before you send it there")
+
+    def test_the_reader_shows_bold_code_and_bullets(self):
+        self.fo("run", "codex", "say - **Bold** and `code` and enough more words to wrap this item onto a second line",
+                "-n", "t")
+        screen, = self.ui(["screen"])
+        reader = [line[66:] for line in screen.split("\n")]
+        at = next(i for i, line in enumerate(reader) if "• Bold and code and" in line)
+        self.assertRegex(reader[at + 1], r"^│   \w", "the item's next line hangs under its text")
+        self.assertNotRegex(reader[at] + reader[at + 1], r"\*\*|`", "the marks are styles now, not text")
 
     def test_emoji_and_accents_keep_the_borders_straight(self):
         self.fo("run", "codex", "say ⚠️ careful, café ‮turned", "-n", "t")
