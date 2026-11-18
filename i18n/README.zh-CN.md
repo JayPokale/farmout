@@ -19,7 +19,7 @@ pipx install git+https://github.com/JayPokale/farmout
 cd your-repo && farmout bench --share   # 哪个 AI 订阅最能在你自己的代码里找出真实的 bug？
 ```
 
-<p align="center"><img src="../assets/review-demo.svg" width="900" alt="真实运行的终端动画回放：一次审查把同一处未提交的改动并行发给 antigravity、codex、claude 和 copilot，随后 Claude 输出一张合并并核实过的表格，列出 9 条发现以及每条被几个模型指出"></p>
+<p align="center"><img src="../assets/limits-demo.gif" width="900" alt="真实运行的录屏，只有等待的部分被加速：farmout run claude 开始一段对话；Claude 退出登录后，farmout send 把下一轮交给 Codex，Codex 根据此前的对话作答；接着 farmout bench 在三个过去的 bug 修复上比较 Claude Opus 和 Sonnet，--apply 把胜者设为默认"></p>
 
 - **撞上限也不停**：某个订阅触及用量上限或已退出登录时，farmout 的任务、对话或流水线阶段会带着此前的对话交给下一个可用的模型，而不是直接失败。也可以主动切换（`farmout send cache -w codex`，或 `--model opus`）。farmout 转移的是它自己的任务和对话；已经用完额度的 Claude Code 交互式会话，它救不回来。
 - **在 Claude Code 里少用额度**：Claude 会把长篇阅读和样板代码交给最合适的订阅。用这种方式总结三篇论文，答案完全相同，Claude 却少用了 **59% 的 token**（成本降低 74%）。
@@ -122,6 +122,10 @@ farmout export dates --html -o dates.html   # share a conversation
 farmout hook install          # review every commit; block it when 2+ models flag a high-severity bug
 ```
 
+真实的 `farmout review` 回放：一处改动，四个订阅，一张合并后的表格。
+
+<p align="center"><img src="../assets/review-demo.svg" width="900" alt="真实运行的终端动画回放：一次审查把同一处未提交的改动并行发给 antigravity、codex、claude 和 copilot，随后 Claude 输出一张合并并核实过的表格，列出 9 条发现以及每条被几个模型指出"></p>
+
 ## 命令
 
 | 命令 | 作用 |
@@ -168,6 +172,8 @@ dates · claude · 2m ago
 ```
 
 `farmout ui` 在终端里全屏打开这张图，里面是你所有的对话，当前所在的那一轮显示在旁边供你阅读。用方向键（或 `j`/`k`、鼠标）移动，用 `←` 折叠分支，用 `/` 查找问题，然后按 `c` 继续、按 `b` 从这一轮分支、按 `e` 把这个问题换个问法再问，可以用同一个 worker，也可以换一个。长消息可以直接粘贴，或按 Ctrl+G 在编辑器里写。触及用量上限或已退出登录的 worker 会显示在底部，写明到几点为止；你要发给它时，消息框里也会提示。问题和回答显示前会去掉转义序列和控制字符，所以 worker 的输出改不了你的终端。`farmout ui --web` 在浏览器里显示同样的内容：这个页面只监听 127.0.0.1，并且需要它打印的地址里带的密钥，所以你访问的其他网站用不了它。
+
+<p align="center"><img src="../assets/graph-demo.gif" width="900" alt="farmout ui 的真实运行：一段从 Claude 开始、在 Codex 上继续的对话；用户从第 1 轮分叉到 Copilot，它的回答出现在旁边自己的那条线路上"></p>
 
 **文件夹被移动或改名。** farmout 按名字找会话，而不是按文件夹，每个会话还记得自己的文件夹在 git 仓库里的位置。项目改名或挪走之后，在仓库里任何地方 `send` 即可：会话会跟过去，每个 worker 按 id 恢复自己的对话，下一条消息还会告诉它文件夹搬到了哪里。隔离会话的 worktree 会随仓库一起移动（farmout 用 `git worktree repair` 重新连上）。不在 git 仓库里时，用 `farmout send <session> --here "..."` 在当前文件夹继续。如果某个 worker 的 CLI 找不到自己的对话了（会话存储被清空，或旧版 Claude Code 只在原来的文件夹里找对话），farmout 会以文件形式把此前的对话交给它，而不是直接失败。
 

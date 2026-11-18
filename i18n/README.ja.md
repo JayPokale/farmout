@@ -19,7 +19,7 @@ pipx install git+https://github.com/JayPokale/farmout
 cd your-repo && farmout bench --share   # あなたのコードの実際のバグを一番見つけるのはどの AI か？
 ```
 
-<p align="center"><img src="../assets/review-demo.svg" width="900" alt="実際の実行を再現したターミナルのアニメーション。/farmout:review が未コミットの変更 1 件を antigravity、codex、claude、copilot に並列で送り、Claude が統合・検証済みの 9 件の指摘と、各指摘を挙げたモデル数を表にして表示する"></p>
+<p align="center"><img src="../assets/limits-demo.gif" width="900" alt="実際の実行の録画（待ち時間だけ早送り）: farmout run claude で会話を始め、Claude をログアウトさせると farmout send が次のターンを Codex に渡し、Codex はそれまでの会話をもとに答える。続いて farmout bench が過去の 3 件のバグ修正で Claude Opus と Sonnet を比べ、--apply で勝者をデフォルトにする"></p>
 
 - **上限でも止まらない**: サブスクリプションが利用上限に達したりログアウトしていたりすると、farmout のタスク・会話・パイプラインのステージは、それまでの会話を持ったまま次に使えるモデルへ移ります。意図的に切り替えることもできます（`farmout send cache -w codex`、または `--model opus`）。farmout が移せるのは farmout 自身のタスクと会話で、すでにクォータを使い切った Claude Code の対話セッションは救えません。
 - **サブスクリプション 1 つでも十分**: 1 つのプランの複数モデルでレーンを埋められます（`farmout review -w claude:opus,claude:sonnet`）。`farmout bench --apply` は、あなたのコードで最も成績の良かったモデルをデフォルトにします。

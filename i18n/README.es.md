@@ -19,7 +19,7 @@ pipx install git+https://github.com/JayPokale/farmout
 cd your-repo && farmout bench --share   # ¿qué IA encuentra mejor los bugs reales de tu propio código?
 ```
 
-<p align="center"><img src="../assets/review-demo.svg" width="900" alt="Reproducción animada de terminal de una ejecución real: /farmout:review envía un cambio sin confirmar a antigravity, codex, claude y copilot en paralelo; luego Claude muestra una tabla combinada y verificada de nueve hallazgos e indica cuántos modelos señalaron cada uno"></p>
+<p align="center"><img src="../assets/limits-demo.gif" width="900" alt="Una ejecución real, acelerada solo mientras espera: farmout run claude inicia una conversación; con Claude sin sesión, farmout send pasa el siguiente turno a Codex, que responde con la conversación hasta ahí; luego farmout bench compara Claude Opus y Sonnet en tres correcciones pasadas y --apply deja al ganador como predeterminado"></p>
 
 - **Sigue al llegar al límite**: cuando una suscripción llega a su límite de uso o tiene la sesión cerrada, una tarea, conversación o etapa de pipeline de farmout pasa al siguiente modelo disponible con los turnos anteriores, en vez de fallar. También puedes cambiar a propósito (`farmout send cache -w codex`, o `--model opus`). farmout mueve sus propias tareas y conversaciones; no puede rescatar una sesión interactiva de Claude Code que ya agotó su cuota.
 - **Con una sola suscripción basta**: sus modelos llenan los carriles (`farmout review -w claude:opus,claude:sonnet`), y `farmout bench --apply` deja como predeterminado el modelo que mejor lo hizo con tu propio código.

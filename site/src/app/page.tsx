@@ -6,6 +6,7 @@ import Workers from "@/components/Workers";
 import Features from "@/components/Features";
 import HowItWorks from "@/components/HowItWorks";
 import Terminal from "@/components/Terminal";
+import Graph from "@/components/Graph";
 import Bench from "@/components/Bench";
 import Pipelines from "@/components/Pipelines";
 import Extend from "@/components/Extend";
@@ -23,6 +24,7 @@ export default function Page() {
       <Hero />
       <Stats />
       <Terminal />
+      <Graph />
       <Bench />
       <HowItWorks />
       <GetStarted />

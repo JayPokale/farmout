@@ -19,7 +19,7 @@ pipx install git+https://github.com/JayPokale/farmout
 cd your-repo && farmout bench --share   # 내 코드의 실제 버그를 가장 잘 찾는 AI는?
 ```
 
-<p align="center"><img src="../assets/review-demo.svg" width="900" alt="실제 실행 터미널 리플레이: /farmout:review가 커밋되지 않은 변경 사항 하나를 antigravity, codex, claude, copilot에 병렬로 전달하면, Claude가 각 문제를 지적한 모델 수와 함께 검증된 9가지 발견 항목을 병합된 표로 출력합니다"></p>
+<p align="center"><img src="../assets/limits-demo.gif" width="900" alt="실제 실행 녹화(기다리는 시간만 빠르게): farmout run claude로 대화를 시작하고, Claude가 로그아웃되자 farmout send가 다음 턴을 Codex에 넘기며 Codex는 지금까지의 대화를 바탕으로 답한다. 이어서 farmout bench가 과거 버그 수정 3건으로 Claude Opus와 Sonnet을 비교하고 --apply가 승자를 기본값으로 정한다"></p>
 
 - **한도에 걸려도 멈추지 않음**: 구독이 사용 한도에 도달하거나 로그아웃 상태이면, farmout의 작업·대화·파이프라인 단계는 지금까지의 대화를 그대로 가지고 다음으로 사용 가능한 모델로 넘어갑니다. 직접 전환할 수도 있습니다(`farmout send cache -w codex`, 또는 `--model opus`). farmout이 옮기는 것은 farmout 자신의 작업과 대화이며, 이미 한도를 다 쓴 Claude Code 대화형 세션은 살릴 수 없습니다.
 - **구독 하나로도 충분**: 한 요금제의 여러 모델로 레인을 채울 수 있습니다(`farmout review -w claude:opus,claude:sonnet`). `farmout bench --apply`는 여러분의 코드에서 가장 성적이 좋았던 모델을 기본값으로 정합니다.
