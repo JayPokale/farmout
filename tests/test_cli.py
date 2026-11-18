@@ -1668,6 +1668,19 @@ class HistoryTest(CliBase):
                          "then claude resumes natively again, from the new folder")
         self.assertEqual(flag(self.last("claude")["argv"], "--resume"), self.meta("k")["native_id"])
 
+
+    def test_an_empty_login_folder_reads_as_logged_out(self):
+        self.fo("run", "claude", "say uno", "-n", "k")
+        empty = self.tmp / "empty-login"
+        empty.mkdir()
+        p = self.fo("send", "k", "say dos", FARMOUT_CLAUDE_DIR=str(empty), FAKE_EMPTY_LOGIN=str(empty))
+        self.assertEqual(p.stdout, "dos\n")
+        self.assertRegex(p.stderr, r"turn 2 · \w+ · ok .*claude isn't logged in.*; retried on \w+")
+        self.assertNotIn("couldn't find its own conversation", p.stderr, "it found none because it isn't logged in")
+        run = self.runs()[-1]
+        self.assertNotEqual(run["name"], "claude")
+        ctx = Path(re.search(r"^- (.+context-0002\.md)$", run["brief"], re.M).group(1)).read_text()
+        self.assertIn("say uno", ctx, "the next worker got the conversation")
     def test_a_branch_off_an_earlier_session_follows_the_moved_folder_too(self):
         self.repo()
         self.fo("run", "codex", "say one", "-n", "t")

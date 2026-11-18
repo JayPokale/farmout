@@ -24,6 +24,8 @@ FINDINGS; "EXIT <message>" fails the run).
   agyerror         agy reports a non-SUCCESS status
   agyempty         agy reports SUCCESS with an empty answer, as when headless mode denied a tool it wanted
   claudeout        claude prints its JSON report of a failed login and exits 1, as the real one does
+With FAKE_EMPTY_LOGIN set to its CLAUDE_CONFIG_DIR, claude acts on an empty login folder: a resume finds no
+conversation, anything else isn't logged in.
 """
 import json
 import os
@@ -73,6 +75,10 @@ if name == "claude":  # ~/.claude/projects/<folder>/, searched only from that fo
 os.makedirs(store, exist_ok=True)
 history_file = os.path.join(store, f"{session}.json") if session else None
 source = os.path.join(store, f"{flag('--resume')}.json") if "--fork-session" in args else history_file  # claude fork
+if name == "claude" and os.environ.get("FAKE_EMPTY_LOGIN") and os.environ.get("CLAUDE_CONFIG_DIR") == os.environ["FAKE_EMPTY_LOGIN"]:
+    # a login folder with nothing in it: no conversations to resume, and no login
+    sys.exit(f"No conversation found with session ID: {flag('--resume')}" if flag("--resume") else
+             "Not logged in · Please run /login")
 if name == "claude" and flag("--resume") and not os.path.exists(source):
     sys.exit(f"No conversation found with session ID: {flag('--resume')}")
 history = json.load(open(source)) if source and os.path.exists(source) else []

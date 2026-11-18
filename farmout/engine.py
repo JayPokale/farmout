@@ -54,6 +54,9 @@ def prepare(t, s, notes):
     return t
 
 
+LOST_NOTE = "{} couldn't find its own conversation, so it got the conversation so far as a file"
+
+
 def fallbacks(t):
     """Lanes (worker, model) to try, in order, if this one hits a usage limit or can't log in: the task's list, else
     the settings' list, else every other ready worker except `api` (no tools, and often a much smaller model). Only
@@ -150,13 +153,15 @@ def execute(t, key, where=None, on_iso=None):
             # its CLI can't find the conversation it holds (a cleared store, or an older Claude Code after the folder
             # moved): the same worker starts afresh, with the conversation so far as a file
             files, note = t["handoff"]()
-            notes.append(f"{w} couldn't find its own conversation, so it got the conversation so far as a file")
+            notes.append(LOST_NOTE.format(w))
             t = {**t, "resume": None, "fork": None, "handoff": None, "files": list(t.get("files") or []) + files,
                  "prompt": t["prompt"] + note,
                  "session_id": str(uuid.uuid4()) if t.get("persist") and w in ("claude", "copilot") else None}
             continue
         if res["ok"] or not res.get("limited"):
             break
+        if res["why"] == "login" and notes[-1:] == [LOST_NOTE.format(w)]:
+            notes.pop()  # it found no conversation because it isn't logged in (an empty login folder): say only that
         tried.append(k)
         held, why = usage.limits(), usage.reasons()
         nxt = next(((fw, fm) for fw, fm in order if lane_key(fw, fm, s0) not in tried
