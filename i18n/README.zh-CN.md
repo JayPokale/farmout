@@ -114,7 +114,7 @@ farmout hook install          # review every commit; block it when 2+ models fla
 | `run <worker> "<prompt>"` | 启动一个会话：`-n name`、`--write`（直接修改当前目录）、`--isolate`（在私有 worktree 中修改并生成补丁）、`--model`、`--effort`、`--fallback w1,w2`、`--bg`、`-f file`。worker 填 `auto` 时，会选第一个允许使用且未触及用量上限的 worker |
 | `send <session> "<msg>"` | 发送下一条消息；会话忙碌时消息会排队。`--attach <session>` 把那个会话的最后一条回复一并交过去，`-f` 附加文件，`--bg` 立即返回 |
 | `fork <session> "<msg>"` | 以该会话的对话为起点开一个新会话；`--worker` 换一个模型接着聊 |
-| `ask "<question>"` | 把同一个问题发给每个 worker（用 `-w` 挑选），答案并排展示；`--debate` 让每个 worker 读完其他人的回答后再答一次 |
+| `ask "<question>"` | 把同一个问题发给每个 worker（用 `-w` 挑选，`-w claude:opus,codex` 还能指定模型），答案并排展示；`--debate` 让每个 worker 读完其他人的回答后再答一次 |
 | `review [focus]` | 每个 worker 审查 `--staged`、`--base <ref>` 或你未提交的改动；`--min-agree N`，以及决定退出码的 `--fail-on high\|medium\|low` |
 | `race "<task>"` | 每个 worker 在各自的 worktree 中尝试这个任务；`--test <cmd>` 选出胜者，`--apply` 直接应用 |
 | `fix-pr <number>` | 把一个 pull request 的审查评论和失败的检查（通过 `gh` 获取；不含机器人、PR 作者自己的回复和批准）变成一场竞速；请先把该 PR 检出到本地。`--dry-run` 只打印将交给 worker 的说明，不开始 |
