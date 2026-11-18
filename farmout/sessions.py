@@ -513,20 +513,29 @@ def stop(name):
 
 
 def remove(name):
+    """Delete a session, its worktree and branch. It holds the session's runner lock throughout, so no runner starts
+    meanwhile, and moves the folder aside in one step before deleting it, so a file that won't delete can't leave
+    half a session behind (what's left sits in the state folder's trash)."""
     meta = load(name)
-    if busy(name):
-        raise RuntimeError(f"{name} is running; `farmout stop {name}` first")
-    if pending(name):  # a message that arrived moments ago would go with it, unanswered
-        raise RuntimeError(f"{name} has messages waiting; `farmout stop {name}` drops them")
-    if meta.get("iso"):
-        top = os.path.realpath(meta["iso"]["worktree"])
-        inside = [m["name"] for m in (read_json(path(n) / "meta.json") for n in names() if n != name)
-                  if m and (os.path.realpath(m["cwd"]) + os.sep).startswith(top + os.sep)]
-        if inside:  # its branches work in its worktree, which goes with it
-            raise RuntimeError(f"{', '.join(inside)} work{'s' * (len(inside) == 1)} in {name}'s worktree; remove "
-                               f"{'it' if len(inside) == 1 else 'them'} first (`farmout rm {' '.join(inside)} {name}`)")
-        isolate.remove(meta["iso"])
-    shutil.rmtree(path(name))
+    with holding(name) as mine:
+        if not mine or busy(name):
+            raise RuntimeError(f"{name} is running; `farmout stop {name}` first")
+        if pending(name):  # a message that arrived moments ago would go with it, unanswered
+            raise RuntimeError(f"{name} has messages waiting; `farmout stop {name}` drops them")
+        if meta.get("iso"):
+            top = os.path.realpath(meta["iso"]["worktree"])
+            inside = [m["name"] for m in (read_json(path(n) / "meta.json") for n in names() if n != name)
+                      if m and (os.path.realpath(m["cwd"]) + os.sep).startswith(top + os.sep)]
+            if inside:  # its branches work in its worktree, which goes with it
+                raise RuntimeError(f"{', '.join(inside)} work{'s' * (len(inside) == 1)} in {name}'s worktree; remove "
+                                   f"{'it' if len(inside) == 1 else 'them'} first (`farmout rm {' '.join(inside)} {name}`)")
+            isolate.remove(meta["iso"])
+        trash = STATE / "trash"
+        trash.mkdir(exist_ok=True)
+        gone = trash / f"{name}-{uuid.uuid4().hex[:8]}"
+        os.replace(path(name), gone)
+    for old in trash.iterdir():  # this one, and anything an earlier removal couldn't delete
+        shutil.rmtree(old, ignore_errors=True)
 
 
 def transcript(name, before=None):

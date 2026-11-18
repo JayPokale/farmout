@@ -6,6 +6,7 @@ App draws the screen into a Canvas, a grid of styled cells, and takes keys by na
 tests drive it without a terminal; run() shows it with curses.
 """
 import base64
+import fcntl
 import os
 import re
 import shlex
@@ -288,12 +289,13 @@ class App:
         """{"since": when farmout ui first ran here, "read": [turn keys]}: answers that finished later and haven't
         been shown yet are new. The first run counts everything already there as read."""
         path = sessions.STATE / "ui-read.json"
-        data = sessions.read_json(path) or {}
-        if not isinstance(data.get("since"), (int, float)) or not isinstance(data.get("read"), list):
+        data = sessions.read_json(path)
+        if not (isinstance(data, dict) and isinstance(data.get("since"), (int, float))
+                and isinstance(data.get("read"), list)):  # missing, or not what this file holds: start afresh
             data = {"since": time.time(), "read": []}
             path.parent.mkdir(parents=True, exist_ok=True)
             sessions.write_json(path, data)
-        return {"since": data["since"], "read": set(data["read"])}
+        return {"since": data["since"], "read": {x for x in data["read"] if isinstance(x, str)}}
 
     @staticmethod
     def mark(node, t):
@@ -307,12 +309,17 @@ class App:
     def read(self, node, t):
         k = self.mark(node, t)
         if t["status"] != "running" and k not in self.seen["read"]:
-            names = set(sessions.names())  # marks of deleted sessions go, so the file stays small
-            other = (sessions.read_json(sessions.STATE / "ui-read.json") or {}).get("read") or []  # another farmout ui's
-            self.seen["read"] = {x for x in self.seen["read"] | set(other) if x.split("@")[0] in names} | {k}
-            try:
-                sessions.write_json(sessions.STATE / "ui-read.json",
-                                    {"since": self.seen["since"], "read": sorted(self.seen["read"])})
+            self.seen["read"].add(k)
+            try:  # with another farmout ui's marks, under a lock so neither loses the other's
+                with open(sessions.STATE / "ui-read.lock", "a") as lock:
+                    fcntl.flock(lock, fcntl.LOCK_EX)
+                    other = sessions.read_json(sessions.STATE / "ui-read.json")
+                    other = other.get("read") if isinstance(other, dict) and isinstance(other.get("read"), list) else []
+                    names = set(sessions.names())  # marks of deleted sessions go, so the file stays small
+                    self.seen["read"] = {x for x in self.seen["read"] | {x for x in other if isinstance(x, str)}
+                                         if x.split("@")[0] in names}
+                    sessions.write_json(sessions.STATE / "ui-read.json",
+                                        {"since": self.seen["since"], "read": sorted(self.seen["read"])})
             except OSError:
                 pass
 

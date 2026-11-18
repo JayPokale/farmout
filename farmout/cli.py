@@ -897,10 +897,14 @@ def cmd_doctor(a):
               f"with two of them (`farmout review -w {w}:<model>,{w}:<model>`), and set a fallback model for its limits "
               "(`fallback = [\"" + w + ":<model>\"]` in your settings).")
     elif ready:
-        order = [f"{w}:{m}" if m else w for w, m in engine.fallbacks({"worker": None, "cwd": a.cwd})]
-        print(f"{len(ready)} subscriptions ready. `farmout review` has them all review your change, and a task at its "
-              f"limit moves on in this order here: {', '.join(order) or 'none (fallback is off)'}. The `fallback` "
-              "setting changes it.")
+        try:
+            settings(a.cwd)  # engine.fallbacks would read settings it can't parse as "no fallback"
+            order = [f"{w}:{m}" if m else w for w, m in engine.fallbacks({"worker": None, "cwd": a.cwd})]
+            print(f"{len(ready)} subscriptions ready. `farmout review` has them all review your change, and a task at "
+                  f"its limit moves on in this order here: {', '.join(order) or 'none (fallback is off)'}. The "
+                  "`fallback` setting changes it.")
+        except Exception as e:
+            print(f"{len(ready)} subscriptions ready, but this repository's settings can't be read: {e}")
     if not a.live:
         print("Logins are not checked. `farmout doctor --live` sends each ready worker one tiny prompt.")
         return 0

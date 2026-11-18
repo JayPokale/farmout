@@ -249,13 +249,18 @@ class SessionTest(CliBase):
         inbox = self.state / "sessions" / "waits" / "inbox"
         inbox.mkdir(exist_ok=True)
         (inbox / "0001.json").write_text(json.dumps({"id": "m", "prompt": "say late"}))
-        turns = self.state / "sessions" / "stuck" / "turns"
-        turns.chmod(0o500)  # its files can't be deleted
-        self.addCleanup(turns.chmod, 0o700)
+        (self.state / "sessions" / "stuck" / "turns").chmod(0o500)  # its files can't be deleted
+
+        def writable():  # so the test's own cleanup can delete what the trash kept
+            for d in (self.state / "trash").rglob("*"):
+                if d.is_dir():
+                    d.chmod(0o700)
+        self.addCleanup(writable)
         p = self.fo("rm", "old", "waits", "stuck", rc=1)
         self.assertIn("waits has messages waiting", p.stderr)
-        self.assertRegex(p.stderr, r"stuck: .*Permission denied")
+        self.assertIn("removed stuck", p.stdout, "what won't delete stays in the trash, not as half a session")
         self.assertIn("removed old", p.stdout, "the rest go anyway")
+        self.assertEqual([r["name"] for r in self.json("ls")], ["waits"])
 
     def test_rm_removes_the_session_and_its_worktree(self):
         self.repo()
@@ -749,6 +754,11 @@ class OneSubscriptionTest(CliBase):
         (self.state / "limits.json").unlink()
         p = self.fo("run", "codex", "loggedout codex say x", "--fallback", "", rc=1)
         self.assertIn("run `codex login`", p.stdout, "with nowhere to go, it says how to fix it")
+
+    def test_doctor_says_when_the_settings_cant_be_read(self):
+        (self.work / ".farmout").mkdir()
+        (self.work / ".farmout" / "settings.json").write_text("{not json")
+        self.assertIn("this repository's settings can't be read", self.fo("doctor").stdout)
 
     def test_doctor_says_where_a_task_at_its_limit_goes(self):
         self.assertRegex(self.fo("doctor").stdout,
@@ -2173,6 +2183,14 @@ class TerminalUiTest(CliBase):
         marks.write_text(json.dumps(data))
         screen, = self.ui("u", ["screen"])
         self.assertIn("a · turn 2", screen, "u unfolds a to its unread answer")
+
+    def test_a_mangled_read_marks_file_starts_afresh(self):
+        self.fo("run", "codex", "say one", "-n", "t")
+        marks = self.state / "ui-read.json"
+        for junk in ("[1]", '{"since": 1, "read": [{}]}', "not json"):
+            marks.write_text(junk)
+            screen, = self.ui(["screen"])
+            self.assertIn("1 conversation", screen, junk)
 
     def test_two_uis_keep_each_others_read_marks(self):
         self.fo("run", "codex", "say one", "-n", "t")
