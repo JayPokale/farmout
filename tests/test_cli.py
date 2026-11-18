@@ -1804,6 +1804,13 @@ class HistoryTest(CliBase):
         self.assertIn("home", here)
         self.assertNotIn("away", here)
 
+    def test_tree_here_counts_a_linked_worktree_of_the_repository(self):
+        self.repo()
+        linked = self.tmp / "feature"
+        self.git("worktree", "add", "-q", str(linked))
+        self.fo("run", "codex", "say linked", "-n", "lw", cwd=linked)
+        self.assertIn("lw", self.fo("tree", "--here", cwd=self.work).stdout, "the same project, checked out elsewhere")
+
     def test_branch_off_any_turn_and_see_the_tree(self):
         self.fo("run", "codex", "say one", "-n", "t")
         self.fo("send", "t", "say two")
@@ -1933,6 +1940,8 @@ for s in steps:
         screens.append(app.frame(w, h).text())
     elif s == ["external"]:  # what the terminal would do next: open the pager or editor, or copy
         screens.append(json.dumps(app.external))
+    elif s[0] == "write":  # a file changes meanwhile, as another program would change it
+        open(s[1], "w").write(s[2])
     elif s == ["idle"]:  # until the message sent has its turn, and nothing runs
         deadline = time.time() + 60
         app.load()
@@ -2151,6 +2160,40 @@ class TerminalUiTest(CliBase):
         again, = self.ui(["screen"], size=(90, 30))
         self.assertNotIn("1 new", again)
         self.assertNotRegex(again, r"say two\s+new")
+
+    def test_u_opens_a_folded_conversation(self):
+        for name in "abcd":
+            self.fo("run", "codex", f"say {name}1", "-n", name)
+        self.ui(["screen"])  # counts all of that as read
+        for name in "abcd":  # a's new answer is the oldest, so a starts folded (the three newest start open)
+            self.fo("send", name, f"say {name}2")
+        marks = self.state / "ui-read.json"
+        data = json.loads(marks.read_text())
+        data["read"] += [f"{n}@{self.meta(n)['created']}#2" for n in "bcd"]  # read in another farmout ui
+        marks.write_text(json.dumps(data))
+        screen, = self.ui("u", ["screen"])
+        self.assertIn("a · turn 2", screen, "u unfolds a to its unread answer")
+
+    def test_two_uis_keep_each_others_read_marks(self):
+        self.fo("run", "codex", "say one", "-n", "t")
+        self.fo("run", "codex", "say other", "-n", "o")
+        self.ui(["screen"])
+        self.fo("send", "t", "say two")
+        marks = self.state / "ui-read.json"
+        data = json.loads(marks.read_text())
+        theirs, mine = f"t@{self.meta('t')['created']}#1", f"t@{self.meta('t')['created']}#2"  # no ui here showed t's 1st
+        self.ui(["write", str(marks), json.dumps({**data, "read": data["read"] + [theirs]})],  # another ui, meanwhile
+                "g", "u", "enter", ["screen"], size=(90, 30))
+        read = json.loads(marks.read_text())["read"]
+        self.assertIn(theirs, read, "the other farmout ui's mark stays")
+        self.assertIn(mine, read)
+
+    def test_a_new_conversation_skips_a_model_at_its_limit(self):
+        self.fo("run", "claude:opus", "say one", "-n", "t")
+        (self.state / "limits.json").write_text(json.dumps({"claude:opus": {"until": time.time() + 900, "why": "limit"}}))
+        screen, = self.ui("n", ["screen"])
+        self.assertNotIn(" on claude:opus ", screen)
+        self.assertRegex(screen, r" on (antigravity|codex|copilot) ", "the next worker that can answer")
 
     def test_a_limit_days_away_says_the_day(self):
         self.fo("run", "codex", "say one", "-n", "t")

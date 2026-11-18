@@ -307,10 +307,12 @@ class App:
     def read(self, node, t):
         k = self.mark(node, t)
         if t["status"] != "running" and k not in self.seen["read"]:
-            self.seen["read"].add(k)
+            names = set(sessions.names())  # marks of deleted sessions go, so the file stays small
+            other = (sessions.read_json(sessions.STATE / "ui-read.json") or {}).get("read") or []  # another farmout ui's
+            self.seen["read"] = {x for x in self.seen["read"] | set(other) if x.split("@")[0] in names} | {k}
             try:
                 sessions.write_json(sessions.STATE / "ui-read.json",
-                                    {"since": self.seen["since"], "read": sorted(self.seen["read"])[-5000:]})
+                                    {"since": self.seen["since"], "read": sorted(self.seen["read"])})
             except OSError:
                 pass
 
@@ -606,8 +608,8 @@ class App:
         if mode == "new":
             if not self.workers:
                 return self.say("No worker is set up here: `farmout doctor` says why", "err")
-            worker = row["node"]["worker"] if row else None
-            if worker not in self.workers or self.out(worker):  # none picked yet, or it can't answer now
+            worker = lane(row["node"]) if row else None  # the conversation you're on: its worker and model
+            if (worker or "").split(":")[0] not in self.workers or self.cant(worker):  # none, or it can't answer now
                 try:  # what `farmout run auto` picks: this repo's fallback order first, skipping workers that are out
                     w, m = engine.auto_worker(self.here)
                     worker = f"{w}:{m}" if m else w
@@ -820,6 +822,15 @@ class App:
                 c.clear(yy, xx, x + 2 + iw, "sel")
             self.hit[yy] = ri
         self.bar(c, x + w - 1, y + 1, ih, self.top, len(self.lines), style)
+
+    def cant(self, lane_name):
+        """Whether that lane is at a usage limit or logged out, as the engine decides when it runs."""
+        w, m = (lane_name.split(":", 1) + [None])[:2]
+        try:
+            s = config.settings(self.here)
+        except Exception:
+            s = {}
+        return engine.held_by(engine.lane_key(w, m or None, s), w, usage.limits(), usage.reasons())
 
     def out(self, lane_name):
         """"claude logged out till 23:51" if that lane can't run now (at its limit, or not logged in), else ""."""

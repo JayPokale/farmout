@@ -86,9 +86,10 @@ def forest(rows, everything=False):
 
 
 def in_project(roots, top):
-    """The conversations started in top or in a folder inside it (its worktrees too)."""
-    top = os.path.realpath(top) + os.sep
-    return [r for r in roots if (os.path.realpath(r["cwd"]) + os.sep).startswith(top)]
+    """The conversations started in top or in a folder inside it, or in a worktree of the same repository."""
+    top = os.path.realpath(top)
+    return [r for r in roots if (os.path.realpath(r["cwd"]) + os.sep).startswith(top + os.sep)
+            or (r.get("top") and os.path.realpath(r["top"]) == top)]
 
 
 def items(node):

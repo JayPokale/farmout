@@ -602,5 +602,5 @@ def summary(meta):
             "turns": meta["turns"], "created": meta.get("created"),
             "updated": (meta.get("last") or {}).get("ended") or meta.get("created"), "cwd": meta["cwd"],
             "group": meta.get("group"), "parent": meta.get("parent"), "fork_at": meta.get("fork_at"),
-            "base": meta.get("base") or 0, "isolate": meta.get("isolate"),
+            "base": meta.get("base") or 0, "isolate": meta.get("isolate"), "top": (meta.get("home") or {}).get("top"),
             "branch": (meta.get("iso") or {}).get("branch")}
