@@ -21,9 +21,9 @@
   </g>
   <g font-family="Hubot Sans, Mona Sans, DejaVu Sans, Inter, Helvetica, Arial, sans-serif">
     <text x="190" y="128" font-size="44" font-weight="700" fill="#ece8df">farmout</text>
-    <text x="88" y="300" font-size="56" font-weight="800" fill="#ece8df">You already pay for the models.</text>
-    <text x="88" y="378" font-size="56" font-weight="800" fill="url(#lanes)">Put all of them to work.</text>
+    <text x="88" y="300" font-size="56" font-weight="800" fill="#ece8df">Hit your limit less.</text>
+    <text x="88" y="378" font-size="56" font-weight="800" fill="url(#lanes)">Keep working when you do.</text>
     <text x="88" y="478" font-size="26" font-family="DejaVu Sans Mono, Menlo, monospace" xml:space="preserve"><tspan fill="#f2a65a">codex</tspan><tspan fill="#5f6375">  ·  </tspan><tspan fill="#5ec4b6">gemini</tspan><tspan fill="#5f6375">  ·  </tspan><tspan fill="#a78bfa">copilot</tspan><tspan fill="#5f6375">  ·  </tspan><tspan fill="#f47c7c">claude</tspan><tspan fill="#5f6375">  ·  </tspan><tspan fill="#6f8bff">deepseek</tspan><tspan fill="#5f6375">  ·  </tspan><tspan fill="#ece8df">local</tspan></text>
-    <text x="88" y="560" font-size="21" fill="#9a9eaf">Cross-model review · races your tests judge · read-only by default · zero dependencies · MIT</text>
+    <text x="88" y="560" font-size="21" fill="#9a9eaf">A task at its limit moves to your next subscription · cross-model review · read-only · zero deps · MIT</text>
   </g>
 </svg>
