@@ -755,6 +755,11 @@ class OneSubscriptionTest(CliBase):
         p = self.fo("run", "codex", "loggedout codex say x", "--fallback", "", rc=1)
         self.assertIn("run `codex login`", p.stdout, "with nowhere to go, it says how to fix it")
 
+    def test_doctor_with_one_subscription_names_its_models(self):
+        out = self.fo("doctor", PATH=str(self.make_bin(["claude"]))).stdout
+        self.assertIn("`farmout bench -w claude:opus,claude:sonnet`", out)
+        self.assertIn('`fallback = ["claude:sonnet"]`', out)
+
     def test_doctor_with_only_claude_code_says_how_to_use_it(self):
         out = self.fo("doctor", PATH=str(self.make_bin(["claude"])), FARMOUT_CLAUDE_DIR="").stdout
         self.assertIn("missing  claude", out)

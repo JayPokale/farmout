@@ -900,9 +900,10 @@ def cmd_doctor(a):
         print("No worker is ready yet: install one of the CLIs above and log in to it.")
     if len(ready) == 1:
         w = ready[0]
-        print(f"One subscription is enough: compare its models (`farmout bench -w {w}:<model>,{w}:<model>`), review "
-              f"with two of them (`farmout review -w {w}:<model>,{w}:<model>`), and set a fallback model for its limits "
-              "(`fallback = [\"" + w + ":<model>\"]` in your settings).")
+        big, small = ("opus", "sonnet") if w == "claude" else ("<model>", "<model>")  # the ones every Claude plan has
+        print(f"One subscription is enough: compare its models (`farmout bench -w {w}:{big},{w}:{small}`), review "
+              f"with two of them (`farmout review -w {w}:{big},{w}:{small}`), and set a fallback model for its limits "
+              f"(`fallback = [\"{w}:{small}\"]` in your settings).")
     elif ready:
         try:
             settings(a.cwd)  # engine.fallbacks would read settings it can't parse as "no fallback"
