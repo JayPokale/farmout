@@ -2024,10 +2024,21 @@ class TerminalUiTest(CliBase):
         self.assertIn("+hello", text, "the isolated session's patch, in the pager")
         kind, text, what = json.loads(copied)
         self.assertEqual((kind, what), ("copy", f"turn 1's answer ({len(text):,} characters)"))
-        self.assertIn("Delete iso and its 1 turn and worktree? Branches off it keep their copy.", ask)
+        self.assertIn("Delete iso with its 1 turn and worktree? This can't be undone.", ask)
         self.assertIn("Deleted iso", gone)
         self.assertEqual([r["name"] for r in self.json("ls")], ["t"])
         self.assertIn("t has no worktree", self.ui("d", ["screen"])[0], "a session that isn't isolated says so")
+
+    def test_deleting_a_conversation_takes_its_branches(self):
+        self.fo("run", "codex", "say one", "-n", "t")
+        self.fo("send", "t", "say two")
+        self.fo("fork", "t", "--at", "1", "say other")
+        self.fo("fork", "t-1", "say deeper")
+        self.fo("run", "codex", "say keep", "-n", "k")
+        ask, gone = self.ui("g", "j", "j", "D", ["screen"], "y", ["screen"])  # k first (newest), then t's head
+        self.assertIn("Delete t with its 4 turns and the 2 branches off it? This can't be undone.", ask)
+        self.assertIn("Deleted t and the 2 branches off it", gone)
+        self.assertEqual([r["name"] for r in self.json("ls")], ["k"])
 
     def test_a_running_patch_waits_until_its_turn_is_done(self):
         self.repo()

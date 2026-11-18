@@ -29,7 +29,7 @@ HELP = [("↑↓ j k", "move"), ("← → h l", "fold, unfold; ← also goes up 
         ("c", "continue from the newest turn"), ("b", "branch from this turn"),
         ("e", "ask this turn differently: a branch from the turn before"), ("n", "new conversation"),
         ("x", "stop a running turn"), ("o", "open the turn in your pager"), ("y", "copy the turn's answer"),
-        ("d", "an isolated session's patch, in your pager"), ("D", "delete a conversation or branch"),
+        ("d", "an isolated session's patch, in your pager"), ("D", "delete a conversation or branch, with the branches off it"),
         ("a", "show review, ask and race runs too"), ("r q", "reload; quit")]
 
 
@@ -489,21 +489,31 @@ class App:
 
     def delete(self):
         node = self.row()["node"]
-        if node.get("state") in ("running", "queued"):
-            return self.say(f"{node['name']} is running: x stops it first", "err")
+        tree = graph.nodes(node)  # it, and every branch off it at any depth
+        busy = [n["name"] for n in tree if n.get("state") in ("running", "queued")]
+        if busy:
+            return self.say(f"{', '.join(busy)} {'is' if len(busy) == 1 else 'are'} running: x stops it first", "err")
+        turns, branches = graph.count(node)
 
         def yes():
-            if sessions.busy(node["name"]) or sessions.pending(node["name"]):  # a message came in meanwhile
-                return self.say(f"{node['name']} has a message to answer now: x stops it first", "err")
+            names = [n["name"] for n in tree]
+            late = [n for n in names if sessions.busy(n) or sessions.pending(n)]  # a message came in meanwhile
+            if late:
+                return self.say(f"{', '.join(late)} has a message to answer now: x stops it first", "err")
+            gone = 0
             try:
-                sessions.remove(node["name"])
-                self.say(f"Deleted {node['name']}", "ok")
+                for n in reversed(names):  # branches before what they branch off
+                    sessions.remove(n)
+                    gone += 1
+                self.say(f"Deleted {node['name']}" + (f" and the {gone - 1} branch{'es' * (gone != 2)} off it"
+                                                      if gone > 1 else ""), "ok")
             except (OSError, KeyError, RuntimeError) as e:
-                self.say(f"Couldn't delete {node['name']}: {e}", "err")
+                self.say(f"Couldn't delete all of {node['name']}: {e}", "err")
             self.load()
-        n = len(node["turns"])
-        self.box = {"kind": "ask", "yes": yes, "text": f"Delete {node['name']} and its {n} turn{'s' * (n != 1)}"
-                    + (" and worktree" if node.get("isolate") else "") + "? Branches off it keep their copy."}
+        what = f"{turns} turn{'s' * (turns != 1)}" + (f" and the {branches} branch{'es' * (branches != 1)} off it"
+                                                       if branches else "")
+        self.box = {"kind": "ask", "yes": yes, "text": f"Delete {node['name']} with its {what}"
+                    + (" and worktree" if node.get("isolate") else "") + "? This can't be undone."}
 
     def stop(self):
         node = self.row()["node"]
