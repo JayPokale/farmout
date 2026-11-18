@@ -761,11 +761,14 @@ class App:
             out.extend([(line, style)] for line in wrap(clean(text), w))
         if t:
             d = self.detail(node["name"], t["n"], t["status"])
+            status = d.get("status") or t["status"]
+            if status != t["status"]:  # the turn moved on since the last load: load again, so the graph agrees
+                self.loaded = 0
             who = clean(lane(d) if d.get("worker") else lane(node))
             bits = [who] + ([f"{d['secs']:.0f}s"] if d.get("secs") is not None else [])
-            bits.append(d.get("status") or t["status"])
+            bits.append(status)
             say(" · ".join(bits + ([ago(d["started"]) + " ago"] if d.get("started") else [])),
-                "err" if t["status"] == "failed" else "dim")
+                "err" if status == "failed" else "dim")
             if node.get("parent"):
                 say(f"⑂ a branch of {node['parent']}, after its turn {node.get('base') or 0}", "dim")
             if node.get("gone"):
@@ -776,7 +779,7 @@ class App:
             out.append([])
             colour = "w:" + str(d.get("worker") or node["worker"])
             out.append([("▌", colour), (who, "bold " + colour)])
-            if t["status"] == "running":
+            if status == "running":
                 say("Working on it. The answer shows here when it's done.", "dim")
             else:
                 fence, text = False, clean(d.get("text") or "(no answer)")
@@ -791,7 +794,7 @@ class App:
                     elif re.match(r"#{1,6} ", line):
                         out.extend(flowed(marked(line.lstrip("#").strip(), "bold"), w))
                     else:
-                        out.extend(flowed(marked(line, "err" if t["status"] == "failed" else ""), w))
+                        out.extend(flowed(marked(line, "err" if status == "failed" else ""), w))
             if d.get("notes"):
                 out.append([])
                 for note in d["notes"]:
