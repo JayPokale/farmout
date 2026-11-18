@@ -269,6 +269,14 @@ class App:
         why = usage.reasons()
         self.held = {k: (until, why.get(k)) for k, until in usage.limits().items()}  # out of quota, or logged out
         self.loaded = time.time()
+        fresh = {self.mark(n, t): (n, t) for n, t in self.news()}
+        came = [fresh[k] for k in fresh if k not in getattr(self, "known", fresh)  # answered since the last load,
+                and self.sel != ("turn", fresh[k][0]["name"], fresh[k][1]["n"])]  # and not the one you're on
+        self.known = set(fresh)
+        if came and not first and not self.box:
+            n, t = came[-1]
+            self.say(f"{n['name']} answered turn {t['num']}" + (f", and {len(came) - 1} more" if len(came) > 1 else "")
+                     + ": u goes there", "acc")
         if first:
             self.folded.update(r["name"] for r in self.roots[3:])  # the three most recent conversations open
             start = self.by.get(focus) or (self.roots[0] if self.roots else None)
