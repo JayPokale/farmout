@@ -22,6 +22,7 @@ from pathlib import Path
 from test_server import CLIS, SERVER, Base, FakeAPI, flag, wait_until
 
 sys.path.insert(0, str(SERVER.parent))
+from farmout import graph  # noqa: E402
 from farmout import review as review_mod  # noqa: E402
 
 
@@ -1970,6 +1971,14 @@ class TerminalUiTest(CliBase):
         self.assertIn("│ hi there", screen, "the answer too")
         self.assertNotRegex(screen, "[\x00-\x09\x0b-\x1f\x7f-\x9f]")
 
+    def test_emoji_and_accents_keep_the_borders_straight(self):
+        self.fo("run", "codex", "say ⚠️ careful, café ‮turned", "-n", "t")
+        self.assertIn("● 1  say ⚠️ careful, café turned", self.fo("tree").stdout, "no override")
+        screen, = self.ui(["screen"])
+        rows = [line for line in screen.split("\n") if line.endswith("│")]
+        self.assertGreater(len(rows), 10)
+        self.assertEqual({graph.cols(line) for line in rows}, {120}, "a variation selector or an accent takes no column")
+
     def test_a_turn_recorded_without_times_still_draws(self):
         self.fo("run", "codex", "say one", "-n", "t")
         rec = self.state / "sessions" / "t" / "turns" / "0001.json"
@@ -1985,16 +1994,27 @@ class TerminalUiTest(CliBase):
         self.fo("run", "codex", "say one", "-n", "t")
         p = self.fo("ui", rc=2)
         self.assertIn("farmout ui --web", p.stderr, "without a terminal it says what to use")
-        env = {**self.env, "TERM": "xterm-256color", "COLUMNS": "120", "LINES": "30"}
-        pid, fd = pty.fork()
-        if pid == 0:  # the child: become `farmout ui`, and never run the rest of the test
-            try:
-                os.chdir(self.work)
-                os.execve(sys.executable, [sys.executable, str(SERVER), "ui"], env)
-            finally:
-                os._exit(127)
-        self.addCleanup(os.close, fd)
-        seen = b""
+
+        def spawn(term):
+            env = {**self.env, "TERM": term, "COLUMNS": "120", "LINES": "30"}
+            pid, fd = pty.fork()
+            if pid == 0:  # the child: become `farmout ui`, and never run the rest of the test
+                try:
+                    os.chdir(self.work)
+                    os.execve(sys.executable, [sys.executable, str(SERVER), "ui"], env)
+                finally:
+                    os._exit(127)
+            self.addCleanup(os.close, fd)
+            return pid, fd
+
+        def wait(pid, what):
+            deadline = time.monotonic() + 20
+            while True:
+                done, status = os.waitpid(pid, os.WNOHANG)
+                if done:
+                    return os.waitstatus_to_exitcode(status)
+                self.assertLess(time.monotonic(), deadline, what)
+                read() or time.sleep(0.1)
 
         def read():
             nonlocal seen
@@ -2004,6 +2024,14 @@ class TerminalUiTest(CliBase):
                 except OSError:  # the program has exited
                     return False
             return True
+
+        seen = b""
+        pid, fd = spawn("dumb")  # a terminal that can't move the cursor: say so, don't scribble
+        self.assertEqual(wait(pid, "a dumb terminal didn't end it"), 2)
+        read()
+        self.assertIn("TERM=xterm-256color farmout ui", seen.decode())
+        pid, fd = spawn("xterm-256color")
+        seen = b""
 
         def until(text, since=0):
             deadline = time.monotonic() + 20
@@ -2017,14 +2045,7 @@ class TerminalUiTest(CliBase):
             os.write(fd, keys)
             until(expect, since)
         os.write(fd, b"q")
-        deadline = time.monotonic() + 20
-        while True:
-            done, status = os.waitpid(pid, os.WNOHANG)
-            if done:
-                break
-            self.assertLess(time.monotonic(), deadline, "q didn't quit")
-            read() or time.sleep(0.1)
-        self.assertEqual(os.waitstatus_to_exitcode(status), 0, seen[-800:])
+        self.assertEqual(wait(pid, "q didn't quit"), 0, seen[-800:])
         self.assertEqual([x["prompt"] for x in self.json("log", "t")], ["say one"], "nothing was sent")
 
 

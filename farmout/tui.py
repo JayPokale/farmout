@@ -793,6 +793,15 @@ def run(here, focus=None):
     import curses
     import locale
     try:
+        curses.setupterm()
+        moves = curses.tigetstr("cup") is not None  # a "dumb" terminal can't put text where it wants
+    except curses.error:  # no TERM, or one this system doesn't know
+        moves = False
+    if not moves:
+        sys.stderr.write(f"farmout ui can't draw on this terminal (TERM={os.environ.get('TERM')!r}). Try "
+                         "TERM=xterm-256color farmout ui, or farmout ui --web; farmout tree prints the graph\n")
+        return 2
+    try:
         locale.setlocale(locale.LC_CTYPE, "")  # so curses writes UTF-8
     except locale.Error:
         pass
