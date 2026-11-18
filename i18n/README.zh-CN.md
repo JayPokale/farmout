@@ -117,7 +117,7 @@ farmout hook install          # review every commit; block it when 2+ models fla
 | `ask "<question>"` | 把同一个问题发给每个 worker（用 `-w` 挑选），答案并排展示；`--debate` 让每个 worker 读完其他人的回答后再答一次 |
 | `review [focus]` | 每个 worker 审查 `--staged`、`--base <ref>` 或你未提交的改动；`--min-agree N`，以及决定退出码的 `--fail-on high\|medium\|low` |
 | `race "<task>"` | 每个 worker 在各自的 worktree 中尝试这个任务；`--test <cmd>` 选出胜者，`--apply` 直接应用 |
-| `fix-pr <number>` | 把一个 pull request 的审查评论和失败的检查（通过 `gh` 获取）变成一场竞速；请先把该 PR 检出到本地 |
+| `fix-pr <number>` | 把一个 pull request 的审查评论和失败的检查（通过 `gh` 获取；不含机器人、PR 作者自己的回复和批准）变成一场竞速；请先把该 PR 检出到本地。`--dry-run` 只打印将交给 worker 的说明，不开始 |
 | `bench [-n N]` | 重放你历史中最近 N 次小型 bug 修复，按能否找出 bug 给每个 worker 打分 |
 | `ls [--watch]`, `log`, `attach`, `wait`, `stop`, `rm` | 列出（或以仪表盘形式实时查看）、阅读、观看、等待、停止和删除会话（`rm` 还会删除会话的 worktree 和分支） |
 | `diff`, `apply [--pr]`, `undo` | 处理隔离会话的补丁：查看、应用（可按顺序应用多个，遇到第一个应用不上的就停下）、用 `gh` 开 pull request，或把已应用的补丁撤回 |

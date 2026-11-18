@@ -119,7 +119,7 @@ farmout hook install          # review every commit; block it when 2+ models fla
 | `ask "<question>"` | the same question to every worker (`-w` to choose), answers side by side; `--debate` lets each read the others and answer again |
 | `review [focus]` | every worker reviews `--staged`, `--base <ref>` or your uncommitted change; `--min-agree N`, `--fail-on high\|medium\|low` for exit codes |
 | `race "<task>"` | every worker attempts the task in its own worktree; `--test <cmd>` picks the winner, `--apply` lands it |
-| `fix-pr <number>` | a pull request's review comments and failing checks (via `gh`) become a race; check the PR out first |
+| `fix-pr <number>` | a pull request's review comments and failing checks (via `gh`; bots, the author's own replies and approvals left out) become a race; check the PR out first. `--dry-run` prints the brief and stops |
 | `bench [-n N]` | replay N recent small bug fixes from your history; each worker is scored on finding the bug |
 | `ls [--watch]`, `log`, `attach`, `wait`, `stop`, `rm` | list (or watch, as a dashboard), read, watch, wait for, stop and delete sessions (`rm` also removes a session's worktree and branch) |
 | `diff`, `apply [--pr]`, `undo` | an isolated session's patch: show it, apply it (several in order, stopping at the first that doesn't apply), open a pull request with `gh`, or take an applied one back out |
