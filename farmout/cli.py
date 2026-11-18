@@ -891,6 +891,13 @@ def cmd_doctor(a):
     for w in usage.limits():
         print(f"  skipped  {usage.describe(w)}")
     ready = [w for w in ENABLED if w != "api"]
+    if not ready and shutil.which("claude"):
+        print("Claude Code is installed: `export FARMOUT_CLAUDE_MAIN=1` makes your main Claude login a worker (its "
+              "Opus, Sonnet and Haiku, on that plan's quota), so `farmout bench -w claude:opus,claude:sonnet`, "
+              "two-model reviews and an Opus-to-Sonnet fallback work with that one subscription (from your own "
+              "terminal: inside Claude Code that login is the head's own).")
+    elif not ready:
+        print("No worker is ready yet: install one of the CLIs above and log in to it.")
     if len(ready) == 1:
         w = ready[0]
         print(f"One subscription is enough: compare its models (`farmout bench -w {w}:<model>,{w}:<model>`), review "

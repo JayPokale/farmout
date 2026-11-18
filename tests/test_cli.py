@@ -755,6 +755,12 @@ class OneSubscriptionTest(CliBase):
         p = self.fo("run", "codex", "loggedout codex say x", "--fallback", "", rc=1)
         self.assertIn("run `codex login`", p.stdout, "with nowhere to go, it says how to fix it")
 
+    def test_doctor_with_only_claude_code_says_how_to_use_it(self):
+        out = self.fo("doctor", PATH=str(self.make_bin(["claude"])), FARMOUT_CLAUDE_DIR="").stdout
+        self.assertIn("missing  claude", out)
+        self.assertIn("`export FARMOUT_CLAUDE_MAIN=1` makes your main Claude login a worker", out)
+        self.assertIn("No worker is ready yet", self.fo("doctor", PATH=str(self.make_bin([])), FARMOUT_CLAUDE_DIR="").stdout)
+
     def test_doctor_says_when_the_settings_cant_be_read(self):
         (self.work / ".farmout").mkdir()
         (self.work / ".farmout" / "settings.json").write_text("{not json")
