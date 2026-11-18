@@ -85,5 +85,6 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 - Antigravity sometimes ends with status ERROR after writing its whole answer; farmout discarded the answer, and now keeps it with a note.
 - A malformed `notifications/cancelled` (params not an object, a list as requestId) crashed the MCP server.
 - When a worker hit its usage limit halfway through an isolated task, the fallback worker carried on from its half-done edits; a worktree the task made is reset to its base first.
+- A review finding that cited a file the change deleted crashed the whole review and lost every worker's findings; it's now an invalid finding. An Antigravity write task that ended in ERROR no longer counts as done.
 - A project's hooks were trusted by hashing the settings file in one read and parsing it in another; both now use one read. Store and skill installs stage in a fresh private folder instead of a fixed `.<name>.new`.
 - Python 3.9 and 3.10 couldn't read the settings the leaderboard writes into each copy (TOML needs 3.11); they're JSON now. On Windows, farmout says it needs Linux, macOS or WSL instead of failing on an import.
