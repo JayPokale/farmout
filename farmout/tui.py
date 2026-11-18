@@ -27,7 +27,7 @@ BASIC = {"err": 1, "ok": 2, "run": 3, "acc": 3, "code": 6, "w:claude": 1, "w:cod
 HELP = [("↑↓ j k", "move"), ("← → h l", "fold, unfold; ← also goes up to the branch"),
         ("⏎ space", "read a turn; fold a branch"), ("Tab · g G", "graph or reader; first, last"),
         ("/ · u", "find in questions, names and answers; the next unread answer"),
-        ("c", "continue from the newest turn"), ("b", "branch from this turn"),
+        ("c · R", "continue from the newest turn; send a failed one again"), ("b", "branch from this turn"),
         ("e", "ask this turn differently: a branch from the turn before"), ("n · x", "new conversation; stop a running turn"),
         ("o O", "open the turn, or its whole conversation, in your pager"),
         ("y · d", "copy the answer; an isolated session's patch in your pager"),
@@ -433,7 +433,8 @@ class App:
                "left": self.left, "h": self.left, "right": self.right, "l": self.right,
                "enter": self.enter, " ": self.enter, "tab": self.swap, "btab": self.swap,
                "c": lambda: self.compose("continue"), "b": lambda: self.compose("branch"),
-               "e": lambda: self.compose("edit"), "n": lambda: self.compose("new"), "x": self.stop,
+               "e": lambda: self.compose("edit"), "R": lambda: self.compose("retry"), "n": lambda: self.compose("new"),
+               "x": self.stop,
                "/": self.find, "o": self.page, "O": self.whole, "y": self.yank, "d": self.patch, "D": self.delete,
                "a": self.all_runs, "f": self.here_only, "u": self.next_new, "r": self.load, "?": self.open_help,
                "q": self.quit}.get(k)
@@ -630,6 +631,11 @@ class App:
             n = row["turn"]["n"] if row["kind"] == "turn" else own[-1] if own else 0
             base, newest = node.get("base") or 0, own[-1] if own else 0
             num = base + n
+            if mode == "retry":  # the newest turn failed or stopped: its message again, as the next turn
+                t = row.get("turn")
+                if not t or t["status"] in ("ok", "running") or n != newest:
+                    return self.say("R sends a failed or stopped newest turn again; e asks any turn again as a branch",
+                                    "err")
             if mode == "continue" and n != newest:
                 return self.say(f"Turn {num} isn't the newest in {node['name']}: b branches from it, or continue from "
                                 f"turn {base + newest}", "err")
@@ -639,12 +645,13 @@ class App:
                 return self.say(f"Turn {num} is still running: branch from it once it's done", "err")
             box = {"session": node["name"], "n": n, "lane": Field(""), "choices": [""] + self.workers, "same": lane(node),
                    "title": {"continue": f"Continue {node['name']} after turn {num}",
+                             "retry": f"Send turn {num} of {node['name']} again ({row.get('turn', {}).get('status')})",
                              "branch": f"Branch from turn {num} of {node['name']}",
                              "edit": f"Ask turn {num} differently: a branch "
                                      + (f"after turn {num - 1}" if num > 1 else "from the start")}[mode]}
         key = (mode, box["session"], box["n"])
         text = self.drafts.get(key)
-        if text is None and mode == "edit":
+        if text is None and mode in ("edit", "retry"):
             text = self.detail(box["session"], box["n"], row["turn"]["status"]).get("prompt") or row["turn"]["prompt"]
         self.box = {**box, "kind": "compose", "mode": mode, "key": key, "text": Field(text or ""), "field": "text"}
 
@@ -681,7 +688,7 @@ class App:
         prompt = b["text"].text.strip()
         if not prompt:
             return self.say("Write a message first", "err")
-        body = {"mode": "branch" if b["mode"] == "edit" else b["mode"], "edit": b["mode"] == "edit",
+        body = {"mode": {"edit": "branch", "retry": "continue"}.get(b["mode"], b["mode"]), "edit": b["mode"] == "edit",
                 "session": b["session"], "n": b["n"], "prompt": prompt, "worker": b["lane"].text.strip() or None}
         try:
             r = ui.send(body, self.here)
@@ -959,7 +966,9 @@ class App:
             row = self.row()
             keys = ([("↑↓", "scroll"), ("Tab", "graph")] if self.pane == "reader" else
                     [("↑↓", "move"), ("←→", "fold"), ("⏎", "read")]) if row else []
+            failed = row and row["kind"] == "turn" and row["turn"]["status"] not in ("ok", "running")
             keys += [("c", "continue"), ("b", "branch"), ("e", "ask differently")] if row else []
+            keys += [("R", "send again")] if failed else []
             keys += [("n", "new")] + ([("x", "stop")] if row and row["node"].get("state") in ("running", "queued") else [])
             keys += [("/", "find"), ("?", "help"), ("q", "quit")]
             x = 1

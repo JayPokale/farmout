@@ -2213,6 +2213,16 @@ class TerminalUiTest(CliBase):
         self.assertNotIn(" on claude:opus ", screen)
         self.assertRegex(screen, r" on (antigravity|codex|copilot) ", "the next worker that can answer")
 
+    def test_r_sends_a_failed_turn_again(self):
+        self.fo("run", "codex", "fail boom", "-n", "t", rc=1)
+        nope, again, done = self.ui("g", "R", ["screen"], "G", "R", ["screen"], "^U", ["type", "say fixed"], "enter",
+                                    ["idle"], ["screen"])
+        self.assertIn("R sends a failed or stopped newest turn again", nope, "not on the conversation's head row")
+        self.assertIn("Send turn 1 of t again (failed)", again)
+        self.assertIn("fail boom", again, "its message, ready to send or change")
+        self.assertIn("t · turn 2", done)
+        self.assertIn("│ fixed", done)
+
     def test_a_limit_days_away_says_the_day(self):
         self.fo("run", "codex", "say one", "-n", "t")
         later = time.time() + 3 * 86400

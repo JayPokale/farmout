@@ -180,7 +180,7 @@ dates · claude · 2m ago
 | key | what it does |
 |---|---|
 | `↑` `↓` (`j` `k`, the mouse) | move; `←` `→` fold and unfold a branch; `⏎` reads a turn |
-| `c` · `b` · `e` | continue from the newest turn · branch off this one · ask this one again differently, on the same worker or another |
+| `c` · `b` · `e` · `R` | continue from the newest turn · branch off this one · ask this one again differently, on the same worker or another · send a failed newest turn again |
 | `n` · `x` | a new conversation · stop a running turn |
 | `f` | only this project's conversations, or every folder's |
 | `/` · `u` | find a question, a name, or words in an answer · go to the next answer you haven't read (the header counts them, and new ones are tagged) |
