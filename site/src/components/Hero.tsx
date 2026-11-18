@@ -11,7 +11,7 @@ const TAGS = [
   { icon: "key", label: "Your logins, no API keys" },
   { icon: "branch", label: "Git-worktree isolation" },
   { icon: "plug", label: "CLI + MCP server" },
-  { icon: "open", label: "MIT licensed" },
+  { icon: "limit", label: "Works with one subscription" },
 ];
 
 // The logo, life-size: one bone line runs into the install card from the left
@@ -154,13 +154,14 @@ export default function Hero() {
             className="flex flex-col items-center gap-6 text-center"
           >
             <h1 className="display text-balance text-[2.35rem] font-extrabold leading-[1.02] sm:text-6xl lg:text-[4.6rem]">
-              You already pay for the models.
-              <span className="text-lanes block text-balance">Put all of them to work.</span>
+              Hit your limit less.
+              <span className="text-lanes block text-balance">Keep working when you do.</span>
             </h1>
             <p className="max-w-2xl text-base leading-relaxed text-fg/80 sm:text-lg">
-              Codex, Gemini, GitHub Copilot, DeepSeek, a second Claude and local models review your change
-              side by side, race on fixes your tests judge, and take turns in pipelines. From your terminal,
-              or from inside Claude Code.
+              Hand long reads and reviews to the other AI subscriptions you pay for (Codex, Gemini, GitHub
+              Copilot, DeepSeek, a second Claude, local models) so your main model&apos;s quota lasts. When one
+              hits its limit, the task moves to the next and the conversation goes with it. From your
+              terminal, or from inside Claude Code.
             </p>
           </motion.div>
 

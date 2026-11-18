@@ -5,9 +5,21 @@ import Reveal from "./Reveal";
 import SectionHead from "./SectionHead";
 import { Glyph } from "./icons";
 
-// The three things people come for, each with the commands that do it, then the
-// rest of the toolbox. Commands match the README's quick tour.
+// The three things people come for (the limit story first), each with the commands
+// that do it, then the rest of the toolbox. Commands match the README's quick tour.
 const MAIN = [
+  {
+    icon: "limit",
+    what: "Keep working at the limit",
+    name: "fallback · send -w",
+    body: "When a subscription hits its usage limit or its login lapses, the task or conversation moves to the next ready model with the turns so far, instead of failing. Switch on purpose too. With one subscription, its models fill the lanes, and bench tells you which one earns your quota.",
+    demo: [
+      ["out of Claude? it goes on", 'farmout run claude "Plan the cache layer" -n cache'],
+      ["switch on purpose", 'farmout send cache -w codex "What did we decide?"'],
+      ["one subscription", "farmout review -w claude:opus,claude:sonnet"],
+      ["is Opus worth it?", "farmout bench -w claude:opus,claude:sonnet --apply"],
+    ],
+  },
   {
     icon: "review",
     what: "Cross-model review",
@@ -21,36 +33,24 @@ const MAIN = [
     ],
   },
   {
-    icon: "race",
-    what: "Races your tests judge",
-    name: "farmout race",
-    body: "Every model attempts the same change in its own git worktree, with your uncommitted work copied in. Passing tests win, then the smallest diff, then the fastest. Your tree stays untouched until you apply the winner.",
-    demo: [
-      ["race", 'farmout race "Make the flaky test deterministic" --test "pytest -x"'],
-      ["read the patch", "farmout diff race-1-codex"],
-      ["land it", "farmout apply race-1-codex   # or --pr for a pull request"],
-      ["take it back", "farmout undo race-1-codex"],
-    ],
-  },
-  {
     icon: "session",
-    what: "Sessions that remember",
-    name: "run · send · fork",
-    body: "Named conversations with any worker. Send while it's busy and the message waits its turn; attach from any terminal; fork a side question with the same context; hand one session's reply to another.",
+    what: "Conversations as a graph",
+    name: "run · send · fork · ui",
+    body: "Named conversations with any worker. Branch off any turn onto another model and keep both answers; farmout ui draws every conversation as a branching graph in your terminal, where you read any turn, continue it or branch off it. They survive a renamed or moved folder.",
     demo: [
       ["start", 'farmout run codex "Add tests for parse_date()" --isolate -n dates'],
       ["continue", 'farmout send dates "Also cover leap years"'],
-      ["hand over", 'farmout send dates --attach review-1-claude "Fix what this found"'],
-      ["side question", 'farmout fork review-1-codex "Why does line 42 race?"'],
+      ["branch off turn 1", 'farmout fork dates --at 1 -w claude "Test time zones instead"'],
+      ["walk the graph", "farmout ui   # or farmout tree to print it"],
     ],
   },
 ];
 
 const MORE = [
+  { icon: "race", name: "Races your tests judge", cmd: 'farmout race "..." --test "pytest -x"', body: "Every model attempts the same change in its own git worktree. Passing tests win, then the smallest diff; your tree stays untouched until you apply the winner." },
   { icon: "debate", name: "Models that argue", cmd: "farmout ask --debate", body: "Every model answers, reads the others' answers, then answers again." },
-  { icon: "bench", name: "Your code, your leaderboard", cmd: "farmout bench -n 3", body: "Recent bug fixes from your own history are undone in a scratch worktree, and each model is scored on finding them." },
+  { icon: "bench", name: "Your code, your leaderboard", cmd: "farmout bench -n 3 --share", body: "Recent bug fixes from your own history are undone in a scratch worktree, and each model is scored on finding them. --share makes a card: scores only, never your code." },
   { icon: "pr", name: "Pull request feedback, raced", cmd: "farmout fix-pr 128", body: "Review comments and failing checks (through gh) become a race your tests judge." },
-  { icon: "limit", name: "Usage limits, handled", cmd: "--fallback codex,copilot", body: "A worker at its limit sits out until the reset it reported, and the task moves to the next. farmout stats shows what each one did." },
   { icon: "hook", name: "Review on every commit", cmd: "farmout hook install", body: "The commit is blocked when two or more models flag a high-severity bug. FARMOUT_SKIP=1 skips it once." },
   { icon: "terminal", name: "Watch, share, script", cmd: "farmout ls --watch", body: "A live dashboard, status --line for tmux, export --html to share a conversation, --json on every command." },
 ];

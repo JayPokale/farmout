@@ -11,12 +11,12 @@ const mona = Mona_Sans({ subsets: ["latin"], variable: "--font-mona" });
 const martian = Martian_Mono({ subsets: ["latin"], axes: ["wdth"], variable: "--font-martian" });
 
 const DESCRIPTION =
-  "farmout puts every AI subscription you already pay for to work: Codex, Gemini through Antigravity, GitHub Copilot, a second Claude account and local models. Sessions that remember, cross-model review with agreement counts, races your tests judge, and pipelines, from your terminal or inside Claude Code. Read-only by default, standard-library Python, no dependencies.";
+  "farmout hands work to the AI subscriptions you already pay for (Codex, Gemini through Antigravity, GitHub Copilot, DeepSeek, a second Claude account, local models) so your main model's quota lasts, and when one hits its usage limit, the task and its conversation move to the next. Cross-model review with agreement counts, races your tests judge, conversations you can branch off any turn, and pipelines, from your terminal or inside Claude Code. Read-only by default, standard-library Python, no dependencies.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "farmout: put every AI subscription you pay for to work",
+    default: "farmout: hit your AI limit less, keep working when you do",
     template: "%s · farmout",
   },
   description: DESCRIPTION,
@@ -40,15 +40,15 @@ export const metadata: Metadata = {
     type: "website",
     url: SITE_URL,
     siteName: "farmout",
-    title: "farmout: every AI subscription you pay for, on one job",
+    title: "farmout: hit your AI limit less, keep working when you do",
     description:
-      "Codex, Gemini, Copilot and a second Claude review your change in parallel, race on fixes your tests judge, and take turns in pipelines. Read-only by default, zero dependencies.",
+      "Hand long reads and reviews to Codex, Gemini, Copilot or a second Claude; when one hits its limit, the task and its conversation move to the next. Read-only by default, zero dependencies.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "farmout: put every AI subscription you pay for to work",
+    title: "farmout: hit your AI limit less, keep working when you do",
     description:
-      "Parallel review with agreement counts, races judged by your tests, sessions that remember, pipelines. A CLI and an MCP server in standard-library Python.",
+      "Your other AI subscriptions take the long reads and reviews; a task at its limit moves on with its conversation. Parallel review, races judged by your tests, branching conversations. Standard-library Python.",
   },
   robots: {
     index: true,

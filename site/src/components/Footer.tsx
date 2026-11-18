@@ -45,7 +45,7 @@ export default function Footer() {
         <div>
           <Logo />
           <p className="mt-3 max-w-xs text-sm text-dim">
-            Put every AI subscription you pay for to work. MIT · Jay Pokale.
+            Hit your limit less. Keep working when you do. MIT · Jay Pokale.
           </p>
           <p className="mt-4 max-w-xs font-mono text-[10.5px] leading-relaxed text-faint">
             No trackers, no cookies. Not affiliated with Anthropic, OpenAI, Google or GitHub.

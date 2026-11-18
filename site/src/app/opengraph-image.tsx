@@ -3,7 +3,7 @@ import { ogFonts } from "@/lib/og-fonts";
 
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
-export const alt = "farmout: put every AI subscription you pay for to work";
+export const alt = "farmout: hit your AI limit less, keep working when you do";
 
 // The logo's four lanes, as in assets/logo.svg.
 const LANES = [
@@ -44,7 +44,7 @@ export default async function OG() {
           <div style={{ fontSize: 44 }}>farmout</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", letterSpacing: -2 }}>
-          <div style={{ fontSize: 66, lineHeight: 1.04 }}>You already pay for the models.</div>
+          <div style={{ fontSize: 66, lineHeight: 1.04 }}>Hit your limit less.</div>
           <div
             style={{
               fontSize: 66,
@@ -54,7 +54,7 @@ export default async function OG() {
               color: "transparent",
             }}
           >
-            Put all of them to work.
+            Keep working when you do.
           </div>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 22, color: "#9a9eaf", fontFamily: "Martian" }}>
