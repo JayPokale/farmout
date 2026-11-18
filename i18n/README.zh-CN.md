@@ -141,7 +141,7 @@ farmout hook install          # review every commit; block it when 2+ models fla
 
 ## 流水线
 
-流水线（pipeline）就是一组阶段，写在 `<repo>/.farmout/pipelines/` 或 `~/.config/farmout/pipelines/` 下的 `.toml`（需要 Python 3.11+）或 `.json` 文件里。每个阶段要么运行一个技能（`review`、`ask`、`race`），要么把自己的 prompt 发给一个或多个 worker；上一个阶段结束后，下一个阶段才开始。
+流水线（pipeline）就是一组阶段，写在 `<repo>/.farmout/pipelines/` 或 `~/.config/farmout/pipelines/` 下的 `.toml`（需要 Python 3.11+）或 `.json` 文件里。每个阶段要么运行一个技能（`review`、`ask`、`race`），要么把自己的 prompt 发给一个或多个 worker；上一个阶段结束后，下一个阶段才开始。同名时先找你自己的流水线，再找内置的，最后才是项目里的：仓库可以新增流水线，但不能顶替 `fix`、`spec` 或你自己的。项目里的流水线会运行它写的 `test` 命令，就像 Makefile 一样，运行前先读一遍。
 
 ```toml
 description = "Plan with Claude, build with Codex in a worktree, ship after I approve"
