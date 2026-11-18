@@ -1854,7 +1854,11 @@ class UiTest(CliBase):
         send = {"mode": "new", "worker": "codex", "prompt": "say x"}
         self.assertEqual(self.call(port, "/api/send", key=key, body=send, origin="https://evil.example")[0], 403)
 
-        [t] = [s for s in json.loads(self.call(port, "/api/state", key=key)[2])["sessions"] if s["name"] == "t"]
+        until = time.time() + 900
+        (self.state / "limits.json").write_text(json.dumps({"claude": {"until": until, "why": "login"}}))
+        state = json.loads(self.call(port, "/api/state", key=key)[2])
+        self.assertEqual(state["held"], {"claude": {"until": until, "why": "login"}}, "the page names who's out, and till when")
+        [t] = [s for s in state["sessions"] if s["name"] == "t"]
         self.assertEqual([h["prompt"] for h in t["history"]], ["say one", "say two"])
         self.assertEqual(json.loads(self.call(port, "/api/turn?session=t&n=1", key=key)[2])["text"], "one")
 
