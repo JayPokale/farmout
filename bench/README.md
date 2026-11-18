@@ -138,6 +138,8 @@ python3 bench/leaderboard.py render                              # leaderboard/R
 python3 bench/review_recall.py              # every enabled worker; spends one review per worker per case
 python3 bench/review_recall.py codex copilot   # only these
 HEAD_CONFIG_DIR=~/.claude-2 python3 bench/head_tokens.py papers/*.pdf
+# a coding task, alone vs with farmout, each in a fresh clone; the check runs after each (not run yet)
+HEAD_CONFIG_DIR=~/.claude-2 python3 bench/head_tokens.py --code ~/some-repo --task "Add tests for parse_date()" --check "python3 -m pytest -q"
 ```
 
 Limits: 14 bugs is a small sample, the cases are short, and line-window matching can credit a finding that cites the right line for the wrong reason (or miss one that cites the wrong line). Treat the numbers as a sanity check, not a leaderboard.
