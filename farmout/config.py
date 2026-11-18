@@ -24,18 +24,18 @@ EVENTS = ("SessionStart", "MessageReceived", "TaskStart", "TaskEnd", "StageEnd",
 HOOK_KEYS = {"event", "command", "matcher", "timeout"}
 
 
-def read(path):
-    """A .toml (Python 3.11+) or .json file, as a dict."""
+def read(path, raw=None):
+    """A .toml (Python 3.11+) or .json file, as a dict; raw: its bytes, already read."""
     path = Path(path)
+    raw = path.read_bytes() if raw is None else raw
     if path.suffix == ".toml":
         try:
             import tomllib
         except ImportError:
             raise RuntimeError(f"{path}: reading TOML needs Python 3.11+; use a .json file instead") from None
-        with open(path, "rb") as f:
-            data = tomllib.load(f)
+        data = tomllib.loads(raw.decode())
     else:
-        data = json.loads(path.read_text())
+        data = json.loads(raw)
     if not isinstance(data, dict):
         raise ValueError(f"{path}: expected a table at the top level")
     return data
@@ -82,21 +82,22 @@ def check_hooks(p, hooks):
                 raise ValueError(f"{p}: hooks entry {i}: matcher isn't a valid regex: {e}") from None
 
 
-def digest(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+def digest(path, raw=None):
+    return hashlib.sha256(Path(path).read_bytes() if raw is None else raw).hexdigest()
 
 
 def trust_file():
     return CONFIG / "trusted.json"
 
 
-def trusted(root, path):
-    """Whether you trusted this repository's settings file as it is now (`farmout trust`)."""
+def trusted(root, path, raw=None):
+    """Whether you trusted this repository's settings file as it is now (`farmout trust`). raw: the bytes the
+    caller parsed, so the hash and the hooks come from one read (no swapping the file in between)."""
     try:
         data = json.loads(trust_file().read_text())
     except (OSError, ValueError):
         return False
-    return isinstance(data, dict) and data.get(str(root)) == digest(path)
+    return isinstance(data, dict) and data.get(str(root)) == digest(path, raw)
 
 
 def settings(cwd):
@@ -110,7 +111,8 @@ def settings(cwd):
         p = find(directory, "settings")
         if not p:
             continue
-        data = read(p)
+        raw = p.read_bytes()
+        data = read(p, raw)
         for k, v in data.items():
             kind = SETTINGS.get(k)
             if kind is None:
@@ -132,7 +134,7 @@ def settings(cwd):
             out["store"] = data["store"]
         if "hooks" in data:
             check_hooks(p, data["hooks"])
-            if mine or trusted(root, p):
+            if mine or trusted(root, p, raw):
                 out["hooks"] += [{**h, "origin": str(p)} for h in data["hooks"]]
             else:
                 out["untrusted"] = str(p)

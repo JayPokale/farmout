@@ -14,6 +14,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.parse
 import urllib.request
@@ -130,8 +131,8 @@ def add(name, where=None, force=False):
     if dest.exists() and not (dest / ".farmout-store.json").exists() and not force:
         raise ValueError(f"{dest} is yours, not from the store; --force replaces it")
     files = download(where, e)
-    staged = dest.with_name(f".{e['name']}.new")
-    shutil.rmtree(staged, ignore_errors=True)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    staged = Path(tempfile.mkdtemp(prefix=f".{e['name']}.", dir=dest.parent))  # fresh and private: not a planted link
     for rel, data in files:
         target = staged / rel
         target.parent.mkdir(parents=True, exist_ok=True)

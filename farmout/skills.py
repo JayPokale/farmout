@@ -243,12 +243,16 @@ def add(source, name=None, subpath=None, ref=None, force=False):
         dest = CONFIG / "skills" / name
         if dest.exists() and not force:
             raise ValueError(f"a skill named {name} is already installed; --force replaces it")
-        staged = dest.with_name(f".{name}.new")
-        shutil.rmtree(staged, ignore_errors=True)
-        shutil.copytree(d, staged, ignore=shutil.ignore_patterns(".git"), symlinks=True)
-        (staged / ".farmout-source.json").write_text(json.dumps({**origin, "installed": time.strftime("%Y-%m-%d %H:%M")}, indent=1))
-        shutil.rmtree(dest, ignore_errors=True)
-        staged.rename(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        box = Path(tempfile.mkdtemp(prefix=f".{name}.", dir=dest.parent))  # fresh and private: not a planted link
+        try:
+            staged = box / name
+            shutil.copytree(d, staged, ignore=shutil.ignore_patterns(".git"), symlinks=True)
+            (staged / ".farmout-source.json").write_text(json.dumps({**origin, "installed": time.strftime("%Y-%m-%d %H:%M")}, indent=1))
+            shutil.rmtree(dest, ignore_errors=True)
+            staged.rename(dest)
+        finally:
+            shutil.rmtree(box, ignore_errors=True)
         return name, dest, notes
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
