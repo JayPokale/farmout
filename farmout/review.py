@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 from . import flows, sessions
-from .config import repo_root
+from .config import repo_root, settings
 from .isolate import git
 
 # The same brief as skills/review/SKILL.md (a test keeps them identical).
@@ -246,8 +246,10 @@ def ranked(clusters):
 
 
 def review(cwd, workers=None, base=None, staged=False, focus=None, since=None, root=None, group=None, models=None):
-    """Run the review. Returns a dict: group, label, diff, workers (answered), failed {worker: reason}, clusters.
-    models {worker: model} overrides the defaults (MODELS, else each CLI's own)."""
+    """Run the review. workers are lanes (`codex`, `claude:opus`, `codex,codex`); results are keyed by lane. Returns
+    a dict: group, label, diff, workers (lanes that answered), failed {lane: reason}, clusters. models {worker: model}
+    overrides the defaults (the `models` setting, then MODELS, else each CLI's own). A reviewer at its limit doesn't
+    fall back to another worker: agreement must count distinct reviewers."""
     top = str(root or repo_root(cwd) or "")
     if not top:
         raise ValueError("farmout review works on a git repository; run it inside one")
@@ -261,7 +263,8 @@ def review(cwd, workers=None, base=None, staged=False, focus=None, since=None, r
     prompt = BRIEF + (f"\nFocus: {focus}" if focus else "")
     files = [str(diff), *untracked]
     found = []
-    for name, rec in flows.fan(group, workers, top, prompt, files, models={**MODELS, **(models or {})}):
+    chosen = {**MODELS, **(settings(top).get("models") or {}), **(models or {})}
+    for name, rec in flows.fan(group, workers, top, prompt, files, models=chosen, fallback=[]):
         meta = sessions.load(name)
         if rec["status"] != "ok" and meta["model"] and meta["model"] == MODELS.get(meta["worker"]):
             meta["model"] = None  # an older CLI may not know the fast model: once more on its default
@@ -270,7 +273,7 @@ def review(cwd, workers=None, base=None, staged=False, focus=None, since=None, r
             rec = sessions.deliver(name, prompt, files, cwd=top)
             flows.ACTIVE.discard(name)
         result["sessions"].append(name)
-        w = rec.get("worker") or meta["worker"]
+        w = meta.get("lane") or meta["worker"]
         result["secs"][w] = rec.get("secs")
         if rec["status"] == "ok":
             result["workers"].append(w)
@@ -337,5 +340,6 @@ def render(result, min_agree=1, width=None):
                      "; ".join(f"{c['path']}:{c['line']} ({', '.join(c['workers'])})" for c in bad))
     for w, why in result["failed"].items():
         lines.append(f"{w} failed: {why}")
-    lines.append(f"Follow up with a reviewer: farmout send {result['group']}-<worker> \"...\"")
+    if result.get("sessions"):
+        lines.append(f"Follow up with a reviewer: farmout send <session> \"...\" ({', '.join(result['sessions'])})")
     return "\n".join(lines)

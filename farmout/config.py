@@ -19,7 +19,7 @@ STATE = Path(os.environ["FARMOUT_STATE"]).expanduser() if os.environ.get("FARMOU
 OUT_DIR = _dir("XDG_CACHE_HOME", "~/.cache")
 CONFIG = _dir("XDG_CONFIG_HOME", "~/.config")
 SETTINGS = {"workers": list, "write": bool, "web": bool, "fallback": list, "timeout": int, "hooks": list,
-            "redact": bool, "store": str}
+            "redact": bool, "store": str, "models": dict}
 EVENTS = ("SessionStart", "MessageReceived", "TaskStart", "TaskEnd", "StageEnd", "PipelineEnd")
 HOOK_KEYS = {"event", "command", "matcher", "timeout"}
 
@@ -104,8 +104,8 @@ def settings(cwd):
     """~/.config/farmout/settings, then the repo's .farmout/settings (.toml or .json). Neither can widen what the
     other allows: worker lists intersect, write or web access is off if either turns it off, redaction is on if
     either turns it on, and the shorter timeout wins. The repo's fallback order replaces yours, but only allowed
-    workers are ever used. A repo's hooks run only once you trust its settings file (`farmout trust`), and only
-    your own settings can name a store."""
+    workers are ever used; its models (a default model per worker) override yours. A repo's hooks run only once you
+    trust its settings file (`farmout trust`), and only your own settings can name a store."""
     out, root = {"hooks": []}, project_root(cwd)
     for directory, mine in ((CONFIG, True), (root / ".farmout", False)):
         p = find(directory, "settings")
@@ -127,7 +127,13 @@ def settings(cwd):
         if "timeout" in data:
             out["timeout"] = min(out.get("timeout", data["timeout"]), data["timeout"])
         if "fallback" in data:
+            if not all(isinstance(w, str) for w in data["fallback"]):
+                raise ValueError(f"{p}: fallback must be a list of workers, like [\"codex\", \"claude:sonnet\"]")
             out["fallback"] = data["fallback"]
+        if "models" in data:
+            if not all(isinstance(m, str) and m for m in data["models"].values()):
+                raise ValueError(f"{p}: models maps a worker to its model, like {{\"claude\": \"sonnet\"}}")
+            out["models"] = {**out.get("models", {}), **data["models"]}
         if "redact" in data:
             out["redact"] = out.get("redact", False) or data["redact"]
         if "store" in data and mine:

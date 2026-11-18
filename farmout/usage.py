@@ -25,14 +25,39 @@ def tokens(usage):
     return sum(v for k, v in usage.items() if k in keys and isinstance(v, int))
 
 
-def limits():
-    """worker -> time until which farmout leaves it alone."""
+def _held():
+    """{worker or worker:model: {"until", "why"}} for the ones farmout is leaving alone right now. why is "limit" (a
+    usage limit) or "login" (not logged in, or the subscription ended). An older file holds bare times."""
     try:
         data = json.loads((STATE / "limits.json").read_text())
     except (OSError, ValueError):
         return {}
-    now = time.time()
-    return {w: until for w, until in data.items() if isinstance(until, (int, float)) and until > now}
+    now, out = time.time(), {}
+    for k, v in (data.items() if isinstance(data, dict) else ()):
+        until, why = (v.get("until"), v.get("why")) if isinstance(v, dict) else (v, "limit")
+        if isinstance(until, (int, float)) and not isinstance(until, bool) and until > now:
+            out[k] = {"until": until, "why": "login" if why == "login" else "limit"}
+    return out
+
+
+def limits():
+    """worker (or worker:model) -> time until which farmout leaves it alone."""
+    return {k: v["until"] for k, v in _held().items()}
+
+
+def reasons():
+    """worker (or worker:model) -> "limit" or "login", for the ones in limits()."""
+    return {k: v["why"] for k, v in _held().items()}
+
+
+def describe(key, until=None, why=None):
+    """"codex is at a usage limit until 15:00", or that it isn't logged in."""
+    held = _held().get(key) or {}
+    until, why = until or held.get("until"), why or held.get("why", "limit")
+    at = time.strftime("%H:%M" if (until or 0) - time.time() < 86400 else "%a %H:%M", time.localtime(until or 0))
+    if why == "login":
+        return f"{key} isn't logged in, or its subscription ended (farmout retries it after {at})"
+    return f"{key} is at a usage limit until {at}"
 
 
 def _save(data):
@@ -42,15 +67,15 @@ def _save(data):
     tmp.replace(STATE / "limits.json")
 
 
-def mark_limited(worker, secs):
+def mark_limited(key, secs, why="limit"):
     with _lock:
-        _save({**limits(), worker: time.time() + secs})
+        _save({**_held(), key: {"until": time.time() + secs, "why": why}})
 
 
-def clear_limit(worker):
+def clear_limit(*keys):
     with _lock:
-        data = limits()
-        if data.pop(worker, None) is not None:
+        data = _held()
+        if any([data.pop(k, None) is not None for k in keys]):
             _save(data)
 
 

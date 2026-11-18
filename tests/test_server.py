@@ -249,6 +249,14 @@ class DelegateTest(Base):
             self.assertEqual(path.read_text(), "met")
             self.assertEqual(path.parent.parent, self.home / ".cache" / "farmout")
 
+    def test_a_delegated_task_falls_back_and_the_header_says_so(self):
+        s = self.start()
+        _, [(worker, ok, path, body)] = s.delegate({"worker": "codex", "prompt": "limited codex say rescued"})
+        self.assertTrue(ok, body)
+        self.assertEqual(worker, "codex→antigravity")
+        self.assertIn("retried on antigravity", body)
+        self.assertTrue(body.endswith("rescued"))
+
     def test_read_only_unless_write(self):
         s = self.start()
         for write in (None, False, True):
@@ -717,6 +725,40 @@ class RepoTest(unittest.TestCase):
         self.assertIn('name = "farmout"', (SERVER.parent / "pyproject.toml").read_text())
         # PyPI shows the README without the repo around it, so relative links and images would break there
         self.assertNotRegex(readme, r'\]\((?!https?://|#)|src="(?!https?://)')
+
+
+class LimitWordingTest(unittest.TestCase):
+    """How long a worker is left alone, read from the limit message each CLI prints."""
+
+    def test_reset_times(self):
+        import datetime
+        sys.path.insert(0, str(SERVER.parent))
+        from farmout.workers import limited_for, logged_out, reset_in
+        ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+        now = datetime.datetime(2026, 11, 18, 12, 0, tzinfo=ist)  # a Wednesday
+        cases = {
+            "You've hit your usage limit. Upgrade to Pro or try again in 4 days 2 hours 13 minutes.": 4 * 86400 + 2 * 3600 + 13 * 60,
+            "RESOURCE_EXHAUSTED: quota exceeded. Please retry in 32.5s.": 32.5,
+            "Claude AI usage limit reached|1795000000": 1795000000 - now.timestamp(),
+            "5-hour limit reached ∙ resets 3pm (Asia/Kolkata)": 3 * 3600,
+            "You've hit your limit · resets 3am (Asia/Kolkata)": 15 * 3600,
+            "Rate limited; try again at 12:30 PM.": 1800,
+            "Weekly limit reached · resets Mon 9am (Asia/Kolkata)": 4 * 86400 + 21 * 3600,
+            "rate limit; resets at 2026-11-18T15:00:00Z": 8.5 * 3600,
+            "429 Too Many Requests": None,
+        }
+        for text, want in cases.items():
+            with self.subTest(text):
+                got = reset_in(text, now)
+                self.assertEqual(None if got is None else round(got, 1), want if want is None else round(want, 1))
+        self.assertEqual(limited_for("429 Too Many Requests"), 900, "no reset time given: 15 minutes")
+        self.assertEqual(limited_for("try again in 5 seconds (rate limit)"), 60, "at least a minute")
+        self.assertEqual(limited_for("usage limit; try again in 30 days"), 8 * 86400, "at most 8 days")
+        self.assertIsNone(limited_for("SyntaxError: invalid syntax"))
+        for text in ("claude: Not logged in · Please run /login", "unexpected status 401 Unauthorized: Missing bearer",
+                     "OAuth token has expired. Please obtain a new token", "Your subscription has expired"):
+            self.assertTrue(logged_out(text), text)
+        self.assertFalse(logged_out("FileNotFoundError: no such file"))
 
 
 class ProcTest(unittest.TestCase):

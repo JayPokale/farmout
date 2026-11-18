@@ -620,17 +620,18 @@ class SettingsAndLimitsTest(CliBase):
     def test_a_fallback_in_a_new_worktree_starts_clean(self):
         self.repo()
         p = self.fo("run", "codex", "halfway codex junk.txt half done", "--isolate", "--fallback", "claude", "-n", "hw")
-        self.assertIn("codex hit a usage limit; retried on claude", p.stderr)
+        self.assertRegex(p.stderr, r"codex is at a usage limit until \d\d:\d\d; retried on claude")
         self.assertNotIn("junk.txt", self.fo("diff", "hw").stdout, "the limited worker's half-done edit is gone")
 
     def test_a_worker_at_its_limit_falls_back_and_is_skipped(self):
         p = self.fo("run", "codex", "limited codex say rescued", "--fallback", "claude", "-n", "fb")
         self.assertEqual(p.stdout, "rescued\n")
-        self.assertIn("codex hit a usage limit; retried on claude", p.stderr)
+        self.assertRegex(p.stderr, r"codex is at a usage limit until \d\d:\d\d; retried on claude")
         self.assertEqual(self.meta("fb")["worker"], "claude", "the session moves to the worker that answered")
         self.assertEqual(self.fo("send", "fb", "recall").stdout, "limited codex say rescued\n")
         limits = json.loads((self.state / "limits.json").read_text())
-        self.assertGreater(limits["codex"], time.time() + 60, "'try again in 2 minutes' is honoured")
+        self.assertGreater(limits["codex"]["until"], time.time() + 60, "'try again in 2 minutes' is honoured")
+        self.assertEqual(limits["codex"]["why"], "limit")
         cfg = self.home / ".config" / "farmout"
         cfg.mkdir(parents=True)
         (cfg / "settings.json").write_text('{"fallback": ["codex", "copilot"]}')
@@ -642,7 +643,129 @@ class SettingsAndLimitsTest(CliBase):
         self.assertEqual(len([r for r in self.runs() if r["name"] == "codex"]), codex_runs, "a known-limited worker isn't tried")
         stats = self.json("stats")["workers"]
         self.assertEqual((stats["codex"]["limited"], stats["claude"]["ok"]), (1, 3))
-        self.assertIn("codex hit a usage limit; farmout skips it until", self.fo("stats").stdout)
+        self.assertIn("codex is at a usage limit until", self.fo("stats").stdout)
+        self.assertRegex(self.fo("status", "--line").stdout, r"codex limited till \d\d:\d\d")
+
+
+class OneSubscriptionTest(CliBase):
+    """What a single subscription gets: several of its models side by side, a fallback model for its limits, a
+    conversation that changes model or worker, and nothing lost when a worker is logged out."""
+
+    def test_fallback_is_on_by_default_and_settings_can_turn_it_off(self):
+        p = self.fo("run", "codex", "limited codex say rescued", "-n", "d")
+        self.assertEqual(p.stdout, "rescued\n")
+        self.assertIn("retried on antigravity", p.stderr, "the next ready worker, in the usual order")
+        (self.state / "limits.json").unlink()
+        (self.work / ".farmout").mkdir()
+        (self.work / ".farmout" / "settings.json").write_text('{"fallback": []}')
+        p = self.fo("run", "codex", "limited codex say rescued", rc=1)
+        self.assertIn("usage limit", p.stdout)
+        (self.work / ".farmout" / "settings.json").write_text('{"workers": ["codex", "copilot"]}')
+        (self.state / "limits.json").unlink()
+        self.assertIn("retried on copilot", self.fo("run", "codex", "limited codex say ok").stderr,
+                      "never a worker the repo doesn't allow")
+
+    def test_a_fallback_can_be_another_model_of_the_same_worker(self):
+        p = self.fo("run", "claude", "busymodel opus say from sonnet", "--model", "opus", "--fallback", "claude:sonnet",
+                    "-n", "m")
+        self.assertEqual(p.stdout, "from sonnet\n")
+        self.assertIn("claude:opus is at a usage limit", p.stderr)
+        self.assertEqual((self.meta("m")["worker"], self.meta("m")["model"]), ("claude", "sonnet"))
+        limits = json.loads((self.state / "limits.json").read_text())
+        self.assertEqual(list(limits), ["claude:opus"], "Opus at its limit leaves Sonnet free")
+        self.fo("run", "claude", "say plain")
+        self.assertEqual(flag(self.last("claude")["argv"], "--model"), "sonnet")
+
+    def test_a_logged_out_worker_falls_back_and_says_how_to_log_in(self):
+        p = self.fo("run", "codex", "loggedout codex say rescued", "--fallback", "claude")
+        self.assertEqual(p.stdout, "rescued\n")
+        self.assertIn("codex isn't logged in, or its subscription ended", p.stderr)
+        self.assertEqual(json.loads((self.state / "limits.json").read_text())["codex"]["why"], "login")
+        self.assertRegex(self.fo("status", "--line").stdout, r"codex logged out till")
+        self.assertIn("skipped  codex isn't logged in", self.fo("doctor").stdout)
+        (self.state / "limits.json").unlink()
+        p = self.fo("run", "codex", "loggedout codex say x", "--fallback", "", rc=1)
+        self.assertIn("run `codex login`", p.stdout, "with nowhere to go, it says how to fix it")
+
+    def test_a_conversation_moves_to_another_worker_at_a_limit_with_its_history(self):
+        self.fo("run", "codex", "say first answer", "-n", "c", "--fallback", "claude")
+        p = self.fo("send", "c", "limited codex say second answer")
+        self.assertEqual(p.stdout, "second answer\n")
+        self.assertIn("· claude · ok", p.stderr)
+        brief = self.last("claude")["brief"]
+        self.assertIn("continues an earlier conversation (with codex)", brief)
+        ctx = Path(re.search(r"^- (.+context-0002\.md)$", brief, re.M).group(1)).read_text()
+        self.assertIn("say first answer", ctx)
+        self.assertIn("first answer", ctx, "the reply too")
+        self.assertNotIn("second answer", ctx, "not the turn being asked")
+        self.assertEqual(self.meta("c")["worker"], "claude")
+        self.assertEqual(self.fo("send", "c", "recall").stdout, "limited codex say second answer\n",
+                         "from then on, claude's own conversation")
+
+    def test_send_moves_a_conversation_to_another_model_or_worker(self):
+        self.fo("run", "claude", "say one", "-n", "s")
+        native = self.meta("s")["native_id"]
+        p = self.fo("send", "s", "--model", "opus", "say two")
+        self.assertIn("[s · claude → claude:opus]", p.stderr)
+        argv = self.last("claude")["argv"]
+        self.assertEqual((flag(argv, "--model"), flag(argv, "--resume")), ("opus", native), "same conversation, new model")
+        self.fo("send", "s", "-w", "codex", "say three")
+        self.assertIn("continues an earlier conversation (with claude)", self.last("codex")["brief"])
+        self.assertEqual((self.meta("s")["worker"], self.meta("s")["model"]), ("codex", None))
+        self.fo("send", "s", "-w", "copilot:gpt-x", "say four")
+        self.assertEqual(flag(self.last("copilot")["argv"], "--model"), "gpt-x")
+        self.assertIn("say three", self.last("copilot")["brief"] + Path(re.search(
+            r"^- (.+context-0004\.md)$", self.last("copilot")["brief"], re.M).group(1)).read_text())
+        self.assertIn("unavailable worker(s): nope", self.fo("send", "s", "-w", "nope", "x", rc=1).stderr)
+
+    def test_one_subscription_reviews_with_two_models_or_twice(self):
+        self.repo()
+        (self.work / "a.py").write_text("x = 1 / 0\ny = 2\n")
+        self.reviewers_say(codex="a.py:1 | high | divides by zero | import | fix\n")
+        r = self.json("review", "-w", "codex,codex")
+        self.assertEqual(r["workers"], ["codex", "codex#2"])
+        self.assertEqual(r["clusters"][0]["workers"], ["codex", "codex#2"], "two runs of one model, counted apart")
+        r = self.json("review", "-w", "codex:gpt-a,codex:gpt-b")
+        self.assertEqual(sorted(r["sessions"]), sorted(f"{r['group']}-codex-gpt-{x}" for x in "ab"))
+        self.assertEqual(len(r["clusters"][0]["workers"]), 2)
+        p = self.fo("review", "-w", "claude:opus,claude:sonnet")
+        self.assertIn("2 reviewers (claude:opus, claude:sonnet)", p.stdout)
+        race = self.json("race", "write b.py ok", "-w", "claude:sonnet,claude:haiku")
+        self.assertEqual(sorted(r["lane"] for r in race["attempts"]), ["claude:haiku", "claude:sonnet"])
+
+    def test_a_review_never_falls_back_and_leaves_out_limited_workers(self):
+        self.repo()
+        (self.work / "a.py").write_text("x = 3\n")
+        self.reviewers_say(codex="a.py:1 | low | x | y | z\n", claude="a.py:1 | low | x | y | z\n")
+        (self.state).mkdir(parents=True, exist_ok=True)
+        (self.state / "limits.json").write_text(json.dumps({"copilot": {"until": time.time() + 600, "why": "limit"}}))
+        r = self.json("review", "-w", "codex,claude,copilot")
+        self.assertIn("copilot", r["workers"], "asked for by name: tried anyway")
+        self.assertEqual(r["clusters"][0]["workers"], ["codex", "claude"], "and nobody stood in for anybody")
+        (self.state / "limits.json").write_text(json.dumps({"copilot": {"until": time.time() + 600, "why": "limit"}}))
+        p = self.fo("review", "--json")
+        self.assertIn("left out copilot is at a usage limit", p.stderr)
+        r = json.loads(p.stdout)
+        self.assertNotIn("copilot", list(r["failed"]) + r["workers"])
+
+    def test_the_models_setting_picks_each_workers_default(self):
+        cfg = self.home / ".config" / "farmout"
+        cfg.mkdir(parents=True)
+        (cfg / "settings.json").write_text('{"models": {"codex": "gpt-y", "antigravity": "gemini-z"}}')
+        self.fo("run", "codex", "say hi")
+        self.assertEqual(flag(self.last("codex")["argv"], "-m"), "gpt-y")
+        self.fo("run", "codex", "say hi", "--model", "gpt-q")
+        self.assertEqual(flag(self.last("codex")["argv"], "-m"), "gpt-q", "an explicit model wins")
+        self.repo()
+        (self.work / "a.py").write_text("x = 3\n")
+        self.fo("review", "-w", "antigravity")
+        self.assertEqual(flag(self.last("agy")["argv"], "--model"), "gemini-z", "over review's own fast model")
+        (cfg / "settings.json").write_text('{"models": {"codex": 5}}')
+        self.assertIn("models maps a worker to its model", self.fo("run", "codex", "say x", rc=1).stdout)
+
+    def test_an_empty_answer_from_agy_is_a_failure(self):
+        p = self.fo("run", "antigravity", "agyempty", "--fallback", "", rc=1)
+        self.assertIn("agy returned an empty answer (it wanted a tool headless mode denies: command)", p.stdout)
 
 
 class HookTest(CliBase):
@@ -1215,7 +1338,11 @@ class MoreTest(CliBase):
         self.fo("review", "-w", "codex:gpt-x")
         codex = self.last("codex")["argv"]
         self.assertEqual(codex[codex.index("-m") + 1], "gpt-x")
-        self.assertIn("one model per worker here", self.fo("ask", "x", "-w", "claude:opus,claude:sonnet", rc=1).stderr)
+        p = self.fo("ask", "say both", "-w", "claude:opus,claude:sonnet")
+        self.assertIn("── claude:opus · ok", p.stdout)
+        self.assertIn("── claude:sonnet · ok", p.stdout)
+        models = sorted(flag(r["argv"], "--model") for r in self.runs() if r["name"] == "claude" and "say both" in r["brief"])
+        self.assertEqual(models, ["opus", "sonnet"], "one subscription, two models, side by side")
 
     def test_bench_compares_models_of_one_worker(self):
         self.repo()
@@ -1431,6 +1558,10 @@ elif a[:2] == ["pr", "checks"]:
 
 
 class McpSessionTest(Base):
+    def last_brief(self, cli):
+        recs = [json.loads(p.read_text()) for p in sorted(self.log.glob("[0-9]*.json"), key=lambda p: p.stat().st_mtime_ns)]
+        return [r for r in recs if r["name"] == cli][-1]["brief"]
+
     def call(self, s, tool, timeout=30, **args):
         res = s.call("tools/call", {"name": tool, "arguments": args}, timeout)
         self.assertNotIn("error", res, res)
@@ -1448,6 +1579,11 @@ class McpSessionTest(Base):
         listing = self.call(s, "sessions")[1]
         self.assertIn("m1  codex  ok  turns=2", listing)
         self.assertIn("turn 2 ok", self.call(s, "sessions", name="m1")[1])
+        self.assertRegex(self.call(s, "send", session="m1", worker="codex", message="say same")[1],
+                         r"^## m1 turn 3 \(codex\)", "naming the session's own worker changes nothing")
+        moved = self.call(s, "send", session="m1", worker="claude", model="haiku", message="say moved")[1]
+        self.assertRegex(moved, r"^## m1 turn 4 \(claude\) ok")
+        self.assertIn("continues an earlier conversation (with codex)", self.last_brief("claude"))
 
         d = self.work / ".farmout" / "pipelines"
         d.mkdir(parents=True)

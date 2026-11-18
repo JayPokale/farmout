@@ -15,7 +15,7 @@ from pathlib import Path
 from . import VERSION, bench, flows, live, pipeline, proc, review, sessions, skills, store, usage
 from . import hooks as farmout_hooks
 from .config import OUT_DIR, STATE, digest, find, project_root, read, repo_root, settings, trust_file
-from .workers import API_BASE, API_MODEL, ENABLED, SETUP, WORKERS, use_main_claude
+from .workers import API_BASE, API_MODEL, ENABLED, SETUP, WORKERS, lane, use_main_claude
 
 HOOK_MARK = "# farmout review gate"
 
@@ -103,20 +103,31 @@ def everyone(asked):
 
 
 def picked(asked):
-    """-w for ask, review, race and fix-pr: workers, each optionally `worker:model`, one model per worker (`farmout
-    bench` is the one that compares several). Returns (workers, {worker: model})."""
-    lanes = [bench.lane(x) for x in split(asked)]
-    names = [w for w, _ in lanes]
-    if len(set(names)) < len(names):
-        raise ValueError("one model per worker here; `farmout bench -w` compares several models of one worker")
-    return everyone(",".join(names) or None), {w: m for w, m in lanes if m}
+    """-w for ask, review, race and fix-pr: lanes, each `worker` or `worker:model`. One subscription can fill several
+    (`claude:opus,claude:sonnet`, or `codex,codex` for two runs of one model). With no -w, every ready worker that
+    isn't known to be at a usage limit or logged out."""
+    lanes = split(asked)
+    if lanes:
+        check_workers(list(dict.fromkeys(lane(x)[0] for x in lanes)))
+        return lanes
+    workers, held = everyone(None), usage.limits()
+    ready = [w for w in workers if w not in held]
+    for w in workers:
+        if w in held:
+            err(f"farmout: left out {usage.describe(w)}")
+    if not ready:
+        raise ValueError("every worker is at a usage limit or logged out (`farmout status`); -w uses one anyway")
+    return ready
 
 
 def auto_worker(cwd):
-    """The first allowed worker that isn't at a usage limit: your fallback order first, then the rest."""
-    s, limited = settings(cwd), usage.limits()
-    allowed = [w for w in (s.get("fallback") or []) + list(ENABLED) if w in ENABLED and w in s.get("workers", ENABLED)]
-    pick = next((w for w in allowed if w != "api" and w not in limited), None) or next(iter(allowed), None)
+    """(worker, model) for `farmout run auto`: the first allowed lane that isn't at a usage limit or logged out,
+    your fallback order first (`farmout bench --apply` writes it best-first), then every other worker."""
+    s, held = settings(cwd), usage.limits()
+    allowed = [lane(x) for x in (s.get("fallback") or []) + list(ENABLED)]
+    allowed = [(w, m) for w, m in allowed if w in ENABLED and w in s.get("workers", ENABLED)]
+    pick = next(((w, m) for w, m in allowed if w != "api" and (f"{w}:{m}" if m else w) not in held), None)
+    pick = pick or next(iter(allowed), None)
     if not pick:
         raise ValueError("no allowed workers available here (`farmout doctor`, .farmout/settings)")
     return pick
@@ -134,23 +145,24 @@ def show_turn(a, name, rec):
     return 0 if rec["status"] == "ok" else 1
 
 
-def send_and_show(a, name, prompt, files, attach=()):
+def send_and_show(a, name, prompt, files, attach=(), switch=None):
     if a.bg:
-        msg = sessions.deliver(name, prompt, files, attach, cwd=a.cwd, wait=False)
+        msg = sessions.deliver(name, prompt, files, attach, cwd=a.cwd, wait=False, switch=switch)
         emit(a, {"session": name, "message": msg["id"], "status": "queued"},
              f"{name}: queued; `farmout attach {name}` to watch, `farmout log {name}` to read")
         return 0
     flows.ACTIVE.add(name)
-    rec = sessions.deliver(name, prompt, files, attach, cwd=a.cwd)
+    rec = sessions.deliver(name, prompt, files, attach, cwd=a.cwd, switch=switch)
     flows.ACTIVE.discard(name)
     return show_turn(a, name, rec)
 
 
 def cmd_run(a):
     prompt, extra = read_prompt(a.prompt, cwd=a.cwd)
-    worker = auto_worker(a.cwd) if a.worker == "auto" else check_workers([a.worker])[0]
-    meta = sessions.create(worker, a.cwd, name=a.name, write=a.write, isolate=a.isolate, model=a.model,
-                           effort=a.effort, fallback=split(a.fallback) or None)
+    worker, model = auto_worker(a.cwd) if a.worker == "auto" else lane(a.worker)
+    check_workers([worker])
+    meta = sessions.create(worker, a.cwd, name=a.name, write=a.write, isolate=a.isolate, model=a.model or model,
+                           effort=a.effort, fallback=None if a.fallback is None else split(a.fallback))
     if not a.json:
         err(f"[{meta['name']} · {worker}{' · isolated' if a.isolate else ' · writes' if a.write else ''}]")
     return send_and_show(a, meta["name"], prompt, a.file + extra)
@@ -158,8 +170,16 @@ def cmd_run(a):
 
 def cmd_send(a):
     prompt, extra = read_prompt(a.message, cwd=a.cwd)
-    sessions.load(a.session)
-    return send_and_show(a, a.session, prompt, a.file + extra, a.attach)
+    meta = sessions.load(a.session)
+    worker, model = lane(a.worker) if a.worker else (None, None)
+    if worker:
+        check_workers([worker])
+    model = a.model or model
+    switch = {"worker": worker, "model": model} if worker or model else None
+    if switch and not a.json:
+        err(f"[{a.session} · {meta['worker']}{':' + meta['model'] if meta.get('model') else ''} → "
+            f"{worker or meta['worker']}{':' + model if model else ''}]")
+    return send_and_show(a, a.session, prompt, a.file + extra, a.attach, switch)
 
 
 def cmd_fork(a):
@@ -173,8 +193,8 @@ def cmd_fork(a):
 
 
 def answers(rounds):
-    return [[{"session": n, "worker": r.get("worker"), "status": r["status"], "secs": r.get("secs"),
-              "text": flows.text(r)} for n, r in results] for results in rounds]
+    return [[{"session": n, "worker": r.get("worker"), "lane": flows.label(n), "status": r["status"],
+              "secs": r.get("secs"), "text": flows.text(r)} for n, r in results] for results in rounds]
 
 
 def show_answers(a, group, rounds):
@@ -185,23 +205,24 @@ def show_answers(a, group, rounds):
             if len(rounds) > 1:
                 print(f"═══ round {i}{' (final)' if i == len(rounds) else ''} " + "═" * 30)
             for name, rec in results:
-                print(f"── {rec.get('worker')} · {rec['status']} · {rec.get('secs', '?')}s · {name} " + "─" * 20)
+                via = rec.get("worker")
+                who = flows.label(name) + (f" → {via}" if via and via != lane(flows.label(name))[0] else "")
+                print(f"── {who} · {rec['status']} · {rec.get('secs', '?')}s · {name} " + "─" * 20)
                 print(flows.text(rec).rstrip() + "\n")
-        err(f"Follow up with one of them: farmout send {group}-<worker> \"...\"")
+        err(f"Follow up with one of them: farmout send <session> \"...\" ({', '.join(n for n, _ in rounds[-1])})")
     return 0 if any(r["status"] == "ok" for _, r in rounds[-1]) else 1
 
 
 def cmd_ask(a):
     prompt, extra = read_prompt(a.prompt, cwd=a.cwd)
-    workers, models = picked(a.workers)
+    workers = picked(a.workers)
     group = sessions.new_group("debate" if a.debate else "ask")
     title = f"farmout ask{' --debate' if a.debate else ''} · {len(workers)} workers · read-only"
     with live.Lanes(group, workers, "answering", title=title, on=live.enabled(a)):
         if a.debate:
-            group, rounds = flows.debate(a.cwd, prompt, workers, a.file + extra, rounds=max(2, a.rounds), group=group,
-                                         models=models)
+            group, rounds = flows.debate(a.cwd, prompt, workers, a.file + extra, rounds=max(2, a.rounds), group=group)
         else:
-            group, results = flows.ask(a.cwd, prompt, workers, a.file + extra, group=group, models=models)
+            group, results = flows.ask(a.cwd, prompt, workers, a.file + extra, group=group)
             rounds = [results]
     return show_answers(a, group, rounds)
 
@@ -220,23 +241,23 @@ def show_review(a, r, min_agree=1, fail_on="never"):
 
 
 def cmd_review(a):
-    workers, models = picked(a.workers)
+    workers = picked(a.workers)
     group = sessions.new_group("review")
     with live.Lanes(group, workers, "reviewing", title=f"farmout review · {len(workers)} workers · read-only",
                     findings=True, on=live.enabled(a)):
         r = review.review(a.cwd, workers=workers, base=a.base, staged=a.staged, focus=" ".join(a.focus) or None,
-                          group=group, models=models)
+                          group=group)
     return show_review(a, r, a.min_agree, a.fail_on)
 
 
 def cmd_race(a):
     task, extra = read_prompt(a.task, cwd=a.cwd)
-    workers, models = picked(a.workers)
+    workers = picked(a.workers)
     group = sessions.new_group("race")
     with live.Lanes(group, workers, "working", title=f"farmout race · {len(workers)} workers · one worktree each",
                     on=live.enabled(a)) as lanes:
         group, rows, winner = flows.race(a.cwd, task, workers, test=a.test, files=a.file + extra, group=group,
-                                         progress=lanes.note, models=models)
+                                         progress=lanes.note)
     return show_race(a, group, rows, winner)
 
 
@@ -244,12 +265,11 @@ def cmd_fix_pr(a):
     if a.dry_run:
         task = flows.pr_task(a.cwd, a.number)
         return emit(a, {"number": a.number, "task": task}, task)
-    workers, models = picked(a.workers)
+    workers = picked(a.workers)
     group = sessions.new_group(f"pr{a.number}")
     with live.Lanes(group, workers, "working", title=f"farmout fix-pr {a.number} · {len(workers)} workers",
                     on=live.enabled(a)) as lanes:
-        group, rows, winner = flows.fix_pr(a.cwd, a.number, workers, test=a.test, group=group, progress=lanes.note,
-                                           models=models)
+        group, rows, winner = flows.fix_pr(a.cwd, a.number, workers, test=a.test, group=group, progress=lanes.note)
     return show_race(a, group, rows, winner)
 
 
@@ -463,7 +483,9 @@ def status_line():
     bits = [f"{len(running)} running"] if running else []
     bits += [f"{queued} queued"] if queued else []
     bits += [f"{st['id']} {pipeline.status(st)}" for st in pipeline.runs() if pipeline.status(st) in ("running", "waiting")]
-    bits += [f"{w} limited till {time.strftime('%H:%M', time.localtime(u))}" for w, u in usage.limits().items()]
+    why = usage.reasons()
+    bits += [f"{w} {'logged out' if why.get(w) == 'login' else 'limited'} till "
+             f"{time.strftime('%H:%M', time.localtime(u))}" for w, u in usage.limits().items()]
     return "farmout: " + (" · ".join(bits) if bits else "idle")
 
 
@@ -472,6 +494,7 @@ def cmd_status(a):
         names = sessions.names()
         return emit(a, {"running": [n for n in names if sessions.busy(n)],
                         "queued": sum(len(sessions.pending(n)) for n in names), "limited": usage.limits(),
+                        "why": usage.reasons(),
                         "pipelines": [{"run": st["id"], "status": pipeline.status(st)} for st in pipeline.runs()
                                       if pipeline.status(st) in ("running", "waiting")]})
     print(status_line())
@@ -479,6 +502,8 @@ def cmd_status(a):
         for n in sessions.names():
             if sessions.busy(n):
                 print(f"  {n} ({sessions.load(n)['worker']}) running")
+        for w in usage.limits():
+            print(f"  {usage.describe(w)}")
 
 
 def cmd_trust(a):
@@ -599,10 +624,10 @@ def cmd_tool(a):
 
 def cmd_bench(a):
     asked = list(dict.fromkeys(split(a.workers)))  # lanes: codex, or claude:opus to name a model
-    if (not asked or "claude" in [bench.lane(x)[0] for x in asked]) and use_main_claude() and not a.json:
+    if (not asked or "claude" in [lane(x)[0] for x in asked]) and use_main_claude() and not a.json:
         err("farmout bench: your main Claude login takes part, on its own quota (no second account in FARMOUT_CLAUDE_DIR)")
     if asked:
-        check_workers(list(dict.fromkeys(bench.lane(x)[0] for x in asked)))
+        check_workers(list(dict.fromkeys(lane(x)[0] for x in asked)))
     workers = asked or everyone(None)
     n = len(workers)
     if not a.json:
@@ -709,8 +734,8 @@ def cmd_stats(a):
     body = [(w, r["runs"], r["ok"], r["failed"], r["limited"], dur(r["secs"]), dur(r["secs"] / max(r["runs"], 1)),
              f"{r['tokens']:,}" if r["tokens"] else "-") for w, r in sorted(rows.items(), key=lambda x: -x[1]["runs"])]
     print(f"Last {a.days} days\n" + table([("WORKER", "RUNS", "OK", "FAILED", "LIMITED", "TIME", "AVG", "TOKENS")] + body))
-    for w, until in limits.items():
-        print(f"{w} hit a usage limit; farmout skips it until {time.strftime('%H:%M', time.localtime(until))}")
+    for w in limits:
+        print(usage.describe(w))
     total = sum(r["secs"] for r in rows.values())
     print(f"Your other subscriptions worked {dur(total)} for you.")
 
@@ -775,6 +800,13 @@ def cmd_doctor(a):
         if name == "antigravity" and w.ready:
             print(f"  note     {'':<12} Google's terms (section 6) may forbid using Antigravity with other tools;"
                   " see Terms of service in the README")
+    for w in usage.limits():
+        print(f"  skipped  {usage.describe(w)}")
+    if len([w for w in ENABLED if w != "api"]) == 1:
+        w = next(w for w in ENABLED if w != "api")
+        print(f"One subscription is enough: compare its models (`farmout bench -w {w}:<model>,{w}:<model>`), review "
+              f"with two of them (`farmout review -w {w}:<model>,{w}:<model>`), and set a fallback model for its limits "
+              "(`fallback = [\"" + w + ":<model>\"]` in your settings).")
     if not a.live:
         print("Logins are not checked. `farmout doctor --live` sends each ready worker one tiny prompt.")
         return 0
@@ -803,20 +835,25 @@ def parser():
         return sp
 
     r = add("run", "start a session: send a prompt to one worker, which remembers the conversation", cmd_run, (common, files))
-    r.add_argument("worker", help="antigravity, codex, claude, copilot, api, or auto (the first one not at its limit)")
+    r.add_argument("worker", help="antigravity, codex, claude, copilot, api, or auto (the first one not at its limit); "
+                   "worker:model names the model (claude:opus)")
     r.add_argument("prompt", nargs="*", help="the prompt; or pipe it in")
     r.add_argument("-n", "--name", help="name the session (default: <worker>-<n>)")
     r.add_argument("--write", action="store_true", help="let the worker edit files in the current directory")
     r.add_argument("--isolate", action="store_true", help="edit in a private git worktree instead; makes a patch")
     r.add_argument("--model", help="the worker's model")
     r.add_argument("--effort", help="reasoning effort, e.g. low, medium, high")
-    r.add_argument("--fallback", metavar="W1,W2", help="workers to try if this one hits a usage limit")
+    r.add_argument("--fallback", metavar="W1,W2", help="workers (or worker:model) to try if this one hits a usage "
+                   "limit or is logged out; default: your settings', else every other ready worker; \"\" for none")
     r.add_argument("--bg", action="store_true", help="return at once; `farmout attach` to watch")
 
     s = add("send", "send another message to a session", cmd_send, (common, files))
     s.add_argument("session")
     s.add_argument("message", nargs="*", help="the message; or pipe it in")
     s.add_argument("--attach", action="append", default=[], metavar="SESSION", help="also hand over that session's last reply")
+    s.add_argument("-w", "--worker", metavar="WORKER[:MODEL]",
+                   help="continue the conversation on another worker from this message on (it gets the earlier turns)")
+    s.add_argument("--model", help="continue on another model of the same worker (or of --worker)")
     s.add_argument("--bg", action="store_true", help="queue it and return at once")
 
     f = add("fork", "start a new session from an existing one's conversation (a side question)", cmd_fork, (common, files))

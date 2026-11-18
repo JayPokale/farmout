@@ -57,15 +57,18 @@ TOOLS = [
          }}}, "background": {"type": "boolean", "description": "Return at once; result files appear as tasks end, then `done`."}}}},
     {"name": "send",
      "description": "Send a message to a named session: a saved conversation with one worker, which remembers the "
-                    "earlier turns. Give `worker` to start a new session. Returns the reply.",
+                    "earlier turns. Give `worker` to start a new session. For an existing session, `worker` or `model` "
+                    "moves the conversation there from this message on (another worker gets the earlier turns as a "
+                    "file). Returns the reply.",
      "inputSchema": {"type": "object", "required": ["session", "message"], "properties": {
          "session": {"type": "string", "description": "Session name: letters, digits, '.', '_' and '-'."},
          "message": {"type": "string", "description": "The next message. For a new session, a standalone brief."},
-         "worker": {"type": "string", "enum": list(ENABLED), "description": "Worker for a new session."},
+         "worker": {"type": "string", "enum": list(ENABLED),
+                    "description": "Worker for a new session, or the worker an existing one continues on."},
          "files": FILES, "cwd": CWD,
          "write": {"type": "boolean", "description": "New session only: allow edits in cwd."},
          "isolate": {"type": "boolean", "description": "New session only: work in a private git worktree (a patch)."},
-         "model": {"type": "string", "description": "New session only: the worker's model."},
+         "model": {"type": "string", "description": "The worker's model (an existing session continues on it)."},
          "background": {"type": "boolean", "description": "Queue the message and return at once; read the reply with `sessions`."}}}},
     {"name": "sessions",
      "description": "List sessions, or show one session's turns with their output files.",
@@ -98,7 +101,8 @@ def task(i, t, key, outdir):
     path, part = outdir / f"{i}-{safe}.md", outdir / f"{i}-{safe}.part"
     part.write_text(text)
     part.replace(path)  # appears complete: background readers poll for it
-    return f"## [{i}] {w} {'ok' if res['ok'] else 'FAILED'} {time.time() - t0:.0f}s -> {path}", text, res["ok"]
+    who = w if res["worker"] == w else f"{w}→{res['worker']}"  # it fell back: the notes at the top say why
+    return f"## [{i}] {who} {'ok' if res['ok'] else 'FAILED'} {time.time() - t0:.0f}s -> {path}", text, res["ok"]
 
 
 def run_all(tasks, key, outdir, done=None):
@@ -134,14 +138,17 @@ def delegate(args, rid):
 
 def send_tool(a, rid):
     name = a.get("session") or ""
+    switch = None
     try:
         meta = sessions.load(name)
+        if a.get("worker") or a.get("model"):
+            switch = {"worker": a.get("worker"), "model": a.get("model")}
     except KeyError:
         if not a.get("worker"):
             raise ValueError(f"no session named {name!r}; give `worker` to start one") from None
         meta = sessions.create(a["worker"], a.get("cwd") or os.getcwd(), name=name, write=a.get("write"),
                                isolate=a.get("isolate"), model=a.get("model"))
-    msg = sessions.post(name, a["message"], a.get("files") or [], cwd=a.get("cwd") or meta["cwd"])
+    msg = sessions.post(name, a["message"], a.get("files") or [], cwd=a.get("cwd") or meta["cwd"], switch=switch)
     sessions.kick(name)
     if a.get("background"):
         return f"Queued message {msg['id']} for session {name}; read the reply later with the sessions tool.", False

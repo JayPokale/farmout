@@ -8,6 +8,8 @@ agy report a new one, and every CLI resumes by id (see sid()). The first line of
   fail <message>   print <message> to stderr and exit 1
   limit            fail like a subscription at its usage limit
   limited <cli> <cmd> that CLI is at its limit; the others run <cmd> (just `say x`)
+  loggedout <cli> <cmd> that CLI isn't logged in; the others run <cmd>
+  busymodel <model> <cmd> a run on that model is at its limit; other models run <cmd>
   nap <secs>       sleep that long, then reply "napped"
   sleep <tag>      start a grandchild, write both pids to $FAKE_LOG/<tag>.pids, sleep until killed
   write <f> <text> write <text> to file <f> in cwd
@@ -17,6 +19,7 @@ agy report a new one, and every CLI resumes by id (see sid()). The first line of
   recall           reply with the first line of this session's previous brief, or "none"
 farmout's review brief is answered from $FAKE_LOG/review-<cli>.txt (default: NO FINDINGS).
   agyerror         agy reports a non-SUCCESS status
+  agyempty         agy reports SUCCESS with an empty answer, as when headless mode denied a tool it wanted
 """
 import json
 import os
@@ -78,6 +81,11 @@ elif cmd == "limit" or (cmd == "limited" and reply.split()[0] == name):
     sys.exit("Error: you've hit your usage limit. Try again in 2 minutes.")
 elif cmd == "limited":
     reply = reply.split(" ", 2)[2]  # limited <cli> say <text>
+if cmd in ("loggedout", "busymodel"):  # a new chain: the inner command runs through the branches below
+    kind, (who, cmd, reply) = cmd, (reply.split(" ", 2) + ["", ""])[:3]
+    if who == (name if kind == "loggedout" else flag("--model") or flag("-m")):
+        sys.exit("Not logged in · Please run /login" if kind == "loggedout"
+                 else "Error: you've hit your usage limit. Try again in 2 minutes.")
 elif cmd == "halfway":  # halfway <cli> <file> <text>: that CLI edits a file, then hits its usage limit
     who, fname, content = reply.split(" ", 2)
     if who == name:
@@ -127,8 +135,9 @@ if history_file and "--no-session-persistence" not in args and "--ephemeral" not
         json.dump(history + [brief], f)
 
 if name == "agy":
-    print(json.dumps({"status": "ERROR" if cmd == "agyerror" else "SUCCESS", "response": reply,
-                      "conversation_id": session, "usage": {"input_tokens": 10, "output_tokens": 5}}))
+    print(json.dumps({"status": "ERROR" if cmd == "agyerror" else "SUCCESS", "response": "" if cmd == "agyempty" else reply,
+                      "conversation_id": session, "usage": {"input_tokens": 10, "output_tokens": 5},
+                      **({"denied_actions": [{"action": "command"}]} if cmd == "agyempty" else {})}))
 elif name == "codex":  # the final message goes to the -o file; stdout is progress events
     with open(args[args.index("-o") + 1], "w") as f:
         f.write(reply)

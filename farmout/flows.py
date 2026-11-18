@@ -2,13 +2,14 @@
 undo, pull request)."""
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
 from . import isolate, proc, sessions
-from .workers import ENABLED
+from .workers import ENABLED, lane
 
 ACTIVE = set()  # sessions this process is waiting on; the CLI stops them on Ctrl-C
 RACE = ("\n\nMake the smallest change that does this, in the current directory. No unrelated edits and no new "
@@ -19,17 +20,36 @@ def default_workers(skip=("api",)):
     return [w for w in ENABLED if w not in skip]
 
 
+def lanes(group, asked, names=None):
+    """[(label, worker, model, session name)] for lanes such as `codex` or `claude:opus`. One subscription can fill
+    several lanes: different models of one worker, or one lane asked for twice (`codex,codex`, labelled codex#2),
+    since one model's misses move between runs. names {i: name} overrides the session names."""
+    out, seen, used = [], {}, set()
+    for i, x in enumerate(asked):
+        w, m = lane(x)
+        seen[x] = seen.get(x, 0) + 1
+        label = x if seen[x] == 1 else f"{x}#{seen[x]}"
+        name = (names or {}).get(i) or f"{group}-" + (re.sub(r"[^A-Za-z0-9._-]+", "-", label).strip("-") or "lane")
+        while name in used:
+            name += f"-{i + 1}"
+        used.add(name)
+        out.append((label, w, m, name))
+    return out
+
+
 def fan(group, workers, cwd, prompt, files=(), isolate=False, models=None, timeout=None, names=None, write=False,
         effort=None, fallback=None):
-    """One session per worker in a group, all started at once; waits for every turn. prompt may be one brief for
-    all, or a list with one per worker. Returns [(session name, turn record)] in order."""
-    prompts = prompt if isinstance(prompt, list) else [prompt] * len(workers)
+    """One session per lane in a group (see lanes()), all started at once; waits for every turn. prompt may be one
+    brief for all, or a list with one per lane; models {worker: model} applies where a lane names none. Returns
+    [(session name, turn record)] in order."""
+    plan = lanes(group, workers, names)
+    prompts = prompt if isinstance(prompt, list) else [prompt] * len(plan)
     metas = []
     try:
-        for i, w in enumerate(workers):
-            metas.append(sessions.create(w, cwd, name=(names or {}).get(i) or f"{group}-{w}", isolate=isolate,
-                                         write=write, model=(models or {}).get(w), effort=effort, group=group,
-                                         fallback=fallback))
+        for label, w, m, name in plan:
+            metas.append(sessions.create(w, cwd, name=name, isolate=isolate, write=write,
+                                         model=m or (models or {}).get(w), effort=effort, group=group,
+                                         fallback=fallback, lane=label))
             ACTIVE.add(metas[-1]["name"])
         msgs = [sessions.deliver(m["name"], p, files, cwd=cwd, wait=False) for m, p in zip(metas, prompts)]
         return [(m["name"], sessions.wait_msg(m["name"], msg["id"], timeout)) for m, msg in zip(metas, msgs)]
@@ -39,6 +59,12 @@ def fan(group, workers, cwd, prompt, files=(), isolate=False, models=None, timeo
         raise
     finally:
         ACTIVE.difference_update(m["name"] for m in metas)
+
+
+def label(name):
+    """The lane a fan-out session answered for (`claude:opus`, `codex#2`), else its worker."""
+    meta = sessions.load(name)
+    return meta.get("lane") or meta["worker"]
 
 
 def text(rec):
@@ -69,7 +95,7 @@ def debate(cwd, prompt, workers, files=(), rounds=2, group=None, models=None):
             break
         ACTIVE.update(n for n, _ in ok)
         try:
-            msgs = [(n, sessions.deliver(n, DEBATE.format(names=", ".join(r.get("worker") or o for o, r in ok if o != n)),
+            msgs = [(n, sessions.deliver(n, DEBATE.format(names=", ".join(label(o) for o, r in ok if o != n)),
                                          [r["output"] for o, r in ok if o != n], cwd=cwd, wait=False)) for n, _ in ok]
             results = [(n, sessions.wait_msg(n, m["id"])) for n, m in msgs]
         except BaseException:
@@ -93,7 +119,8 @@ def race(cwd, task, workers, test=None, timeout=None, group=None, files=(), prog
     rows = []
     for name, rec in fan(group, workers, cwd, brief, files, isolate=True, timeout=timeout, models=models):
         iso = sessions.load(name).get("iso")
-        row = {"session": name, "worker": rec.get("worker"), "ok": rec["status"] == "ok", "secs": rec.get("secs"),
+        row = {"session": name, "worker": rec.get("worker"), "lane": label(name), "ok": rec["status"] == "ok",
+               "secs": rec.get("secs"),
                "files": 0, "added": 0, "removed": 0, "tests": None, "test_output": "", "patch": rec.get("patch"),
                "error": None if rec["status"] == "ok" else text(rec)[:300]}
         if row["ok"] and iso:

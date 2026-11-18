@@ -10,7 +10,7 @@ import sys
 import threading
 import time
 
-from . import review, sessions
+from . import flows, review, sessions
 
 # the logo's lane colours, one per worker
 RGB = {"codex": (242, 166, 90), "antigravity": (94, 196, 182), "copilot": (167, 139, 250),
@@ -45,13 +45,14 @@ def paint(text, rgb=None, bold=False, dim=False):
 
 
 class Lanes:
-    """`with Lanes(group, workers, "reviewing", on=enabled(a)):` draws a row for each `<group>-<worker>` session
-    until the block ends, then leaves the final state on screen. `note(name, text)` replaces a finished row's
-    summary (a race's "testing…", then "tests pass")."""
+    """`with Lanes(group, workers, "reviewing", on=enabled(a)):` draws a row for each lane's session (named as
+    flows.lanes names them) until the block ends, then leaves the final state on screen. `note(name, text)` replaces
+    a finished row's summary (a race's "testing…", then "tests pass")."""
 
     def __init__(self, group, workers, verb, title=None, findings=False, on=True, out=None):
-        self.group, self.workers, self.verb, self.title, self.findings = group, list(workers), verb, title, findings
-        self.on, self.out = on and bool(self.workers), out or sys.stderr
+        self.group, self.verb, self.title, self.findings = group, verb, title, findings
+        self.lanes = [(label, w, name) for label, w, _, name in flows.lanes(group, list(workers))]
+        self.on, self.out = on and bool(self.lanes), out or sys.stderr
         self.notes, self.counts, self.drawn, self.seen = {}, {}, 0, False
         self.stop, self.lock, self.thread, self.t0 = threading.Event(), threading.Lock(), None, time.time()
 
@@ -103,10 +104,9 @@ class Lanes:
         recs = sessions.turns(name)
         return recs[-1] if recs else None
 
-    def row(self, w, tick):
-        name = f"{self.group}-{w}"
+    def row(self, lane, w, name, tick):
         rec = self.turn(name)
-        label = paint(f"{w:<12}", RGB.get(w), bold=True)
+        label = paint(f"{lane:<{max(12, self.pad)}}", RGB.get(w), bold=True)
         if rec is None:
             return f"  {paint('·', dim=True)} {label}{paint('starting…', dim=True)}"
         self.seen = True
@@ -138,7 +138,8 @@ class Lanes:
     def draw(self):
         with self.lock:
             tick = int((time.time() - self.t0) * 5)
-            rows = [self.row(w, tick) for w in self.workers]
+            self.pad = max(len(x) for x, _, _ in self.lanes) + 1
+            rows = [self.row(x, w, name, tick) for x, w, name in self.lanes]
             if not self.seen:  # nothing started (say, nothing to review): draw nothing at all
                 return
             width = shutil.get_terminal_size((80, 24)).columns

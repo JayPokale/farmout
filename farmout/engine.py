@@ -8,7 +8,15 @@ import uuid
 
 from . import hooks, isolate, usage
 from .config import settings
-from .workers import ENABLED, limited_for
+from .workers import ENABLED, SETUP, lane, limited_for, logged_out
+
+LOGIN_PAUSE = 1800  # a worker that can't log in is left alone this long (or until it works again)
+
+
+def lane_key(worker, model=None):
+    """What a usage limit is recorded under: the worker, or worker:model when a model was named, so that Opus at
+    its limit doesn't keep Sonnet from being tried."""
+    return f"{worker}:{model}" if model else worker
 
 
 def check(t):
@@ -21,7 +29,8 @@ def check(t):
         raise PermissionError("this repo's farmout settings forbid write access")
     if s.get("web") is False and not ENABLED[w].web_off:
         raise PermissionError(f"this repo's farmout settings forbid web access, and {w} can't turn its web search off")
-    return {**t, "web": s.get("web", True), "timeout": t.get("timeout") or s.get("timeout")}, s
+    return {**t, "web": s.get("web", True), "timeout": t.get("timeout") or s.get("timeout"),
+            "model": t.get("model") or (s.get("models") or {}).get(w)}, s
 
 
 def prepare(t, s, notes):
@@ -40,14 +49,40 @@ def prepare(t, s, notes):
 
 
 def fallbacks(t):
-    """Workers to try, in order, if this one hits a usage limit: the task's list, else the settings' list; only
-    workers this repo allows."""
+    """Lanes (worker, model) to try, in order, if this one hits a usage limit or can't log in: the task's list, else
+    the settings' list, else every other ready worker except `api` (no tools, and often a much smaller model). Only
+    workers this repo allows, and when it forbids web search, only ones that can turn theirs off."""
     try:
         s = settings(os.path.expanduser(t.get("cwd") or os.getcwd()))
     except Exception:
         return []
-    order = s.get("fallback") or [] if t.get("fallback") is None else t["fallback"]
-    return [w for w in order if w in ENABLED and w in s.get("workers", ENABLED)]
+    if t.get("fallback") is not None:
+        order = t["fallback"]
+    elif "fallback" in s:
+        order = s["fallback"]
+    else:
+        order = [w for w in ENABLED if w not in (t.get("worker"), "api")]
+    out = []
+    for x in order:
+        w, m = lane(x)
+        if (w in ENABLED and w in s.get("workers", ENABLED) and (s.get("web") is not False or ENABLED[w].web_off)
+                and (w, m) not in out):
+            out.append((w, m))
+    return out
+
+
+def switch(t, worker, model):
+    """The task moved to another lane. The same worker keeps its conversation and only changes model. Another
+    worker can't resume what this one holds, so it starts a conversation of its own and gets the earlier turns as
+    a file (t["handoff"]() returns the files and a note to add)."""
+    if worker == t.get("worker"):
+        return {**t, "model": model}
+    nt = {**t, "worker": worker, "model": model, "resume": None, "fork": None, "history": None,
+          "session_id": str(uuid.uuid4()) if t.get("persist") and worker in ("claude", "copilot") else None}
+    if t.get("handoff") and (t.get("resume") or t.get("history")):
+        files, note = t["handoff"]()
+        nt.update(files=list(t.get("files") or []) + files, prompt=t["prompt"] + note, handoff=None)
+    return nt
 
 
 def execute(t, key, where=None, on_iso=None):
@@ -58,17 +93,18 @@ def execute(t, key, where=None, on_iso=None):
     stopped halfway still leaves it findable. Returns {ok, worker, text, native_id, usage, secs, notes, iso, messages}.
     """
     t0, notes, iso, tried = time.time(), [], None, []
-    order = [] if t.get("resume") else fallbacks(t)  # a resumed conversation belongs to its worker
-    limited = usage.limits()
-    if t.get("worker") in limited:  # known to be out of quota: go straight to the next one, if there is one
-        nxt = next((f for f in order if f != t["worker"] and f not in limited), None)
+    # a conversation the worker holds natively moves only if the session can hand its transcript over
+    order = fallbacks(t) if not t.get("resume") or t.get("handoff") else []
+    held, here = usage.limits(), lane_key(t.get("worker"), t.get("model"))
+    if here in held:  # known to be out of quota, or logged out: go straight to the next one, if there is one
+        nxt = next(((w, m) for w, m in order if lane_key(w, m) != here and lane_key(w, m) not in held), None)
         if nxt:
-            until = time.strftime("%H:%M", time.localtime(limited[t["worker"]]))
-            notes.append(f"{t['worker']} is at a usage limit until {until}; used {nxt}")
-            t = {**t, "worker": nxt, "model": None,
-                 "session_id": str(uuid.uuid4()) if t.get("persist") and nxt in ("claude", "copilot") else None}
+            notes.append(f"{usage.describe(here)}; used {lane_key(*nxt)}")
+            tried.append(here)
+            t = switch(t, *nxt)
     while True:
         w, t1 = t.get("worker"), time.time()
+        k = lane_key(w, t.get("model"))
         try:
             if w not in ENABLED:
                 raise ValueError(f"unknown or unavailable worker {w!r}; available: {', '.join(ENABLED) or 'none'}")
@@ -85,31 +121,36 @@ def execute(t, key, where=None, on_iso=None):
                             on_iso(iso)
                 run_t = isolate.enter(run_t, iso)
             reply = ENABLED[w].fn(run_t, key)
-            res = {**reply, "ok": True, "worker": w, "text": (reply.get("text") or "").strip()}
-            usage.clear_limit(w)
+            res = {**reply, "ok": True, "worker": w, "model": t.get("model"), "text": (reply.get("text") or "").strip()}
+            usage.clear_limit(k, *([w] if usage.reasons().get(w) == "login" else []))  # it logs in again
         except Exception as e:
-            err = f"{type(e).__name__}: {e}"
-            wait = limited_for(err) if isinstance(e, RuntimeError) else None
-            if wait:
-                usage.mark_limited(w, wait)
-            res = {"ok": False, "worker": w, "text": err, "limited": bool(wait)}
+            err, why = f"{type(e).__name__}: {e}", None
+            if isinstance(e, RuntimeError):
+                wait = limited_for(err)
+                why = "limit" if wait else "login" if logged_out(err) else None
+                if why:
+                    usage.mark_limited(k, wait or LOGIN_PAUSE, why)
+            res = {"ok": False, "worker": w, "model": t.get("model"), "text": err, "limited": bool(why), "why": why}
         usage.log(worker=w, ok=res["ok"], secs=round(time.time() - t1, 1), limited=res.get("limited", False),
                   tokens=usage.tokens(res.get("usage")), chars=len(res["text"]))
         if res["ok"] or not res.get("limited"):
             break
-        tried.append(w)
-        nxt = next((f for f in order if f not in tried and f not in usage.limits()), None)
+        tried.append(k)
+        held = usage.limits()
+        nxt = next(((fw, fm) for fw, fm in order if lane_key(fw, fm) not in tried and lane_key(fw, fm) not in held), None)
         if not nxt:
+            if res["why"] == "login":
+                res["text"] += (f"\n\n[farmout] {w} isn't logged in, or its subscription ended. To use it again: "
+                                f"{SETUP.get(w, (None, 'log in again'))[1]}. `farmout doctor --live` checks every login.")
             break
-        notes.append(f"{w} hit a usage limit; retried on {nxt}")
+        notes.append(f"{usage.describe(k)}; retried on {lane_key(*nxt)}")
         if iso and iso is not where:  # a worktree this task made: the next worker starts from its base, not from
             try:                      # whatever the limited one had half done
                 isolate.reset(iso)
             except Exception as e:
-                notes.append(f"couldn't reset the worktree for {nxt} ({type(e).__name__}: {e}); stopped there")
+                notes.append(f"couldn't reset the worktree for {lane_key(*nxt)} ({type(e).__name__}: {e}); stopped there")
                 break
-        persist = t.get("persist") and nxt in ("claude", "copilot")
-        t = {**t, "worker": nxt, "model": None, "session_id": str(uuid.uuid4()) if persist else None}
+        t = switch(t, *nxt)
     if iso and res["ok"]:  # only the worker's own changes, ready for `git apply` in the user's tree
         try:
             stat = isolate.patch(iso)

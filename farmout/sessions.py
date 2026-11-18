@@ -86,7 +86,7 @@ def new_group(kind):
 
 
 def create(worker, cwd, name=None, write=False, isolate=False, model=None, effort=None, group=None, parent=None,
-           fork_of=None, fallback=None):
+           fork_of=None, fallback=None, lane=None):
     if worker not in ENABLED:
         raise ValueError(f"unknown or unavailable worker {worker!r}; available: {', '.join(ENABLED) or 'none'}")
     ROOT.mkdir(parents=True, exist_ok=True)
@@ -102,7 +102,7 @@ def create(worker, cwd, name=None, write=False, isolate=False, model=None, effor
     (d / "turns").mkdir()
     meta = {"name": name, "worker": worker, "cwd": os.path.realpath(os.path.expanduser(cwd or os.getcwd())),
             "write": bool(write or isolate), "isolate": bool(isolate), "model": model, "effort": effort,
-            "group": group, "parent": parent, "fork_of": fork_of, "fallback": fallback, "native_id": None,
+            "group": group, "parent": parent, "fork_of": fork_of, "fallback": fallback, "lane": lane, "native_id": None,
             "iso": None, "turns": 0, "created": time.time(), "last": None}
     save(meta)
     event(name, "SessionStart", {k: meta[k] for k in ("worker", "cwd", "write", "isolate", "group", "parent")})
@@ -151,8 +151,9 @@ def stash(text, kind="stdin"):
     return str(p)
 
 
-def post(name, prompt, files=(), attach=(), cwd=None):
-    """Queue a message. Relative files resolve against cwd; attach names sessions whose last output goes along."""
+def post(name, prompt, files=(), attach=(), cwd=None, switch=None):
+    """Queue a message. Relative files resolve against cwd; attach names sessions whose last output goes along.
+    switch {"worker", "model"} moves the conversation to that worker or model from this message on."""
     d = path(name)
     load(name)
     base = cwd or os.getcwd()
@@ -162,6 +163,8 @@ def post(name, prompt, files=(), attach=(), cwd=None):
         raise FileNotFoundError(", ".join(missing))
     files += [last_output(a) for a in attach]
     msg = {"id": uuid.uuid4().hex[:12], "prompt": prompt, "files": files, "posted": time.time()}
+    if switch:
+        msg["switch"] = {k: v for k, v in switch.items() if v}
     write_json(d / "inbox" / f"{time.time_ns()}-{msg['id']}.json", msg)
     event(name, "MessageReceived", {"message": msg["id"], "prompt": prompt, "files": files})
     return msg
@@ -245,9 +248,9 @@ def kick(name):
         spawn(["_runner", name], path(name) / "runner.log")
 
 
-def deliver(name, prompt, files=(), attach=(), cwd=None, wait=True, timeout=None):
+def deliver(name, prompt, files=(), attach=(), cwd=None, wait=True, timeout=None, switch=None):
     """Queue a message and start the runner; wait for the turn's record, or return the queued message."""
-    msg = post(name, prompt, files, attach, cwd)
+    msg = post(name, prompt, files, attach, cwd, switch)
     kick(name)
     return wait_msg(name, msg["id"], timeout) if wait else msg
 
@@ -305,12 +308,17 @@ def drain(name, key):
 
 def turn(name, msg, key, inbox_file=None):
     """Run one message through the session's worker, resuming its conversation. The turn is recorded before the
-    message leaves the inbox, so a crash in between can't lose it unseen (at most once, never silently)."""
+    message leaves the inbox, so a crash in between can't lose it unseen (at most once, never silently). A message
+    may move the conversation to another worker or model (msg["switch"]); so may a usage limit or a lost login,
+    when there's a worker to fall back to. Another worker gets the earlier turns as a file."""
     meta, d = load(name), path(name)
+    sw = msg.get("switch") or {}
+    worker = sw.get("worker") or meta["worker"]
+    model = sw.get("model") if sw.get("model") or worker != meta["worker"] else meta["model"]
     # after the newest turn file too: a runner killed between writing one and saving meta mustn't have it overwritten
     n = max([meta["turns"]] + [int(p.stem) for p in (d / "turns").glob("[0-9]*.json") if p.stem.isdigit()]) + 1
     rec = {"n": n, "id": msg["id"], "prompt": msg["prompt"], "files": msg.get("files") or [],
-           "worker": meta["worker"], "started": time.time(), "status": "running"}
+           "worker": worker, "started": time.time(), "status": "running"}
     write_json(d / "turns" / f"{n:04d}.json", rec)
     if inbox_file:
         inbox_file.unlink(missing_ok=True)
@@ -323,7 +331,7 @@ def turn(name, msg, key, inbox_file=None):
         save(m)
     t = {"worker": meta["worker"], "prompt": msg["prompt"], "files": rec["files"], "cwd": meta["cwd"],
          "write": meta["write"], "isolate": meta["isolate"], "model": meta["model"], "effort": meta["effort"],
-         "persist": True, "fallback": meta.get("fallback") if n == 1 else [], "session": name}
+         "persist": True, "fallback": meta.get("fallback"), "session": name, "handoff": handoff(name, n)}
     if meta["native_id"]:
         t["resume"] = meta["native_id"]
     elif meta.get("fork_of") and meta["worker"] == "claude":
@@ -332,11 +340,13 @@ def turn(name, msg, key, inbox_file=None):
         t["session_id"] = str(uuid.uuid4())
     if meta["worker"] == "api":
         t["history"] = read_json(d / "messages.json", [])
+    if (worker, model) != (meta["worker"], meta["model"]):
+        t = engine.switch(t, worker, model)
     where = meta["iso"] or ({"label": name, "branch": f"farmout/{name}"} if meta["isolate"] else None)
     try:
         res = engine.execute(t, key, where, on_iso=keep_iso)
     except Exception as e:  # a bug or an I/O error: record it, and the runner goes on to the next message
-        res = {"ok": False, "worker": meta["worker"], "text": f"{type(e).__name__}: {e}", "notes": [], "iso": None,
+        res = {"ok": False, "worker": worker, "text": f"{type(e).__name__}: {e}", "notes": [], "iso": None,
                "secs": round(time.time() - rec["started"], 1)}
     except BaseException:  # stopped
         rec.update(status="stopped", ended=time.time())
@@ -349,17 +359,48 @@ def turn(name, msg, key, inbox_file=None):
     out.write_text(res["text"])
     meta = load(name)
     if res["ok"]:
-        meta["native_id"] = res.get("native_id") or meta["native_id"]
-        meta["worker"] = res["worker"]  # it changes after a fallback
+        if res["worker"] != meta["worker"]:  # the conversation moved: what the old worker held is left behind
+            meta.update(native_id=res.get("native_id"), fork_of=None)
+            (d / "messages.json").unlink(missing_ok=True)
+        else:
+            meta["native_id"] = res.get("native_id") or meta["native_id"]
+        meta["worker"], meta["model"] = res["worker"], res.get("model")
         if res.get("messages"):
             write_json(d / "messages.json", res["messages"])
     meta["iso"] = res.get("iso") or meta["iso"]
     rec.update(status="ok" if res["ok"] else "failed", ended=time.time(), secs=res["secs"], worker=res["worker"],
-               notes=res["notes"], output=str(out), patch=(res.get("iso") or {}).get("patch") if res["ok"] else None)
+               model=res.get("model"), notes=res["notes"], output=str(out),
+               patch=(res.get("iso") or {}).get("patch") if res["ok"] else None)
     write_json(d / "turns" / f"{n:04d}.json", rec)
     meta["last"] = {"n": n, "status": rec["status"], "ended": rec["ended"]}
     save(meta)
     return rec
+
+
+def handoff(name, n):
+    """For turn n, if it moves to another worker: () -> (files, note). The files hold the conversation so far (a
+    native fork's parent conversation first), and the note, added to the message, points the new worker at them."""
+    def give():
+        meta = load(name)
+        parts = []
+        if meta.get("fork_of") and meta.get("parent"):
+            try:
+                parts.append(transcript(meta["parent"]))
+            except (KeyError, OSError, ValueError):
+                pass
+        parts.append(transcript(name, before=n))
+        text = "\n".join(p for p in parts if p.strip())
+        files = [str(path(name) / "context.md")] if (path(name) / "context.md").exists() else []
+        if text:
+            ctx = path(name) / f"context-{n:04d}.md"
+            ctx.write_text(text)
+            files.append(str(ctx))
+        if not files:
+            return [], ""
+        listed = ", ".join(Path(f).name for f in files)
+        return files, (f"\n\nContext: this message continues an earlier conversation (with {meta['worker']}), "
+                       f"which is in the listed file{'s' * (len(files) > 1)} {listed}. Read it first.")
+    return give
 
 
 def runner_main(name):
@@ -396,9 +437,12 @@ def remove(name):
     shutil.rmtree(path(name))
 
 
-def transcript(name):
+def transcript(name, before=None):
+    """The conversation as Markdown; before=n stops at turn n."""
     parts = []
     for r in turns(name):
+        if before is not None and r["n"] >= before:
+            break
         out = Path(r["output"]).read_text() if r.get("output") and os.path.exists(r["output"]) else ""
         parts.append(f"## Turn {r['n']} ({r.get('worker')}, {r['status']})\n\n### Prompt\n\n{r['prompt']}\n\n### Reply\n\n{out}\n")
     return "\n".join(parts)

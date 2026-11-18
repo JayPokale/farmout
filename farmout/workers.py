@@ -4,6 +4,7 @@
 Task keys: prompt, files, cwd, write, model, effort, web (False: no web tools), timeout; for sessions also
 persist (keep the CLI's session), session_id (a new id to create), resume (an id to continue), fork (claude).
 """
+import datetime
 import json
 import os
 import re
@@ -11,6 +12,7 @@ import shutil
 import tempfile
 import urllib.error
 import urllib.request
+import zoneinfo
 from collections import namedtuple
 from pathlib import Path
 
@@ -23,6 +25,12 @@ CLAUDE_MAIN = not CLAUDE_DIR and os.environ.get("FARMOUT_CLAUDE_MAIN") == "1" an
 API_BASE, API_MODEL, API_KEY = (os.environ.get(f"FARMOUT_API_{k}") for k in ("BASE", "MODEL", "KEY"))
 AGY_ANSWER = ("\n\nReply with the complete answer itself in this message. "
               "Do not write a plan, create files or ask for approval.")
+
+
+def lane(text):
+    """`codex` or `claude:opus` -> (worker, model or None); an api model may hold colons (`api:qwen3:32b`)."""
+    worker, _, model = text.partition(":")
+    return worker, model or None
 
 
 def opt(flag, value):
@@ -60,6 +68,10 @@ def antigravity(t, key):
     cmd += dirs + opt("--model", t.get("model")) + opt("--effort", t.get("effort")) + opt("--conversation", t.get("resume"))
     res = parse_json(run(cmd, key, cwd, timeout=t.get("timeout")))
     text = res.get("response") or ""
+    if res.get("status") == "SUCCESS" and not text.strip() and not t.get("write"):  # nothing to show for the run
+        denied = ", ".join(str(d.get("action")) for d in res.get("denied_actions") or [] if isinstance(d, dict))
+        raise RuntimeError("agy returned an empty answer" + (f" (it wanted a tool headless mode denies: {denied})"
+                                                             if denied else ""))
     if res.get("status") != "SUCCESS":
         if not text.strip() or t.get("write"):  # a write task that ended in ERROR may have edited only half
             raise RuntimeError(json.dumps(res)[:1500])
@@ -228,12 +240,76 @@ SETUP = {  # name: (executable, how to enable), for `doctor`
 }
 
 LIMIT = re.compile(r"rate[ _-]?limit|usage limit|quota|too many requests|\b429\b|resource[ _-]?exhausted|"
-                   r"limit (?:reached|exceeded)|out of credits|credits? (?:exhausted|exceeded)|try again (?:in|at|later)", re.I)
+                   r"limit (?:reached|exceeded)|hit your (?:\w+ )?limit|out of credits|credits? (?:exhausted|exceeded)|"
+                   r"allowance|try again (?:in|at|later)", re.I)
+# Not logged in, a login that expired, or a subscription that ended: the worker can't run until you log in again.
+LOGIN = re.compile(r"not logged in|log ?in (?:required|first|again)|please (?:run )?/?log ?in|sign ?in (?:required|first|"
+                   r"again)|\b401\b|unauthori[sz]ed|no authentication|authentication (?:failed|required|error)|"
+                   r"invalid (?:api[ _-]?key|credentials|(?:access |auth )?token)|(?:token|session|credentials?|login) "
+                   r"(?:has )?expired|subscription (?:has )?(?:expired|ended|lapsed|inactive|is not active)|"
+                   r"no active subscription|credit balance is too low", re.I)
+UNITS = {"w": 604800, "d": 86400, "h": 3600, "m": 60, "s": 1}
+SPAN = re.compile(r"(\d+(?:\.\d+)?)\s*(w(?:eeks?)?|d(?:ays?)?|h(?:(?:ou)?rs?)?|m(?:in(?:ute)?s?)?|s(?:ec(?:ond)?s?)?)\b",
+                  re.I)
+WAIT = re.compile(r"(?:try again|retry|resets?|available again|wait)\s+(?:in|after)\s+"
+                  r"((?:\d+(?:\.\d+)?\s*[a-z]+[,\s]*(?:and\s+)?)+)", re.I)
+AT = re.compile(r"(?:resets?|try again|available again)\b(.{0,60})", re.I | re.S)
+DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+def reset_in(error, now=None):
+    """Seconds until a limit resets, read from the error's wording, or None. Understands durations ("try again in
+    4 days 2 hours", "retry in 32.5s"), a Unix time after a | ("usage limit reached|1763467200"), an ISO time, and a
+    clock time with an optional weekday and time zone ("resets 3pm (Asia/Kolkata)", "try again at 3:04 PM")."""
+    now = now or datetime.datetime.now().astimezone()
+    m = WAIT.search(error)
+    if m and SPAN.search(m.group(1)):
+        return sum(float(n) * UNITS[u[0].lower()] for n, u in SPAN.findall(m.group(1)))
+    m = re.search(r"\|(\d{10})\b", error)
+    if m:
+        return int(m.group(1)) - now.timestamp()
+    m = AT.search(error)
+    if not m:
+        return None
+    tail = m.group(1)
+    iso = re.search(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?", tail)
+    if iso:
+        try:
+            when = datetime.datetime.fromisoformat(iso.group(0).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return (when if when.tzinfo else when.astimezone()).timestamp() - now.timestamp()
+    clock = (re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\b\.?", tail, re.I)
+             or re.search(r"\b(\d{1,2}):(\d{2})\b()", tail))
+    if not clock:
+        return None
+    hour, minute = int(clock.group(1)) % 24, int(clock.group(2) or 0)
+    if clock.group(3):
+        hour = hour % 12 + (12 if clock.group(3).lower() == "p" else 0)
+    zone = re.search(r"\(([A-Za-z_]+(?:/[A-Za-z_+-]+)+|UTC)\)", tail)
+    if zone:
+        try:
+            now = now.astimezone(zoneinfo.ZoneInfo(zone.group(1)))
+        except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+            pass
+    when = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    day = re.search(r"\b(" + "|".join(DAYS) + r")[a-z]*\b", tail, re.I)
+    if day:
+        when += datetime.timedelta(days=(DAYS.index(day.group(1).lower()) - when.weekday()) % 7)
+    while when <= now:
+        when += datetime.timedelta(days=7 if day else 1)
+    return (when - now).total_seconds()
 
 
 def limited_for(error):
-    """Seconds to leave a worker alone if its error says the subscription hit a limit, else None."""
+    """Seconds to leave a worker alone if its error says the subscription hit a limit, else None: until the reset
+    time the error names (at least a minute, at most 8 days), otherwise 15 minutes."""
     if not LIMIT.search(error):
         return None
-    m = re.search(r"try again in (\d+)\s*(second|minute|hour|day)", error, re.I)
-    return int(m.group(1)) * {"second": 1, "minute": 60, "hour": 3600, "day": 86400}[m.group(2).lower()] if m else 900
+    secs = reset_in(error)
+    return 900 if secs is None else round(min(max(secs, 60), 8 * 86400))
+
+
+def logged_out(error):
+    """True if the error says the worker isn't logged in, its login expired or its subscription ended."""
+    return bool(LOGIN.search(error))
