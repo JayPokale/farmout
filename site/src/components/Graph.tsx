@@ -34,6 +34,7 @@ export default function Graph() {
             muted
             loop
             playsInline
+            controls
             preload="metadata"
             aria-label="A real run of farmout ui: a conversation that began on Claude and went on on Codex; the user branches off turn 1 onto Copilot, and its answer lands in a lane of its own beside the others"
           />
