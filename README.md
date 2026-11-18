@@ -143,7 +143,7 @@ Messages go through an inbox. The session's runner, a background process that ho
 
 ## Pipelines
 
-A pipeline is a list of stages in a `.toml` (Python 3.11+) or `.json` file in `<repo>/.farmout/pipelines/` or `~/.config/farmout/pipelines/`. Each stage runs a skill (`review`, `ask`, `race`) or sends its prompt to one or more workers, and starts when the previous one ends.
+A pipeline is a list of stages in a `.toml` (Python 3.11+) or `.json` file in `<repo>/.farmout/pipelines/` or `~/.config/farmout/pipelines/`. Each stage runs a skill (`review`, `ask`, `race`) or sends its prompt to one or more workers, and starts when the previous one ends. Names resolve to yours first, then the built-ins, then the project's: a repository can add pipelines but can't take over `fix`, `spec` or yours. A project's pipeline runs the `test` commands it contains, like a Makefile, so read it before you run it.
 
 ```toml
 description = "Plan with Claude, build with Codex in a worktree, ship after I approve"

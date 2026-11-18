@@ -79,3 +79,10 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 - A review finding that copied the brief's placeholder (`path:163 | high | ...`) cited a missing file and was dropped, though it named the bug. The brief asks for the real path now, and a placeholder path means the changed file when there's only one.
 - `farmout fix-pr` treated CI bots' reports (bundle size, benchmarks), the pull request author's own replies and approving reviews as problems to fix, and failed on more than one page of comments.
 - An isolated `delegate` result left its worktree and branch behind with no hint; it now names the commands that remove them.
+- A cloned repository's `.farmout/pipelines/fix.json` replaced the built-in `fix` pipeline, test command included. Pipeline names now resolve to yours, then the built-ins, then the project's.
+- Pipelines: `{item}` in a foreach stage's test, files or workers passed validation but never worked; `workers = "codex"` was read letter by letter; a stage running your skill left the pipeline's own `test` unsubstituted; resuming kept a later stage's approval although its input was about to change; a skill in ask mode failed when one worker did.
+- Stopping, cancelling or timing out a worker left children that ignore TERM (or outlive the CLI) running; what's left of the process group is now killed after 10 seconds (3 at shutdown).
+- Antigravity sometimes ends with status ERROR after writing its whole answer; farmout discarded the answer, and now keeps it with a note.
+- A malformed `notifications/cancelled` (params not an object, a list as requestId) crashed the MCP server.
+- A project's hooks were trusted by hashing the settings file in one read and parsing it in another; both now use one read. Store and skill installs stage in a fresh private folder instead of a fixed `.<name>.new`.
+- Python 3.9 and 3.10 couldn't read the settings the leaderboard writes into each copy (TOML needs 3.11); they're JSON now. On Windows, farmout says it needs Linux, macOS or WSL instead of failing on an import.
