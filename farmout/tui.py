@@ -32,7 +32,8 @@ HELP = [("↑↓ j k", "move"), ("← → h l", "fold, unfold; ← also goes up 
         ("o O", "open the turn, or its whole conversation, in your pager"),
         ("y · d", "copy the answer; an isolated session's patch in your pager"),
         ("D", "delete a conversation or branch, with the branches off it"),
-        ("a · f", "review, ask and race runs too; only this project's"), ("r · q", "reload; quit")]
+        ("a · f", "review, ask and race runs too; only this project's"),
+        ("S · r · q", "what each subscription did this week; reload; quit")]
 
 
 class Canvas:
@@ -447,9 +448,9 @@ class App:
                "e": lambda: self.compose("edit"), "R": lambda: self.compose("retry"), "n": lambda: self.compose("new"),
                "x": self.stop,
                "/": self.find, "o": self.page, "O": self.whole, "y": self.yank, "d": self.patch, "D": self.delete,
-               "a": self.all_runs, "f": self.here_only, "u": self.next_new, "r": self.load, "?": self.open_help,
-               "q": self.quit}.get(k)
-        if act and (node or k in ("n", "a", "f", "u", "r", "?", "q")):
+               "a": self.all_runs, "f": self.here_only, "u": self.next_new, "S": self.stats, "r": self.load,
+               "?": self.open_help, "q": self.quit}.get(k)
+        if act and (node or k in ("n", "a", "f", "u", "S", "r", "?", "q")):
             act()
 
     def move(self, d):
@@ -543,6 +544,17 @@ class App:
         if row["kind"] != "turn":
             return self.say("Pick a turn to open", "dim")
         self.external = ("pager", clean("\n".join("".join(t for t, _ in line) for line in self.reading(row, 100))))
+
+    def stats(self):
+        """What each subscription did this week, at a limit or not: `farmout stats`, in your pager."""
+        import contextlib
+        import io
+        import types
+        from . import cli
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.cmd_stats(types.SimpleNamespace(days=7, json=False))
+        self.external = ("pager", clean(out.getvalue()))
 
     def whole(self):
         node = self.row()["node"]

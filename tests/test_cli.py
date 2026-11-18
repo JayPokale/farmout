@@ -2221,6 +2221,13 @@ class TerminalUiTest(CliBase):
                          size=(90, 30))
         self.assertIn("t answered turn 3: u goes there", later, "said once the message box closes")
 
+    def test_s_shows_what_each_subscription_did(self):
+        self.fo("run", "codex", "say one", "-n", "t")
+        kind, text = json.loads(self.ui("S", ["external"])[0])
+        self.assertEqual(kind, "pager")
+        self.assertIn("Last 7 days", text)
+        self.assertRegex(text, r"codex\s+1\s+1\s+0")
+
     def test_an_empty_ui_says_where_to_start(self):
         screen, = self.ui(["screen"])
         self.assertIn("Start here", screen)

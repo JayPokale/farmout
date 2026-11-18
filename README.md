@@ -182,7 +182,7 @@ dates · claude · 2m ago
 | `↑` `↓` (`j` `k`, the mouse) | move; `←` `→` fold and unfold a branch; `⏎` reads a turn |
 | `c` · `b` · `e` · `R` | continue from the newest turn · branch off this one · ask this one again differently, on the same worker or another · send a failed newest turn again |
 | `n` · `x` | a new conversation · stop a running turn |
-| `f` | only this project's conversations, or every folder's |
+| `f` · `S` | only this project's conversations, or every folder's · what each subscription did this week (`farmout stats`) |
 | `/` · `u` | find a question, a name, or words in an answer · go to the next answer you haven't read (the header counts them, and new ones are tagged) |
 | `o` · `O` | this turn · its whole conversation, in your pager |
 | `y` · `d` · `D` | copy the answer · an isolated session's patch · delete the conversation or branch, with the branches off it |
