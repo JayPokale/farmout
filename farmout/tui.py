@@ -15,7 +15,7 @@ import sys
 import tempfile
 import time
 
-from . import config, flows, graph, sessions, ui, usage
+from . import config, engine, flows, graph, sessions, ui, usage
 from .graph import ago, clean, clip, cols, lane, short, take
 
 SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -560,7 +560,13 @@ class App:
         if mode == "new":
             if not self.workers:
                 return self.say("No worker is set up here: `farmout doctor` says why", "err")
-            worker = row["node"]["worker"] if row and row["node"]["worker"] in self.workers else self.workers[0]
+            worker = row["node"]["worker"] if row else None
+            if worker not in self.workers or self.out(worker):  # none picked yet, or it can't answer now
+                try:  # what `farmout run auto` picks: this repo's fallback order first, skipping workers that are out
+                    w, m = engine.auto_worker(self.here)
+                    worker = f"{w}:{m}" if m else w
+                except ValueError:
+                    worker = self.workers[0]
             box = {"session": None, "n": None, "lane": Field(worker), "choices": self.workers,
                    "title": f"New conversation in {short(self.here)}"}
         else:

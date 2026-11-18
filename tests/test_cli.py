@@ -2130,6 +2130,15 @@ class TerminalUiTest(CliBase):
         self.assertIn("│ fresh", back)
         self.assertNotIn("│ other", back, "not the deleted branch's answer, cached under the same name")
 
+    def test_a_new_conversation_starts_on_a_worker_that_can_answer(self):
+        self.fo("run", "codex", "say one", "-n", "t")
+        same, = self.ui("n", ["screen"])
+        self.assertIn(" on codex ", same, "the conversation you're on suggests its worker")
+        (self.state / "limits.json").write_text(json.dumps({"codex": {"until": time.time() + 900, "why": "limit"}}))
+        out, = self.ui("n", ["screen"])
+        self.assertNotIn(" on codex ", out, "not one at its limit")
+        self.assertRegex(out, r" on (antigravity|claude|copilot) ")
+
     def test_a_limit_days_away_says_the_day(self):
         self.fo("run", "codex", "say one", "-n", "t")
         later = time.time() + 3 * 86400

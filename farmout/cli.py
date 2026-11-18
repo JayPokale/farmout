@@ -112,20 +112,6 @@ def picked(asked, cwd=None):
     return ready
 
 
-def auto_worker(cwd):
-    """(worker, model) for `farmout run auto`: the first allowed lane that isn't at a usage limit or logged out,
-    your fallback order first (`farmout bench --apply` writes it best-first), then every other worker."""
-    s, held, why = settings(cwd), usage.limits(), usage.reasons()
-    allowed = [lane(x) for x in (s.get("fallback") or []) + list(ENABLED)]
-    allowed = [(w, m) for w, m in allowed if w in ENABLED and w in s.get("workers", ENABLED)]
-    pick = next(((w, m) for w, m in allowed if w != "api" and not engine.held_by(engine.lane_key(w, m, s), w, held, why)),
-                None)
-    pick = pick or next(iter(allowed), None)
-    if not pick:
-        raise ValueError("no allowed workers available here (`farmout doctor`, .farmout/settings)")
-    return pick
-
-
 def show_turn(a, name, rec):
     text = flows.text(rec)
     if a.json:
@@ -156,7 +142,7 @@ def send_and_show(a, name, prompt, files, attach=(), switch=None, note=None):
 
 def cmd_run(a):
     prompt, extra = read_prompt(a.prompt, cwd=a.cwd)
-    worker, model = auto_worker(a.cwd) if a.worker == "auto" else lane(a.worker)
+    worker, model = engine.auto_worker(a.cwd) if a.worker == "auto" else lane(a.worker)
     check_workers([worker])
     meta = sessions.create(worker, a.cwd, name=a.name, write=a.write, isolate=a.isolate, model=a.model or model,
                            effort=a.effort, fallback=None if a.fallback is None else split(a.fallback))

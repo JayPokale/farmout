@@ -164,7 +164,7 @@ def run(skill, cwd, args="", workers=None, files=(), write=None, isolate=None, t
     if mode == "race":
         return mode, flows.race(cwd, prompt, names or flows.default_workers(), test=option(skill, "test", test),
                                 group=group, files=files)
-    from .cli import auto_worker
+    from .engine import auto_worker
     names = names or [auto_worker(cwd)]
     m = option(skill, "model", model)
     return mode, (group, flows.fan(group, names, cwd, prompt, files, write=bool(option(skill, "write", write)),

@@ -80,6 +80,20 @@ def fallbacks(t):
     return out
 
 
+def auto_worker(cwd):
+    """(worker, model) for `farmout run auto`: the first allowed lane that isn't at a usage limit or logged out,
+    your fallback order first (`farmout bench --apply` writes it best-first), then every other worker."""
+    s, held, why = settings(cwd), usage.limits(), usage.reasons()
+    allowed = [lane(x) for x in (s.get("fallback") or []) + list(ENABLED)]
+    allowed = [(w, m) for w, m in allowed if w in ENABLED and w in s.get("workers", ENABLED)]
+    pick = next(((w, m) for w, m in allowed if w != "api" and not held_by(lane_key(w, m, s), w, held, why)),
+                None)
+    pick = pick or next(iter(allowed), None)
+    if not pick:
+        raise ValueError("no allowed workers available here (`farmout doctor`, .farmout/settings)")
+    return pick
+
+
 def switch(t, worker, model):
     """The task moved to another lane. The same worker keeps its conversation and only changes model. Another
     worker can't resume what this one holds, so it starts a conversation of its own and gets the earlier turns as
