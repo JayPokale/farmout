@@ -121,11 +121,12 @@ export default function Terminal() {
 
   return (
     <section id="demo" className="mx-auto max-w-6xl px-5 py-28">
-      <SectionHead eyebrow="See it work" title="One command. Four subscriptions. One answer.">
+      <SectionHead eyebrow="See it work" title="Real runs, unedited.">
+        When Claude is out, <code className="font-mono text-fg">farmout send</code> gives the next turn to
+        another subscription with the conversation so far.{" "}
         <code className="font-mono text-fg">farmout review</code> hands your uncommitted change to every
-        subscription you have, at once and read-only, then merges what they found into one table.{" "}
-        <code className="font-mono text-fg">farmout race</code> has each one fix a bug in its own worktree
-        and lets your tests pick the winner. Both are the unedited output of real runs; only the wait is
+        subscription you have, at once and read-only, and merges what they found;{" "}
+        <code className="font-mono text-fg">farmout race</code> lets your tests pick a fix. Only the wait is
         sped up.
       </SectionHead>
 

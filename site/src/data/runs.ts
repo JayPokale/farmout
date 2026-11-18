@@ -6,6 +6,8 @@
 // race:   `farmout race` on a two-file repo whose retry() fails three tests.
 // Both: farmout 0.1.0 (with the review merge fixed while recording these), Arch Linux, agy 1.4.6, codex-cli 0.163.0, Claude Code
 // 2.1.323, Copilot CLI 1.0.112, 2026-11-17. COLUMNS=120.
+// limit:  turn 2 of a conversation begun on Claude (`farmout run claude "Plan a cache for get_product(): TTL,
+//   invalidation. 3 bullets" -n cache`), sent with Claude logged out (an empty login folder), 2026-11-18.
 
 export type Run = {
   id: string;
@@ -17,6 +19,15 @@ export type Run = {
 };
 
 export const RUNS: Run[] = [
+  {
+    id: "limit",
+    label: "out of Claude",
+    cmd: 'FARMOUT_CLAUDE_DIR=$(mktemp -d) farmout send cache "Which TTL did we pick? Why? One line"',
+    secs: 11,
+    note: "Turn 1 of this conversation ran on Claude, which planned a 5-minute TTL with ±10% jitter. For turn 2 Claude was logged out (an empty login folder), so farmout gave the turn to Codex, the next worker in this repository's fallback order, with the conversation so far as a file. Codex answered from it. A usage limit is handled the same way, and farmout leaves the worker alone until the reset time it reported.",
+    out: `5 minutes (+/-10% jitter): limits price/stock staleness while TTL backs up write-path invalidation.
+[cache · turn 2 · codex · ok · 10.9s] claude isn't logged in, or its subscription ended (farmout retries it after 23:51); retried on codex`,
+  },
   {
     id: "review",
     label: "review",
