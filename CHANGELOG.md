@@ -69,6 +69,8 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 ### Fixed
 
 - `farmout rm` (and `rm --idle`) stopped at the first session it couldn't remove; it now says why for that one, removes the rest, and exits with 1.
+- A removal that failed partway (a file that wouldn't delete) left half a session that `farmout rm` could no longer see or retry. A session's folder now moves to the state folder's trash in one step before it's deleted, under the session's runner lock, and a session with messages waiting, or branches working in its worktree, isn't removed at all.
+- `farmout doctor` said fallback was off when the repository's settings file couldn't be read; it says the settings can't be read, and why.
 - A Claude login folder with nothing in it (logged out) first reads as "no conversation found" on a resume; the turn's notes said "claude couldn't find its own conversation" before the real reason. They now say only that claude isn't logged in, and where the turn went.
 - `farmout tree` and `ui` drew a row a column short when a question or answer held an emoji with a variation selector (⚠️), a zero-width joiner or an enclosing mark, pushing the right border in; they also drop bidirectional overrides now.
 - `farmout ui` without `TERM`, with one the system doesn't know, or on a "dumb" terminal printed a curses traceback or scribbled on one line; it now says what to try and exits with 2.
