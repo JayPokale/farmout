@@ -7,7 +7,7 @@
 ## Checklist
 
 - [ ] `python3 -m unittest discover -s tests -v` passes
-- [ ] `server.py` is still one file, standard library only, under 400 lines
+- [ ] Standard library only, at runtime and in tests
 - [ ] Read-only is still the default; new or changed worker flags are in the README Safety table
 - [ ] Worker changes: OS and CLI versions tested, plus `tests/smoke.py` output below
 - [ ] CHANGELOG entry under Unreleased
