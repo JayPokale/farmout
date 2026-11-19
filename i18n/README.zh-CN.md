@@ -408,7 +408,7 @@ farmout 在你的机器上以你的登录身份，按各厂商文档中说明的
 - **Claude Code 拒绝修改 `.git` 下的内容**，即使 worktree 就放在那里面也不行，所以 worktree 都放在 `<repo>/.farmout/worktrees/`。
 - **模型引用路径时，是相对于它自认为所在的目录**（把 `pkg/cli.py` 写成 `cli.py`），而且除非另有说明，给出的行号是 `.diff` 文件内的行号。farmout 的审查任务说明会要求给出当前文件中的行号，它的引用检查也接受唯一的后缀匹配。
 
-测试环境：Arch Linux 上的 agy 1.4.6、codex-cli 0.163.0、Claude Code 2.1.323、GitHub Copilot CLI 1.0.112 和 Python 3.14（2026 年 11 月）；离线测试套件在 Python 3.9 和 3.12 上也能通过。这些 CLI 变化很快，如果某个 worker 出了问题，请提交 issue 并附上你的 CLI 版本。`deepseek` worker 尚处于实验阶段：它的参数依据 DeepSeek Harness 0.2.2 的文档编写，还没经过真正的冒烟测试。
+测试环境：Arch Linux 上的 agy 1.4.6、codex-cli 0.163.0、Claude Code 2.1.323、GitHub Copilot CLI 1.0.114 和 Python 3.14（2026 年 11 月）；离线测试套件在 Python 3.9 和 3.12 上也能通过。这些 CLI 变化很快，如果某个 worker 出了问题，请提交 issue 并附上你的 CLI 版本。`deepseek` worker 尚处于实验阶段：它的参数依据 DeepSeek Harness 0.2.2 的文档编写，还没经过真正的冒烟测试。
 
 ## 配置
 
