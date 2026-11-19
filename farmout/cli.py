@@ -361,6 +361,7 @@ def print_turn(r):
 
 
 def cmd_log(a):
+    sessions.load(a.session)  # a mistyped name isn't an empty conversation
     recs = sessions.turns(a.session)
     recs = recs[-1:] if a.last else recs
     if a.json:
@@ -412,6 +413,8 @@ def cmd_attach(a):
 
 def cmd_wait(a):
     rc, out = 0, []
+    for name in a.sessions or []:  # a mistyped name isn't a session that's done: say so before waiting on any
+        sessions.load(name)
     names = a.sessions or [n for n in sessions.names() if sessions.busy(n) or sessions.pending(n)]
     if not names:
         return print("Nothing is running.")

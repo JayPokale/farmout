@@ -160,6 +160,8 @@ class SessionTest(CliBase):
         self.assertIn("bad session name", self.fo("run", "codex", "x", "-n", "../evil", rc=1).stderr)
         self.assertIn("already exists", self.fo("run", "codex", "x", "-n", "j", rc=1).stderr)
         self.assertIn("no session named 'ghost'", self.fo("send", "ghost", "x", rc=1).stderr)
+        for cmd in (("log", "ghost"), ("log", "ghost", "--json"), ("wait", "ghost")):  # not empty, not finished
+            self.assertIn("no session named 'ghost'", self.fo(*cmd, rc=1).stderr)
 
     def test_busy_session_queues_messages_in_order(self):
         self.fo("run", "codex", "nap 1", "-n", "q", "--bg")
