@@ -2759,6 +2759,26 @@ class BenchCopyTest(unittest.TestCase):
         self.assertTrue((wt / "tests" / "test_regression.py").exists(), "export-ignore is for tarballs, not reviews")
         self.assertEqual((wt / "VERSION").read_text(), "$Format:%H$\n", "as the commit has it")
 
+    def test_a_fresh_copy_needs_no_working_git_lfs(self):
+        from unittest import mock
+        from farmout import bench
+        pointer = "version https://git-lfs.github.com/spec/v1\noid sha256:" + "0" * 64 + "\nsize 3\n"
+        (self.top / ".gitattributes").write_text("*.bin filter=lfs diff=lfs merge=lfs -text\n")
+        (self.top / "data.bin").write_text(pointer)
+        self.git("add", ".")
+        self.git("commit", "-qm", "track data in LFS")
+        (self.top / "m.py").write_text((self.top / "m.py").read_text().replace("return a / b", "return a / float(b)"))
+        self.git("commit", "-qam", "fix integer division in ratio")
+        c = bench.candidates(str(self.top), 5)[0]
+        broken = self.tmp / "gitconfig"  # git-lfs set up, but its program gone: every LFS filter run fails
+        broken.write_text('[filter "lfs"]\n\tclean = false\n\tsmudge = false\n\tprocess = false\n\trequired = true\n')
+        wt = self.tmp / "wt-lfs"
+        with mock.patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": str(broken)}):
+            bench.prepare(str(self.top), c, wt, fresh=True)
+            self.assertIn("m.py", bench.changed_lines(str(wt)), "git in the copy works afterwards too")
+        self.assertEqual((wt / "data.bin").read_text(), pointer, "LFS files stay pointers")
+        self.assertIn("return a / b\n", (wt / "m.py").read_text(), "the fix is undone")
+
     def test_one_fix_that_wont_undo_doesnt_lose_the_others(self):
         from unittest import mock
         from farmout import bench

@@ -35,6 +35,8 @@ DOC = re.compile(r"(^|/)(docs?|changelog\.?d?|changes|news|releases?)/|\.(md|rst
 NEAR = 3
 RAW = ("-c", "core.quotePath=false")  # non-ASCII file names as they are, not "caf\303\251.py"
 SNAPSHOT = ("-c", "user.name=farmout", "-c", "user.email=farmout@localhost", "-c", "core.hooksPath=/dev/null")
+# Git LFS off in a fresh copy: its files stay pointers, so making or using one never downloads or needs git-lfs
+NO_LFS = {"smudge": "", "clean": "", "process": "", "required": "false"}
 
 def candidates(top, n, scan=400, since=None):
     """Up to n recent commits that look like small bug fixes in code: a fix-like subject and 1-80 changed lines in at
@@ -91,13 +93,15 @@ def prepare(top, c, wt, fresh=False, settings=None):
     if fresh:
         wt.mkdir(parents=True)
         # The commit's files as a checkout writes them (`git archive` would drop export-ignore files and fill in
-        # export-subst ones); Git LFS files stay pointers, so preparing never downloads.
+        # export-subst ones)
         with tempfile.TemporaryDirectory() as tmp:
             env = {**os.environ, "GIT_INDEX_FILE": os.path.join(tmp, "index")}
+            lfs_off = [x for k, v in NO_LFS.items() for x in ("-c", f"filter.lfs.{k}={v}")]
             for args in (["read-tree", c["sha"]], ["checkout-index", "-a", "-f"]):
-                git(top, "-c", "filter.lfs.smudge=", "-c", "filter.lfs.process=", "-c", "filter.lfs.required=false",
-                    "--work-tree", str(wt), *args, env=env)
+                git(top, *lfs_off, "--work-tree", str(wt), *args, env=env)
         git(wt, "init", "-q")
+        with open(wt / ".git" / "config", "a") as f:  # for every git command in the copy, the reviewers' too
+            f.write('[filter "lfs"]\n' + "".join(f"\t{k} = {v}\n" for k, v in NO_LFS.items()))
         git(wt, "add", "-A", "-f")
         git(wt, *SNAPSHOT, "commit", "-q", "--no-verify", "-m", "snapshot")
     else:
