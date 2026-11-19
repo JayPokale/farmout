@@ -180,10 +180,11 @@ dates · claude · 2m ago
 | `↑` `↓`（`j` `k`、鼠标） | 移动；`J` `K` 在对话之间跳转；`←` `→` 折叠、展开分支；`⏎` 阅读这一轮 |
 | `c` · `b` · `e` · `R` | 从最新一轮继续 · 从这一轮分叉 · 把这一轮换个问法再问，用同一个 worker 或换一个 · 把失败的最新一轮再发一次 |
 | `n` · `x` | 新对话 · 停止正在运行的一轮 |
-| `f` · `S` | 只看这个项目的对话，或所有文件夹的 · 每个订阅这一周做了什么（`farmout stats`） |
+| `a` · `f` · `S` | 也显示审查、提问和竞速的运行（默认隐藏） · 只看这个项目的对话，或所有文件夹的 · 每个订阅这一周做了什么（`farmout stats`） |
 | `/` · `u` | 查找问题、名称或回答里的词 · 跳到下一条你还没读的回答（标题栏会计数，新的回答带有标记） |
 | `o` · `O` | 在分页器里打开这一轮 · 整段对话 |
 | `y` · `d` · `D` | 复制回答 · 隔离会话的补丁 · 删除这段对话或分支，连同从它分出的分支 |
+| `Tab` · `g` `G` · `r` · `?` · `q` | 在图和阅读区之间切换 · 第一行、最后一行 · 重新加载 · 查看这些按键 · 退出 |
 
 问题和回答显示前会去掉转义序列和控制字符，所以 worker 的输出改不了你的终端。`farmout ui --web` 在浏览器里显示同样的内容：这个页面只监听 127.0.0.1，并且需要它打印的地址里带的密钥，所以你访问的其他网站用不了它。
 
@@ -287,7 +288,7 @@ timeout = 30
 
 `farmout bench -n 3` 会在你的提交历史中找出最近的小型 bug 修复提交（标题像是修复，最多 4 个源码文件、1 到 80 行改动，除此之外只改了测试和文档），在临时 worktree 里撤销每次修复的代码，让 bug 以未提交改动的形式回到它真实所在的代码库，再让每个 worker 审查；只要某个 worker 有一条发现落在改动处的 3 行以内，就给它计分。修复附带的测试和 changelog 保持原样，临时副本的提交历史也不会出现这次修复，所以 diff 里没有任何东西会泄露 bug 在哪里。`-w` 接受多条线路：`codex`，或用 `claude:opus` 指定模型；同一个 worker 写上几个模型，就能比较这些模型（在同一次审查中并排进行）。代价是每个提交、每条线路各一次审查；报告（含每条原始回复）保存在 `~/.local/state/farmout/bench/` 下。在 tqdm 的两次修复上，Claude、Codex 和 Copilot 两次都找到了，Antigravity 的快速模型找到了一次。
 
-`--apply` 会把结果用到这个仓库：各线路先比找到的 bug 数，再比失败次数，最后比典型审查耗时（打平时更快的模型胜出）；`.farmout/settings.json` 会写入每个参与比较的 worker 的最佳模型（`models`）和从优到劣的 `fallback` 顺序，`farmout run auto` 也按这个顺序来。bench 没有测试的 worker 排在最后。`farmout bench --apply --last` 直接应用最近一次保存的结果，不再消耗额度。只有一个订阅时，它能用你自己的历史回答“大模型在这份代码上值不值得花额度”。
+`--apply` 会把结果用到这个仓库：各线路先比找到的 bug 数，再比失败次数，最后比典型审查耗时（打平时更快的模型胜出）；`.farmout/settings.json` 会写入每个参与比较的 worker 的最佳模型（`models`）和从优到劣的 `fallback` 顺序，`farmout run auto` 也按这个顺序来。bench 没有测试的 worker 排在最后。如果仓库的设置写在 `.farmout/settings.toml` 里，farmout 不会改写 TOML，而是打印出需要你自己加上的几行。`farmout bench --apply --last` 直接应用最近一次保存的结果，不再消耗额度。只有一个订阅时，它能用你自己的历史回答“大模型在这份代码上值不值得花额度”。
 
 ## 设置
 
@@ -376,11 +377,11 @@ farmout 同时也是一个 MCP 服务器（`farmout mcp`，或 `python3 server.p
 - **提示词注入是真实存在的风险**。worker 会读取你交给它们的任何内容，恶意文档可能会试图对它们下指令。只读模式能限制损害，但无法让注入变得不可能。不要把机密委托出去；在设置中写 `web = false` 可以关闭联网工具。
 - **数据会离开你的机器**。任务说明和文件会发送给各个 worker 的服务商。可以用 `workers` 设置让工作仓库远离个人账号。
 - **farmout 运行、发送和获取的全部内容：**
-  - *运行：* 你安装的 worker CLI（`agy`、`codex`、`claude`、`copilot`、`dsh`）、`git`、`fix-pr` 用到的 `gh`、`race` 和流水线里你自己的测试命令、你设置或信任的钩子（`farmout hooks` 会列出它们）、`api` worker 收到 PDF 时用的 `pdftotext`，以及在 `farmout ui` 里你要求时打开的分页器、编辑器和剪贴板工具。
-  - *发送：* 每份任务说明（你的提示词、你指定的文件、待审查的改动，以及继续一段对话时它此前的各轮）通过 CLI 发给对应 worker 的服务商，`api` 则发给你设置的端点。没有遥测，也没有分析统计。
-  - *获取：* 只在你要求时：`farmout store` 从 GitHub 上的本仓库读取商店索引和你安装的文件，每个文件都用 SHA-256 锁定；`farmout skill add` 下载你指定的技能。`bench/leaderboard.py` 是维护者用的脚本，不随包安装，它会克隆它评分的公开仓库。
+  - *运行：* 你安装的 worker CLI（`agy`、`codex`、`claude`、`copilot`、`dsh`）、`git`、`fix-pr` 和 `apply --pr` 用到的 `gh`、`race` 和流水线里你自己的测试命令、你设置或信任的钩子（`farmout hooks` 会列出它们）、你从商店安装的工具（用 `farmout tool run` 运行时，经由你的 shell）、`api` worker 收到 PDF 时用的 `pdftotext`、`bench --share` 生成 PNG 卡片时用的 SVG 转换工具（`rsvg-convert`、ImageMagick 或 Inkscape），以及在 `farmout ui` 里你要求时打开的分页器、编辑器和剪贴板工具。
+  - *发送：* 每份任务说明（你的提示词、你指定的文件、待审查的改动，以及继续一段对话时它此前的各轮）通过 CLI 发给对应 worker 的服务商，`api` 则发给你设置的端点。`apply --pr` 会把会话的分支推送到你的 `origin` 并创建 pull request。没有遥测，也没有分析统计。
+  - *获取：* 只在你要求时：`farmout store` 从 GitHub 上的本仓库（或你用 `FARMOUT_STORE` 或 `store` 设置指定的商店）读取商店索引和你安装的文件，每个文件都用 SHA-256 锁定；`farmout skill add` 下载你指定的技能。`bench/leaderboard.py` 是维护者用的脚本，不随包安装，它会克隆它评分的公开仓库。
   - *监听：* `farmout ui --web` 只在 127.0.0.1 上提供页面，并且每次运行都生成新的密钥；`farmout mcp` 只通过 stdio 通信。
-  - *写入：* 会话和结果在 `~/.local/state/farmout`，委派的结果在 `~/.cache/farmout`，设置在 `~/.config/farmout`，隔离的 worktree 在 `<repo>/.farmout/worktrees/`。在你的项目里只写你要求的：`--write` 的改动、你应用的补丁、你指定的文件（`export -o`）、`bench --apply` 写入的设置、你安装的 git 钩子。
+  - *写入：* 会话和结果在 `~/.local/state/farmout`，委派的结果在 `~/.cache/farmout`，设置在 `~/.config/farmout`，隔离的 worktree 在 `<repo>/.farmout/worktrees/`，每次审查读取的改动在 `<repo>/.git/farmout/`。在你的项目里只写你要求的：`--write` 的改动、你应用的补丁、你指定的文件（`export -o`）、`bench --apply` 写入的设置、你安装的 git 钩子。
 
 ## 服务条款
 
