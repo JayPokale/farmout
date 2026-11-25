@@ -350,7 +350,7 @@ def cmd_relay(a):
     elif a.action == "off":
         cfg = relay.configure(on=False)
     elif a.action == "back":
-        now, recs = time.time(), relay.records()
+        now, recs = time.time(), [r for r in relay.records() if not r.get("back")]  # not those already back
         for rec in recs:
             relay.keep(rec["session"], {**rec, "back": now})
         cfg = relay.config()

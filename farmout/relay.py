@@ -134,14 +134,16 @@ def test(sid, file, cwd, minutes, now=None):
     tried before it's needed. `farmout relay back` (or the time running out) ends it, and Claude catches up."""
     now = now or time.time()
     rec = record(sid) or {"session": sid, "file": file, "cwd": cwd, "since": now, "told": 0, "shown": []}
-    keep(sid, {**rec, "test": now + minutes * 60, "back": 0, "since": rec.get("since") or now})
+    since = now if rec.get("back") else rec.get("since") or now  # after `relay back`: a relay of its own
+    keep(sid, {**rec, "test": now + minutes * 60, "back": 0, "since": since})
     return now + minutes * 60
 
 
 def keep(sid, rec):
-    """Save a relay record. A `farmout relay back` written meanwhile by another process stays."""
+    """Save a relay record. A `farmout relay back` written meanwhile by another process stays, on the same relay
+    (its `since`): a new limit's relay, or a `relay test`, starts without the last one's."""
     now = record(sid)
-    if now and (now.get("back") or 0) > (rec.get("back") or 0):
+    if now and now.get("since") == rec.get("since") and (now.get("back") or 0) > (rec.get("back") or 0):
         rec = {**rec, "back": now["back"]}
     RECORDS.mkdir(parents=True, exist_ok=True)
     tmp = record_path(sid).with_suffix(f".{os.getpid()}")

@@ -3605,6 +3605,23 @@ class RelayTest(CliBase):
         self.assertIsNone(self.hook("again", f), "the file still ends in that limit: it goes to Claude, as asked")
         self.assertEqual(len(self.runs()), 1)
 
+    def test_what_back_leaves_behind_holds_back_no_later_relay(self):
+        self.fo("relay", "on", "-w", "codex")
+        f = self.limited_session()
+        self.hook("say one", f)
+        self.fo("relay", "back")
+        self.assertIn("hookSpecificOutput", self.hook("hello", f), "caught up")
+        self.assertIn("Nothing is being relayed", self.fo("relay", "back").stdout)
+        self.fo("relay", "test", CLAUDE_CODE_SESSION_ID="s1")
+        self.assertTrue(self.hook("say two", f)["stopReason"].endswith("two"), "a test after `relay back` relays")
+        self.fo("relay", "back")
+        self.assertIn("hookSpecificOutput", self.hook("hello again", f), "caught up again")
+        self.limited_session(resets=time.time() + 7200)  # a real limit later
+        said = self.hook("say three", f)["stopReason"]
+        name = re.search(r"farmout session (codex-\d+)", said).group(1)
+        self.assertIn(f"({name})", self.fo("status", "--line").stdout, "the new relay shows in the status line")
+        self.assertIn("the relayed conversation goes to Claude again", self.fo("relay", "back").stdout)
+
     def test_back_early_and_a_new_limit_starts_afresh(self):
         self.fo("relay", "on", "--write", "-w", "codex")
         self.repo()
