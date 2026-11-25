@@ -155,6 +155,7 @@ export default function GetStarted() {
             <Step n={3} title="Hand it work">
               <div className="grid gap-2 font-mono text-xs">
                 {[
+                  ["keep typing at Claude Code's limit", "farmout relay on --write"],
                   ["every model reviews your change", "farmout review"],
                   ["one question, every answer", 'farmout ask "Is this migration safe?"'],
                   ["your tests pick the winner", 'farmout race "Fix the flaky test" --test "pytest -x"'],
