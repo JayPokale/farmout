@@ -3186,7 +3186,7 @@ class RelayTest(CliBase):
     def test_on_the_prompt_goes_to_codex_and_claude_catches_up(self):
         p = self.fo("relay", "on", "-w", "codex")
         self.assertIn("Relay on", p.stdout)
-        self.assertIn('"UserPromptSubmit"', p.stdout, "no plugin here: how to add the hook")
+        self.assertIn("run `farmout relay install` to add it", p.stdout, "no plugin here: how to add the hook")
         f = self.limited_session()
         said = self.hook("say relayed", f)
         self.assertIs(said["continue"], False, "Claude Code shows the prompt as sent and this under it")
@@ -3203,6 +3203,7 @@ class RelayTest(CliBase):
         self.assertEqual(self.meta("codex-1")["imported"]["id"], "s1")
         self.assertIsNone(self.hook("/compact", f), "Claude Code's own commands pass")
         self.assertEqual(self.json("relay")["relayed"][0]["name"], "codex-1")
+        self.assertRegex(self.fo("status", "--line").stdout, r"claude out till \d\d:\d\d → codex \(codex-1\)")
 
         self.limited_session(resets=time.time() - 5)  # the limit is over
         back = self.hook("what happened?", f)
@@ -3291,6 +3292,34 @@ class RelayTest(CliBase):
         p = self.fo("relay", "on", "--wait", "1800", rc=1)
         self.assertIn("--wait takes 1 to 840 seconds", p.stderr)
 
+    def test_install_puts_the_hook_into_claude_codes_settings(self):
+        cfg = self.home / ".claude" / "settings.json"
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        cfg.write_text(json.dumps({"model": "opus", "hooks": {"UserPromptSubmit": [
+            {"hooks": [{"type": "command", "command": "my-own-hook"}]}]}}))
+        self.assertIn("Added the relay hook to", self.fo("relay", "install").stdout)
+        data = json.loads(cfg.read_text())
+        self.assertEqual(data["model"], "opus")
+        cmds = [h["command"] for e in data["hooks"]["UserPromptSubmit"] for h in e["hooks"]]
+        self.assertEqual(cmds[0], "my-own-hook")
+        self.assertTrue(cmds[1].endswith(" relay hook"))
+        self.assertEqual(data["hooks"]["UserPromptSubmit"][1]["hooks"][0]["timeout"], 900)
+        self.assertIn("already in", self.fo("relay", "install").stdout)
+        self.assertTrue(self.json("relay")["installed"])
+        self.assertNotIn("relay install", self.fo("relay", "on").stdout, "installed: nothing more to do")
+        p = subprocess.run(cmds[1], shell=True, input=json.dumps({"session_id": "x", "transcript_path": "/nope",
+                           "prompt": "hi"}), capture_output=True, text=True, env=self.env, timeout=60)
+        self.assertEqual((p.returncode, p.stdout), (0, ""), "the command it installed runs")
+        self.assertIn("Took the relay hook out of", self.fo("relay", "uninstall").stdout)
+        self.assertEqual(json.loads(cfg.read_text())["hooks"]["UserPromptSubmit"],
+                         [{"hooks": [{"type": "command", "command": "my-own-hook"}]}])
+        self.assertTrue((cfg.parent / "settings.json.farmout-backup").exists())
+        cfg.write_text("{not json")
+        self.assertIn("isn't valid JSON", self.fo("relay", "install", rc=1).stderr)
+        self.assertEqual(cfg.read_text(), "{not json", "left as it is")
+        cfg.write_text(json.dumps({"enabledPlugins": {"farmout@farmout": True}}))
+        self.assertIn("has the hook already", self.fo("relay", "install").stdout)
+
     def test_back_early_and_a_new_limit_starts_afresh(self):
         self.fo("relay", "on", "--write", "-w", "codex")
         f = self.limited_session()
@@ -3354,7 +3383,7 @@ class CompletionTest(CliBase):
         self.assertIn("codex", complete("send", "alpha", "-w", ""))
         self.assertIn("auto", complete("run", ""))
         self.assertEqual(complete("pipe", "run", "--s"), ["--set"])
-        self.assertEqual(complete("relay", ""), ["on", "off", "back", "hook"])
+        self.assertEqual(complete("relay", ""), ["on", "off", "back", "install", "uninstall", "hook"])
         if shutil.which("zsh"):
             zsh = self.tmp / "c.zsh"
             zsh.write_text(self.fo("completion", "zsh").stdout)
@@ -3375,12 +3404,27 @@ class RulesTest(CliBase):
         (self.work / "sub").mkdir()
         self.fo("run", "codex", "say hi", cwd=self.work / "sub")
         brief = self.last("codex")["brief"]
-        self.assertIn("This project's instructions for AI coding agents are in ../CLAUDE.md (listed below), written "
-                      "for another agent: read them and follow them too.", brief)
-        self.assertIn(f"- {self.work / 'CLAUDE.md'}", brief)
+        self.assertIn("This project's instructions for AI coding agents, written for another agent; follow them too:"
+                      "\n\n<instructions file=\"../CLAUDE.md\">\nAlways use tabs.\n</instructions>", brief)
         for w in ("claude", "copilot"):
             self.fo("run", w, "say hi", cwd=self.work / "sub")
             self.assertNotIn("CLAUDE.md", self.last(w)["brief"], f"{w} reads it by itself")
+        (self.work / "sub" / "deep").mkdir()
+        (self.work / "sub" / "CLAUDE.md").write_text("In sub, use spaces.\n")
+        self.fo("run", "codex", "say hi", cwd=self.work / "sub" / "deep")
+        brief = self.last("codex")["brief"]
+        self.assertLess(brief.index('file="../CLAUDE.md"'), brief.index('file="../../CLAUDE.md"'), "every folder up")
+        self.fo("run", "antigravity", "say hi", "--isolate", cwd=self.work / "sub")
+        run = self.last("agy")
+        self.assertNotIn("--add-dir", run["argv"], "quoted, not listed: no access to the main tree for a writer")
+        self.assertIn("Always use tabs.", run["brief"], "an untracked CLAUDE.md in the main tree still counts")
+        self.git("add", "CLAUDE.md")
+        self.git("commit", "-qm", "rules")
+        (self.work / "CLAUDE.md").write_text("Always use tabs, and a local change.\n")
+        self.fo("run", "codex", "say hi", "--isolate")
+        brief = self.last("codex")["brief"]
+        self.assertEqual(brief.count("<instructions"), 1, "the worktree's own copy (with your uncommitted change), once")
+        self.assertIn('<instructions file="CLAUDE.md">\nAlways use tabs, and a local change.', brief)
         (self.work / "AGENTS.md").write_text("Use tabs.\n")
         self.fo("run", "codex", "say hi")
         self.assertNotIn("instructions for AI coding agents", self.last("codex")["brief"], "codex reads AGENTS.md")
@@ -3389,7 +3433,6 @@ class RulesTest(CliBase):
         (self.work / ".farmout" / "settings.json").write_text(json.dumps({"rules": False}))
         self.fo("run", "codex", "say hi")
         self.assertNotIn("CLAUDE.md", self.last("codex")["brief"], "rules = false turns it off")
-
 
 class QuotaTest(CliBase):
     """`farmout status` shows how much of Codex's limits is used, as Codex last wrote it in its session files."""
@@ -3497,6 +3540,46 @@ class AcpTest(CliBase):
         bad = self.answer(self.say("session/set_config_option", {"sessionId": sid, "configId": "worker", "value": "x"}))
         self.assertEqual(bad["error"]["code"], -32602)
         self.assertEqual(self.answer(self.say("no/such"))["error"]["code"], -32601)
+
+    def test_odd_requests_and_a_cancel_right_behind_the_prompt(self):
+        self.start()
+        self.assertEqual(self.answer(self.say("no/such"))["error"]["code"], -32600, "before initialize: initialize first")
+        self.acp.stdin.write(json.dumps({"jsonrpc": "2.0", "id": 77}) + "\n")
+        self.acp.stdin.flush()
+        self.assertEqual(self.answer(77)["error"]["code"], -32600, "a request without a method")
+        self.answer(self.say("initialize", {"protocolVersion": 1}))
+        self.assertEqual(self.answer(self.say("session/prompt", {"sessionId": [], "prompt": []}))["error"]["code"], -32602)
+        sid = self.answer(self.say("session/new", {"cwd": str(self.work), "mcpServers": []}))["result"]["sessionId"]
+        self.answer(self.say("session/set_config_option", {"sessionId": sid, "configId": "worker", "value": "codex"}))
+        mid = self.say("session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": "nap 20"},
+                                                                         {"type": "resource_link", "name": "x",
+                                                                          "uri": "file://elsewhere/etc/hostname"}]})
+        self.say("session/cancel", {"sessionId": sid}, notify=True)
+        start = time.time()
+        self.assertEqual(self.answer(mid)["result"], {"stopReason": "cancelled"})
+        self.assertLess(time.time() - start, 15)
+        self.assertNotIn("/etc/hostname", json.dumps(self.runs()), "another host's file:// isn't a local file")
+        self.seen.clear()
+        one = self.say("session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": "say one"}]})
+        two = self.say("session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": "say two"}]})
+        self.assertEqual(self.answer(one)["result"], {"stopReason": "end_turn"})
+        self.assertEqual(self.answer(two)["result"], {"stopReason": "end_turn"})
+        said = [m["params"]["update"]["content"]["text"] for m in self.seen
+                if m.get("method") == "session/update" and m["params"]["update"]["sessionUpdate"] == "agent_message_chunk"]
+        self.assertEqual(said, ["one", "two"], "back-to-back prompts take turns in one farmout session")
+        self.assertEqual([r["name"] for r in self.json("ls")], ["acp-1"])
+
+    def test_a_removed_session_starts_the_thread_afresh(self):
+        self.start()
+        self.answer(self.say("initialize", {"protocolVersion": 1}))
+        sid = self.answer(self.say("session/new", {"cwd": str(self.work), "mcpServers": []}))["result"]["sessionId"]
+        self.answer(self.say("session/set_config_option", {"sessionId": sid, "configId": "worker", "value": "codex"}))
+        self.answer(self.say("session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": "say a"}]}))
+        self.fo("rm", "acp-1")
+        r = self.answer(self.say("session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": "say b"}]}))
+        self.assertEqual(r["result"], {"stopReason": "end_turn"}, "not stuck on the removed session")
+        [row] = self.json("ls")
+        self.assertEqual(row["turns"], 1, "a fresh session")
 
     def test_cancel_stops_the_turn(self):
         self.start()

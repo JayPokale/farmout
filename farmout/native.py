@@ -113,14 +113,38 @@ def copilot_sessions(root=None):
             yield found("copilot", f, cwd, str(start.get("sessionId") or f.parent.name))
 
 
+def mtime(f):
+    try:
+        return os.path.getmtime(f)
+    except OSError:  # gone since it was listed
+        return 0
+
+
+def newest_rollouts(n):
+    """Codex's n newest session files, from its newest sessions/YYYY/MM/DD folders only."""
+    out, base = [], codex_home() / "sessions"
+
+    def subdirs(d):
+        try:
+            return sorted((x for x in d.iterdir() if x.is_dir()), key=lambda x: x.name, reverse=True)
+        except OSError:
+            return []
+    for y in subdirs(base):
+        for m in subdirs(y):
+            for d in subdirs(m):
+                out += sorted(d.glob("rollout-*.jsonl"), key=mtime, reverse=True)
+                if len(out) >= n:
+                    return out[:n]
+    return out
+
+
 def codex_quota(now=None):
     """What Codex last reported about its own usage limits; it writes them into its session files after each turn
     (farmout's runs included). {"plan", "at", "windows": [{"name", "used", "resets"}]} or None. A window whose reset
     has passed since then reads 0% used."""
     import time
     now = now or time.time()
-    files = sorted(codex_home().glob("sessions/**/rollout-*.jsonl"), key=os.path.getmtime, reverse=True)[:5]
-    for f in files:
+    for f in newest_rollouts(5):
         last = None
         try:
             for o in lines(f, tail=512 * 1024):

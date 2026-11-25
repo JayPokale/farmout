@@ -46,6 +46,7 @@ def bash(t, workers):
                     | {f for c in t.values() for s in c["subs"].values() for flags, v, _ in s["opts"] if v for f in flags})
     return f"""# farmout completion for bash. Add to ~/.bashrc:  eval "$(farmout completion bash)"
 _farmout() {{
+    [ -n "${{ZSH_VERSION-}}" ] && setopt local_options ksh_arrays  # zsh: count COMP_WORDS from 0, as bash does
     local cur=${{COMP_WORDS[COMP_CWORD]}} prev=${{COMP_WORDS[COMP_CWORD-1]}} cmd=${{COMP_WORDS[1]}} sub=""
     local opts="" args="" names=0 subs=""
     COMPREPLY=()
@@ -85,7 +86,8 @@ complete -o default -F _farmout farmout
 
 
 def zsh(t, workers):
-    return ("# farmout completion for zsh. Add to ~/.zshrc:  eval \"$(farmout completion zsh)\"\n"
+    return ("# farmout completion for zsh. Add to ~/.zshrc, after compinit or your framework (oh-my-zsh, prezto):\n"
+            "#   eval \"$(farmout completion zsh)\"\n"
             "(( $+functions[compdef] )) || { autoload -U +X compinit && compinit -C; }\n"
             "autoload -U +X bashcompinit && bashcompinit\n"
             + bash(t, workers).split("\n", 1)[1])

@@ -49,13 +49,21 @@ def rules(worker, cwd):
     for codex or antigravity, a GEMINI.md for claude): from cwd, else the repository's main folder."""
     if worker not in READS:
         return []
-    from .config import project_root
-    found = {}
-    for root in (cwd, str(project_root(cwd))):
-        for name in RULES:
-            if name not in found and os.path.isfile(os.path.join(root, name)):
-                found[name] = os.path.join(root, name)
-    return [] if READS[worker] & set(found) else list(found.values())
+    from .config import project_root, repo_root
+    d = os.path.realpath(cwd)
+    top = os.path.realpath(str(repo_root(cwd) or d))  # this checkout's top (an isolated worktree's own)
+    found = []
+    while True:  # cwd and each folder above it, up to the top, where the CLIs stop looking too
+        found += [(name, os.path.join(d, name)) for name in RULES if os.path.isfile(os.path.join(d, name))]
+        if d == top or os.path.dirname(d) == d or not (d + os.sep).startswith(top + os.sep):
+            break
+        d = os.path.dirname(d)
+    main = os.path.realpath(str(project_root(cwd)))
+    if main != top:  # an isolated worktree: the main tree may hold rules git doesn't track
+        have = {name for name, f in found if os.path.dirname(f) == top}
+        found += [(name, os.path.join(main, name)) for name in RULES
+                  if name not in have and os.path.isfile(os.path.join(main, name))]
+    return [] if READS[worker] & {name for name, _ in found} else [f for _, f in found]
 
 
 def prep(t):
@@ -65,14 +73,31 @@ def prep(t):
     missing = [f for f in files if not os.path.exists(f)]
     if missing:
         raise FileNotFoundError(", ".join(missing))
-    own = [f for f in rules(t.get("worker"), cwd) if f not in files] if t.get("rules", True) else []
-    files += own
     extra = sorted({f if os.path.isdir(f) else os.path.dirname(f) for f in files} - {cwd})
-    brief = t["prompt"] + ("\n\nThis project's instructions for AI coding agents are in "
-                           + ", ".join(os.path.relpath(f, cwd) for f in own) + " (listed below), written for "
-                           "another agent: read them and follow them too." if own else "")
+    brief = t["prompt"] + (rules_note(rules(t.get("worker"), cwd), cwd) if t.get("rules", True) else "")
     brief += "\n\nFiles:\n" + "\n".join(f"- {f}" for f in files) if files else ""
     return cwd, files, [x for d in extra for x in ("--add-dir", d)], brief
+
+
+RULES_CAP = 20_000  # characters of one instruction file quoted in a brief
+
+
+def rules_note(found, cwd):
+    """The instruction files' text, quoted in the brief: listing them as files would grant the worker their folders
+    (--add-dir), which for a writer can reach outside its own (an isolated worktree's main tree)."""
+    parts = []
+    for f in found:
+        try:
+            text = open(f, encoding="utf-8", errors="replace").read()
+        except OSError:
+            continue
+        if len(text) > RULES_CAP:
+            text = text[:RULES_CAP] + f"\n[… the rest is in {f}]"
+        parts.append(f"<instructions file=\"{os.path.relpath(f, cwd)}\">\n{text.strip()}\n</instructions>")
+    if not parts:
+        return ""
+    return ("\n\nThis project's instructions for AI coding agents, written for another agent; follow them too:\n\n"
+            + "\n\n".join(parts))
 
 
 def parse_json(out):

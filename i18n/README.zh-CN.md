@@ -56,7 +56,7 @@ farmout doctor --live                    # which workers are ready; --live sends
 
 完全不安装也行：`python3 ~/.local/share/farmout/server.py <command>` 就是同一个 CLI。
 
-Tab 补全：在 `~/.bashrc` 里加 `eval "$(farmout completion bash)"`（zsh 则用 `zsh`，加进 `~/.zshrc`），fish 用 `farmout completion fish > ~/.config/fish/completions/farmout.fish`。可以补全命令、选项、worker 和你的会话名。
+Tab 补全：在 `~/.bashrc` 里加 `eval "$(farmout completion bash)"`（zsh 则用 `zsh`，加进 `~/.zshrc`，放在 compinit 或你的框架之后），fish 用 `farmout completion fish > ~/.config/fish/completions/farmout.fish`。可以补全命令、选项、worker 和你的会话名。
 
 作为 Claude Code 插件安装（会加入斜杠命令、MCP 工具、读取守卫和撞限转交的钩子；用 `claude plugin update farmout` 保持最新）：
 
@@ -139,7 +139,7 @@ farmout hook install          # review every commit; block it when 2+ models fla
 | `fork <session> "<msg>"` | 给对话开一个分支：新会话保留到第 `--at N` 轮为止的对话（默认最新一轮；`0` 表示一轮都不保留），从那里接着聊，还可以用 `-w worker[:model]` 或 `--model` 换 worker 或模型。轮次编号与 `farmout tree` 显示的一致 |
 | `continue ["<msg>"]` | 撞上用量上限后，让另一个 worker 接着你自己的 Claude Code、Codex 或 Copilot CLI 会话：默认是你在这个文件夹（或它所在的 git 仓库）里最近的一段，`--session <id>` 指定别的，`--list` 列出它们。接手的 worker（`-w worker[:model]`；默认是第一个就绪、且不在刚用完额度的那个登录上的 worker；第二个 Claude 账号算另一个登录）会拿到你的提问、它的回答，以及每个操作一行，从该会话最后一次压缩算起；之后它就是一个普通的 farmout 会话。默认只读，加 `--write` 或 `--isolate` 才能改文件 |
 | `tree [session]` | 把每段对话画成一张图：每一轮的问题，每个分支各占一条线，从它分出的那一轮引出，就像 `git log --graph` 画分支那样（`--all` 连 review、ask、race 的运行也列出；支持 `--json`） |
-| `relay [on\|off\|back]` | Claude Code 撞上用量上限时，你在那里输入的内容会带着对话交给另一个 worker，回答显示在 Claude Code 里；额度重置后，Claude 会得知这期间发生了什么。`-w worker[:model]`（默认是第一个就绪、且不在 Claude 这个登录上的 worker），`--write` 或 `--isolate`，`--wait <secs>`（600）。`back` 在重置之前就把提问交回给 Claude；不带参数时显示设置和正在转交的会话。由 farmout 插件的钩子完成转交 |
+| `relay [on\|off\|back\|install]` | Claude Code 撞上用量上限时，你在那里输入的内容会带着对话交给另一个 worker，回答显示在 Claude Code 里；额度重置后，Claude 会得知这期间发生了什么。`-w worker[:model]`（默认是第一个就绪、且不在 Claude 这个登录上的 worker），`--write` 或 `--isolate`，`--wait <secs>`（600）。`back` 在重置之前就把提问交回给 Claude；不带参数时显示设置和正在转交的会话。由 farmout 插件的钩子完成转交 |
 | `ui [session]` | 在终端里全屏显示同一张图：在旁边阅读任意一轮，从最新一轮继续（`c`），从任意一轮分叉（`b`），或把某个问题换个问法再问（`e`），可换任意 worker 或模型；在问题和回答里查找（`/`），复制回答（`y`），删除分支（`D`）；全部按键见[会话](#会话)一节。加 `--web` 则改在浏览器里打开，只监听 127.0.0.1，每次运行都生成新的密钥 |
 | `ask "<question>"` | 把同一个问题发给每个 worker（用 `-w` 挑选，`-w claude:opus,codex` 还能指定模型，`-w claude:opus,claude:sonnet` 用同一个订阅的两个模型），答案并排展示；`--debate` 让每个 worker 读完其他人的回答后再答一次 |
 | `review [focus]` | 每个 worker 审查 `--staged`、`--base <ref>` 或你未提交的改动；`-w` 的写法与 `ask` 相同，`codex,codex` 让同一个模型审查两次；`--min-agree N`，以及决定退出码的 `--fail-on high\|medium\|low` |
@@ -196,7 +196,7 @@ dates · claude · 2m ago
 
 **你自己的会话。** Claude Code 提示你已达用量上限时，在另一个终端运行 `farmout continue --write`（或者在 Claude Code 的输入框里以 `!` 开头运行，这样命令会直接执行，不经过 Claude）。farmout 会读取 Claude Code 为这个文件夹保存的会话文件，取你当前所在的那条分支，从最后一次压缩开始（连同 Claude 对之前内容的总结），把你的提问、它的回答和每个操作一行（`Edit cache.py`、`Bash: pytest -q`）交给下一个就绪的 worker。Codex 和 Copilot CLI 的会话同样可以（`--from codex`、`--from copilot`）。只算你自己运行的会话：farmout 自己启动的 `claude -p`、`codex exec` 和 `copilot -p` 会被跳过。任何内容离开你的电脑之前，凭据都会按内置规则替换掉；新会话的轮次接着导入的轮次编号，所以 `send`、`fork`、`tree` 和 `ui` 照常可用（`export` 会包含导入的轮次）。等 Claude 恢复后，用 `farmout export <session>` 让它看看这段时间发生了什么。
 
-**撞上限也接着输入。** 先打开一次转交（`farmout relay on --write`；不加 `--write` 时 worker 只能读）。Claude Code 提示你已达用量上限后，你在那里输入的下一句话会交给第一个就绪、且不在这个登录上的 worker（或你用 `-w` 指定的那个），连同整段对话，就像 `continue` 交接时一样；它的回答显示在你的提问下面：*Operation stopped by hook: Claude is at its usage limit until 03:40, so codex answered (farmout session codex-3): …*。之后的提问会在同一个 farmout 会话里继续。Claude Code 最多等 10 分钟（`--wait`）；更久的回答会随你的下一次提问一起出现，`!farmout attach <session>` 可以边做边看。额度重置后，提问重新交给 Claude，Claude 会被告知一次：那些回答来自另一个 worker、它可能改了什么（`git diff`，或者用了 `--isolate` 时的 `farmout diff` 和 `apply`），以及你没看到的回答。提前恢复了（换了登录、换了还有额度的模型）？运行 `farmout relay back`。钩子由 farmout 插件安装；每次提问时它只读取会话文件的末尾（约 35 毫秒），没撞上限时什么也不做，转交关闭时只提示一句它的存在。没有插件时，`farmout relay on` 会打印需要加进 `~/.claude/settings.json` 的钩子。
+**撞上限也接着输入。** 先打开一次转交（`farmout relay on --write`；不加 `--write` 时 worker 只能读）。Claude Code 提示你已达用量上限后，你在那里输入的下一句话会交给第一个就绪、且不在这个登录上的 worker（或你用 `-w` 指定的那个），连同整段对话，就像 `continue` 交接时一样；它的回答显示在你的提问下面：*Operation stopped by hook: Claude is at its usage limit until 03:40, so codex answered (farmout session codex-3): …*。之后的提问会在同一个 farmout 会话里继续。Claude Code 最多等 10 分钟（`--wait`）；更久的回答会随你的下一次提问一起出现，`!farmout attach <session>` 可以边做边看。额度重置后，提问重新交给 Claude，Claude 会被告知一次：那些回答来自另一个 worker、它可能改了什么（`git diff`，或者用了 `--isolate` 时的 `farmout diff` 和 `apply`），以及你没看到的回答。提前恢复了（换了登录、换了还有额度的模型）？运行 `farmout relay back`。钩子由 farmout 插件安装；每次提问时它只读取会话文件的末尾（约 35 毫秒），没撞上限时什么也不做，转交关闭时只提示一句它的存在。没有插件时，`farmout relay install` 会把钩子加进 `~/.claude/settings.json`（`uninstall` 再拿掉）。转交期间，`farmout status --line`（也包括放在 Claude Code 状态栏里时）会显示 `claude out till 03:40 → codex`。
 
 **长对话。** 接手对话的 worker（触及上限时、用 `send -w` 时、在分支上或通过 `continue`）是从一个文件里读对话的。超过约 12k token 时，这个文件会被缩短：较早的每一轮变成一行，包括问题和回答的开头，并标出整轮在第二个文件里的行号范围，第二个文件逐字保存全部内容；最新的三轮保持完整。worker 只打开需要的那几行，所以转移一段长对话的花费只是重读一遍的一小部分。
 
@@ -409,7 +409,7 @@ farmout 同时也是一个 MCP 服务器（`farmout mcp`，或 `python3 server.p
   - *获取：* 只在你要求时：`farmout store` 从 GitHub 上的本仓库（或你用 `FARMOUT_STORE` 或 `store` 设置指定的商店）读取商店索引和你安装的文件，每个文件都用 SHA-256 锁定；`farmout skill add` 下载你指定的技能。`bench/leaderboard.py` 是维护者用的脚本，不随包安装，它会克隆它评分的公开仓库。
   - *读取：* 除了你指定的内容，只在你运行 `farmout continue` 时读取 Claude Code（`~/.claude/projects` 或 `$CLAUDE_CONFIG_DIR`）、Codex（`~/.codex/sessions` 或 `$CODEX_HOME`）和 Copilot CLI（`~/.copilot/session-state` 或 `$COPILOT_HOME`）保存的会话文件，用来找到并读取这个文件夹最近的会话；插件的转交钩子在你每次向 Claude Code 提问时读取该会话文件的末尾（看 Claude 的上一条回复是不是用量上限提示）；以及 `farmout status` 读取 Codex 最新会话文件的末尾，取 Codex 写在那里的用量数字。它从不写入这些文件。
   - *监听：* `farmout ui --web` 只在 127.0.0.1 上提供页面，并且每次运行都生成新的密钥；`farmout mcp` 和 `farmout acp` 只通过 stdio 通信。
-  - *写入：* 会话和结果在 `~/.local/state/farmout`，委派的结果在 `~/.cache/farmout`，设置在 `~/.config/farmout`，隔离的 worktree 在 `<repo>/.farmout/worktrees/`，每次审查读取的改动在 `<repo>/.git/farmout/`。在你的项目里只写你要求的：`--write` 的改动、你应用的补丁、你指定的文件（`export -o`）、`bench --apply` 写入的设置、你安装的 git 钩子。
+  - *写入：* 会话和结果在 `~/.local/state/farmout`，委派的结果在 `~/.cache/farmout`，设置在 `~/.config/farmout`，隔离的 worktree 在 `<repo>/.farmout/worktrees/`，每次审查读取的改动在 `<repo>/.git/farmout/`。在你的项目里只写你要求的：`--write` 的改动、你应用的补丁、你指定的文件（`export -o`）、`bench --apply` 写入的设置、你安装的 git 钩子。在项目之外：`farmout relay install` 会往 Claude Code 的 `~/.claude/settings.json` 里加一个钩子，并在旁边保留原文件。
 
 ## 服务条款
 
@@ -492,7 +492,7 @@ farmout 在你的机器上以你的登录身份，按各厂商文档中说明的
 - 更多 worker，且只读参数都经过验证：OpenCode、Qwen Code、Cursor CLI，以及面向 API Key 用户的 Gemini CLI
 - 发布到 PyPI，支持 `uvx farmout`
 - CI 模式：只把多个模型一致认可的发现作为评论发到 pull request 上
-- 让编辑器通过 Agent Client Protocol 驱动 farmout；在容器中运行 worker
+- 在容器中运行 worker
 
 ## 参与贡献
 

@@ -24,7 +24,7 @@ class Missing(KeyError):
 class Agent:
     def __init__(self, out=None):
         self.out, self.lock, self.threads, self.ready = out or sys.stdout, threading.Lock(), {}, False
-        self.chats = {}  # ACP session id -> {"cwd", "worker", "access", "name", "running"}
+        self.chats = {}  # ACP session id -> {"cwd", "worker", "access", "name", "gen", "lock"}
 
     # transport
 
@@ -48,15 +48,22 @@ class Agent:
             except ValueError:
                 self.reply(None, error={"code": -32700, "message": "Parse error"})
                 continue
-            if not isinstance(msg, dict) or "method" not in msg:
-                continue  # a response to a request of ours (we send none) or junk
+            if not isinstance(msg, dict) or not isinstance(msg.get("method"), str):
+                if isinstance(msg, dict) and msg.get("id") is not None and "result" not in msg and "error" not in msg:
+                    self.reply(msg["id"], error={"code": -32600, "message": "Invalid request"})
+                continue  # else a response to a request of ours (we send none), or junk
             self.handle(msg)
         for t in list(self.threads.values()):
             t.join(timeout=1)
         return 0
 
     def handle(self, msg):
-        method, mid, params = msg["method"], msg.get("id"), msg.get("params") or {}
+        method, mid, params = msg["method"], msg.get("id"), msg.get("params")
+        params = params if isinstance(params, dict) else {}
+        if not self.ready and method != "initialize":
+            if mid is not None:
+                self.reply(mid, error={"code": -32600, "message": "initialize first"})
+            return
         fn = {"initialize": self.initialize, "authenticate": self.authenticate, "session/new": self.new,
               "session/set_config_option": self.set_option, "session/set_mode": self.set_mode,
               "session/prompt": self.prompt, "session/cancel": self.cancel}.get(method)
@@ -64,11 +71,10 @@ class Agent:
             if mid is not None:
                 self.reply(mid, error={"code": -32601, "message": f"Method not found: {method}"})
             return
-        if not self.ready and method != "initialize":
-            if mid is not None:
-                self.reply(mid, error={"code": -32600, "message": "initialize first"})
-            return
         if method == "session/prompt":  # long: keep reading, so a session/cancel can reach it
+            chat = self.chats.get(params.get("sessionId")) if isinstance(params.get("sessionId"), str) else None
+            if chat:  # noted before the thread starts, so a cancel right behind the prompt applies to it
+                params = {**params, "_gen": chat["gen"]}
             t = threading.Thread(target=self.guarded, args=(fn, mid, params), daemon=True)
             self.threads[mid] = t
             t.start()
@@ -127,7 +133,7 @@ class Agent:
             raise KeyError(f"cwd {cwd!r} isn't a folder")
         sid = f"acp-{int(time.time() * 1000):x}-{len(self.chats)}"
         self.chats[sid] = {"cwd": os.path.realpath(cwd), "worker": "auto", "access": "read", "name": None,
-                           "running": None}
+                           "gen": 0, "lock": threading.Lock()}  # gen: cancels so far; a prompt from before one stops
         chat = self.chats[sid]
         return {"sessionId": sid, "configOptions": self.options(chat),
                 "modes": {"currentModeId": chat["access"],
@@ -135,6 +141,8 @@ class Agent:
 
     def chat(self, params):
         sid = params["sessionId"]
+        if not isinstance(sid, str):
+            raise KeyError("sessionId must be a string")
         if sid not in self.chats:
             raise Missing(sid)
         return sid, self.chats[sid]
@@ -157,8 +165,8 @@ class Agent:
 
     def cancel(self, params):
         sid, chat = self.chat(params)
-        if chat["name"] and chat["running"]:
-            chat["cancelled"] = True
+        chat["gen"] += 1  # every prompt sent before this one is cancelled, running or waiting its turn
+        if chat["name"]:
             sessions.stop(chat["name"])
         return None
 
@@ -167,14 +175,25 @@ class Agent:
         text, files = words(params["prompt"])
         if not text.strip():
             raise KeyError("an empty prompt")
+        gen = params.get("_gen", chat["gen"])
+        with chat["lock"]:  # one turn at a time per thread
+            return self.turn(sid, chat, text, files, lambda: chat["gen"] != gen)
+
+    def turn(self, sid, chat, text, files, cancelled):
+        if cancelled():
+            return {"stopReason": "cancelled"}
         worker, model = engine.auto_worker(chat["cwd"]) if chat["worker"] == "auto" else lane(chat["worker"])
         write, isolate = chat["access"] in ("write", "isolate"), chat["access"] == "isolate"
-        name, switch = chat["name"], None
-        meta = sessions.load(name) if name else None
+        name, switch, meta = chat["name"], None, None
+        if name:
+            try:
+                meta = sessions.load(name)
+            except KeyError:  # removed (`farmout rm`, or D in the ui): this thread starts afresh
+                name = chat["name"] = None
         if meta and (bool(meta["write"]) != write or bool(meta.get("isolate")) != isolate):
             name = None  # a session's file access is fixed: another one carries on (with the conversation so far)
         if not name:
-            old = chat["name"]
+            old = chat["name"]  # set only when the file access changed: that session carries the conversation over
             base = ((sessions.load(old).get("base") or 0) + len(sessions.turns(old))) if old else 0
             meta = sessions.create(worker, chat["cwd"], write=write, isolate=isolate, model=model, kind="acp",
                                    base=base)
@@ -183,20 +202,20 @@ class Agent:
             name = chat["name"] = meta["name"]
         elif chat["worker"] != "auto" and (meta["worker"], meta.get("model")) != (worker, model):
             switch = {"worker": worker, "model": model}
+        if cancelled():  # cancelled before anything was sent
+            return {"stopReason": "cancelled"}
         call = f"farmout-{int(time.time() * 1000):x}"
         self.update(sid, {"sessionUpdate": "tool_call", "toolCallId": call, "title": f"{worker} is working (farmout "
                           f"session {name})", "kind": "think", "status": "in_progress"})
-        chat["running"], chat["cancelled"] = call, False
-        try:
-            msg = sessions.deliver(name, text, files, cwd=chat["cwd"], wait=False, switch=switch)
-            rec = sessions.wait_msg(name, msg["id"])
-        finally:
-            chat["running"] = None
+        msg = sessions.deliver(name, text, files, cwd=chat["cwd"], wait=False, switch=switch)
+        if cancelled():  # the cancel came while the message was being queued
+            sessions.stop(name)
+        rec = sessions.wait_msg(name, msg["id"])
         who = rec.get("worker") or worker
         self.update(sid, {"sessionUpdate": "tool_call_update", "toolCallId": call,
                           "status": "completed" if rec["status"] == "ok" else "failed",
                           "title": f"{who} answered" if rec["status"] == "ok" else f"{who}: {rec['status']}"})
-        if chat.get("cancelled"):
+        if cancelled():
             return {"stopReason": "cancelled"}
         said = flows.text(rec).strip()
         notes = "; ".join(rec.get("notes") or [])
@@ -218,7 +237,7 @@ def words(blocks):
             parts.append(b["text"])
         elif kind == "resource_link" and isinstance(b.get("uri"), str):
             u = urlparse(b["uri"])
-            if u.scheme == "file" and os.path.exists(unquote(u.path)):
+            if u.scheme == "file" and u.netloc in ("", "localhost") and os.path.exists(unquote(u.path)):
                 files.append(unquote(u.path))
             else:
                 parts.append(b["uri"])

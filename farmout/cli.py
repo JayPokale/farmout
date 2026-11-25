@@ -185,6 +185,16 @@ def cmd_continue(a):
     return send_and_show(a, meta["name"], prompt or CARRY_ON, a.file + extra)
 
 
+def claude_hooks():
+    """Claude Code's own UserPromptSubmit hook entries (settings.json), or none."""
+    try:
+        data = json.loads((native.claude_home() / "settings.json").read_text())
+        entries = data["hooks"]["UserPromptSubmit"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+    return entries if isinstance(entries, list) else []
+
+
 def plugin_on(cwd):
     """Is the farmout plugin enabled in Claude Code, for you or this project (so its relay hook runs)?"""
     root = project_root(cwd)
@@ -200,15 +210,65 @@ def plugin_on(cwd):
     return False
 
 
-def hook_snippet():
-    command = "farmout relay hook" if shutil.which("farmout") else f"{shlex.quote(sys.executable)} -m farmout relay hook"
-    return json.dumps({"hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": command,
-                                                                   "timeout": relay.HOOK_TIMEOUT}]}]}}, indent=2)
+def hook_command():
+    if shutil.which("farmout"):
+        return "farmout relay hook"
+    if Path(sessions.PKG, "server.py").is_file():  # a clone, run as `python3 server.py`
+        return f"{shlex.quote(sys.executable)} {shlex.quote(str(Path(sessions.PKG, 'server.py')))} relay hook"
+    return f"{shlex.quote(sys.executable)} -m farmout relay hook"
+
+
+def ours(entry):
+    """Is this UserPromptSubmit entry the relay hook `farmout relay install` adds?"""
+    return isinstance(entry, dict) and any(isinstance(h, dict) and str(h.get("command", "")).endswith(" relay hook")
+                                           for h in entry.get("hooks") or [])
+
+
+def install_hook(remove=False):
+    """Add the relay hook to (or take it out of) Claude Code's own settings.json; a copy of the file as it was is
+    kept beside it. Returns what was done, as a sentence."""
+    f = native.claude_home() / "settings.json"
+    try:
+        data = json.loads(f.read_text()) if f.exists() else {}
+    except ValueError as e:
+        raise ValueError(f"{f} isn't valid JSON ({e}); left as it is") from None
+    if not isinstance(data, dict) or not isinstance(data.get("hooks", {}), dict):
+        raise ValueError(f"{f}: unexpected shape; left as it is")
+    entries = data.setdefault("hooks", {}).setdefault("UserPromptSubmit", [])
+    if not isinstance(entries, list):
+        raise ValueError(f"{f}: hooks.UserPromptSubmit isn't a list; left as it is")
+    mine = [e for e in entries if ours(e)]
+    if remove:
+        if not mine:
+            return f"No relay hook in {f}."
+        data["hooks"]["UserPromptSubmit"] = [e for e in entries if not ours(e)]
+        if not data["hooks"]["UserPromptSubmit"]:
+            del data["hooks"]["UserPromptSubmit"]
+        if not data["hooks"]:
+            del data["hooks"]
+    else:
+        if mine:
+            return f"The relay hook is already in {f}."
+        entries.append({"hooks": [{"type": "command", "command": hook_command(), "timeout": relay.HOOK_TIMEOUT}]})
+    if f.exists():
+        shutil.copy2(f, f.with_name("settings.json.farmout-backup"))
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_name(f"settings.json.farmout-{os.getpid()}")
+    tmp.write_text(json.dumps(data, indent=2) + "\n")
+    tmp.replace(f)
+    return f"{'Took the relay hook out of' if remove else 'Added the relay hook to'} {f} (the file as it was: " \
+           f"settings.json.farmout-backup beside it)."
 
 
 def cmd_relay(a):
     if a.action == "hook":
         return relay.main()
+    if a.action in ("install", "uninstall"):
+        if a.action == "install" and plugin_on(a.cwd):
+            print("The farmout plugin is on in Claude Code and has the hook already; nothing added.")
+            return 0
+        print(install_hook(remove=a.action == "uninstall"))
+        return 0
     if a.action == "on":
         if a.worker:
             check_workers([lane(a.worker)[0]])
@@ -235,7 +295,8 @@ def cmd_relay(a):
     recs = [{**r, "worker": sessions.load(r["name"])["worker"] if sessions.path(r["name"]).is_dir() else None}
             for r in relay.records() if r.get("name")]
     if a.json:
-        return emit(a, {"relay": cfg, "plugin": plugin_on(a.cwd), "relayed": recs})
+        return emit(a, {"relay": cfg, "plugin": plugin_on(a.cwd), "installed": any(ours(e) for e in claude_hooks()),
+                        "relayed": recs})
     who = cfg.get("worker") or "the first ready worker not on Claude's login"
     how = {"write": "it may edit files", "isolate": "it edits in its own git worktree (farmout diff/apply)"}.get(
         cfg.get("mode"), "read-only; `farmout relay on --write` lets it edit")
@@ -246,10 +307,9 @@ def cmd_relay(a):
               f"`farmout attach` it.")
     else:
         print("Relay off: at Claude Code's usage limit you only get a line about `farmout relay on`.")
-    if cfg.get("on") and not plugin_on(a.cwd):
-        print("\nClaude Code needs the hook: install the farmout plugin, or add this to ~/.claude/settings.json "
-              "(merged with any hooks there; not both, though two would still relay a prompt only once):\n"
-              + hook_snippet())
+    if cfg.get("on") and not plugin_on(a.cwd) and not any(ours(e) for e in claude_hooks()):
+        print("\nClaude Code needs the hook: install the farmout plugin, or run `farmout relay install` to add it to "
+              f"{native.claude_home() / 'settings.json'}.")
     for r in recs:
         print(f"  Claude Code session {r['session'][:8]} → {r['name']} ({r['worker'] or 'removed'}), limit till "
               f"{relay.clock(r.get('until') or 0)}")
@@ -623,6 +683,11 @@ def status_line():
     why = usage.reasons()
     bits += [f"{w} {'logged out' if why.get(w) == 'login' else 'limited'} till "
              f"{time.strftime('%H:%M', time.localtime(u))}" for w, u in usage.limits().items()]
+    now = time.time()
+    for r in relay.records():
+        if r.get("name") and (r.get("until") or 0) > now and not r.get("back") and sessions.path(r["name"]).is_dir():
+            bits.append(f"claude out till {time.strftime('%H:%M', time.localtime(r['until']))} → "
+                        f"{sessions.load(r['name'])['worker']} ({r['name']})")
     q = native.codex_quota() if "codex" in ENABLED else None
     high = [w for w in (q or {}).get("windows", []) if w["used"] >= 50]
     bits += [f"codex {w['name'].replace('-hour', 'h').replace('weekly', 'week')} {round(w['used'])}%" for w in high]
@@ -1138,8 +1203,10 @@ def parser():
 
     rl = add("relay", "at Claude Code's usage limit, what you type there goes to another subscription; Claude "
              "catches up after", cmd_relay)
-    rl.add_argument("action", nargs="?", choices=("on", "off", "back", "hook"), help="on, off, back (Claude is back "
-                    "before the reset: stop relaying), hook (what Claude Code runs); none: show the setting")
+    rl.add_argument("action", nargs="?", choices=("on", "off", "back", "install", "uninstall", "hook"),
+                    help="on, off, back (Claude is back before the reset: stop relaying), install or uninstall (the "
+                    "hook in Claude Code's settings.json, without the plugin), hook (what Claude Code runs); none: "
+                    "show the setting")
     rl.add_argument("-w", "--worker", metavar="WORKER[:MODEL]", help="with on: who answers (default: the first ready "
                     "worker not on Claude's login)")
     rl.add_argument("--write", action="store_true", help="with on: let it edit files")
