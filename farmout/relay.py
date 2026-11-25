@@ -133,20 +133,24 @@ def test(sid, file, cwd, minutes, now=None):
     """`farmout relay test`: this Claude Code session acts as if at its usage limit for a while, so the relay can be
     tried before it's needed. `farmout relay back` (or the time running out) ends it, and Claude catches up."""
     now = now or time.time()
-    rec = record(sid)
-    if not rec or rec.get("back"):  # after `relay back`, a relay of its own
-        rec = {"session": sid, "file": file, "cwd": cwd, "since": now, "told": 0, "shown": []}
-    keep(sid, {**rec, "test": now + minutes * 60, "back": 0})
+    with writing(sid):
+        rec = record(sid)
+        if not rec or rec.get("back"):  # after `relay back`, a relay of its own
+            rec = {"session": sid, "file": file, "cwd": cwd, "since": now, "told": 0, "shown": []}
+        save_record(sid, {**rec, "test": now + minutes * 60, "back": 0})
     return now + minutes * 60
 
 
 def keep(sid, rec):
-    """Save a relay record. A `farmout relay back` written meanwhile by another process stays, on the same relay
-    (its `since`): a new limit's relay, or a `relay test`, starts without the last one's."""
+    """Save a relay record. One of a newer relay (`relay test` or a new limit, meanwhile) stays as it is: this copy
+    is old. On the same relay (its `since`), what `relay back` and `relay test` wrote meanwhile in another process
+    stays."""
     with writing(sid):
         now = record(sid)
-        if now and now.get("since") == rec.get("since") and (now.get("back") or 0) > (rec.get("back") or 0):
-            rec = {**rec, "back": now["back"]}
+        if now and (now.get("since") or 0) > (rec.get("since") or 0):
+            return
+        if now and now.get("since") == rec.get("since"):
+            rec = {**rec, **{k: now[k] for k in ("back", "test") if (now.get(k) or 0) > (rec.get(k) or 0)}}
         save_record(sid, rec)
 
 
@@ -176,7 +180,9 @@ def retire(sid, rec):
     be relayed again."""
     with writing(sid):
         now = record(sid) or {}
-        back = max(rec.get("back") or 0, (now.get("back") or 0) if now.get("since") == rec.get("since") else 0)
+        if now and now.get("since") != rec.get("since"):
+            return  # a newer relay has the record now
+        back = max(rec.get("back") or 0, now.get("back") or 0)
         if back:
             save_record(sid, {**{k: rec[k] for k in ("session", "said", "said_done", "since") if k in rec},
                               "back": back})
@@ -192,8 +198,8 @@ def back(now):
         if not isinstance(sid, str):
             continue
         with writing(sid):
-            cur = record(sid)  # again: a hook may have saved it, or a catch-up retired it, meanwhile
-            if cur and not cur.get("back"):
+            cur = record(sid)  # again: a hook may have saved it, a catch-up retired it, or a new relay begun
+            if cur and cur.get("since") == rec.get("since") and not cur.get("back"):
                 save_record(sid, {**cur, "back": now})
                 n += 1
     return n

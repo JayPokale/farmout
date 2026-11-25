@@ -94,6 +94,30 @@ class SessionTest(CliBase):
                                    "print(len(sessions.turns('s')))")
         self.assertEqual(out.split(), ["None", "1"])
 
+    def test_review9_a_stop_while_a_turn_is_set_up_or_wrapped_up(self):
+        self.fo("run", "codex", "say a", "-n", "s")
+        head = ("import os, signal\n"
+                "signal.signal(signal.SIGTERM, getattr(sessions, 'stopping', signal.default_int_handler))\n"
+                "f = sessions.path('s') / 'inbox' / '0099-{id}.json'\nf.write_text('{{}}')\n")
+        run = ("try:\n    sessions.turn('s', {{'id': '{id}', 'prompt': 'say b'}}, ('session', 's'), f)\n"
+               "except KeyboardInterrupt:\n    print('interrupted')\n"
+               "print(sessions.turns('s')[-1]['status'], sessions.load('s')['native_id'])")
+        # while it's set up (the earlier turns are being readied): stopped as the worker would start
+        setup = in_farmout(self.env, head.format(id="b") + "real = sessions.handoff\n"
+                           "def handoff(*a):\n    os.kill(os.getpid(), signal.SIGTERM)\n    return real(*a)\n"
+                           "sessions.handoff = handoff\n" + run.format(id="b"))
+        self.assertEqual(setup.split()[:2], ["interrupted", "stopped"])
+        # while it's wrapped up (the worker has answered): too late, the answer and its conversation id are kept
+        late = in_farmout(self.env, head.format(id="c") + "done = []\n"
+                          "def execute(*a, **k):\n    done.append(1)\n"
+                          "    return {'ok': True, 'worker': 'codex', 'model': None, 'text': 'answered', 'notes': [], "
+                          "'iso': None, 'secs': 0.1, 'native_id': 'nid-9'}\n"
+                          "sessions.engine.execute = execute\nreal = sessions.load\n"
+                          "def load(n):\n    if done and len(done) == 1:\n        done.append(2)\n"
+                          "        os.kill(os.getpid(), signal.SIGTERM)\n    return real(n)\n"
+                          "sessions.load = load\n" + run.format(id="c"))
+        self.assertEqual(late.split(), ["ok", "nid-9"])
+
     def test_review8_cancel_never_stops_another_messages_turn(self):
         self.fo("run", "codex", "say a", "-n", "s")
         in_farmout(self.env, "sessions.write_json(sessions.path('s') / 'turns' / '0002.json', {'n': 2, 'id': 'old', "
@@ -3627,6 +3651,25 @@ class RelayTest(CliBase):
         self.assertIn("hookSpecificOutput", self.hook("hello", f), "caught up")
         self.assertIsNone(self.hook("again", f), "the file still ends in that limit: it goes to Claude, as asked")
         self.assertEqual(len(self.runs()), 1)
+
+    def test_review9_an_old_copy_of_a_relay_record_never_wins(self):
+        def stale(name):  # a hook's copy of the record, read before what comes next
+            return in_farmout(self.env, f"relay.keep('s9', {{'session': 's9', 'since': time.time(), 'name': {name!r}}})\n"
+                                        "print(json.dumps(relay.record('s9')))").strip()
+        get = lambda: json.loads(in_farmout(self.env, "print(json.dumps(relay.record('s9')))"))
+        old = stale("codex-1")
+        self.fo("relay", "test", CLAUDE_CODE_SESSION_ID="s9")  # on the same relay
+        in_farmout(self.env, f"relay.keep('s9', {{**json.loads({old!r}), 'shown': ['m1']}})")
+        self.assertIn("test", get(), "a `relay test` written meanwhile stays")
+        self.assertEqual(get()["shown"], ["m1"])
+        old = stale("codex-2")
+        self.fo("relay", "back")
+        self.fo("relay", "test", CLAUDE_CODE_SESSION_ID="s9")  # a relay of its own
+        new = get()
+        in_farmout(self.env, f"relay.keep('s9', {{**json.loads({old!r}), 'shown': ['m2']}})")
+        self.assertEqual(get(), new, "the older relay's copy doesn't overwrite the newer relay")
+        in_farmout(self.env, f"relay.retire('s9', json.loads({old!r}))")
+        self.assertEqual(get(), new, "nor does its catch-up retire it")
 
     def test_review8_after_back_a_test_or_a_new_limit_is_a_relay_of_its_own(self):
         self.fo("relay", "on", "-w", "codex")

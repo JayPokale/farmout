@@ -432,6 +432,7 @@ def turn(name, msg, key, inbox_file=None):
     with guarded(name):  # cancel() holds it too: a message is either still queued or recorded, never half taken
         if inbox_file and not inbox_file.exists():
             return None  # taken back (an editor's cancel, `farmout stop`) after this runner read it
+        STOP["asked"] = False  # a stop before this turn was recorded was for another
         # after the newest turn file too: a runner killed between writing one and saving meta mustn't have it
         # overwritten
         n = max([meta["turns"]] + [int(p.stem) for p in (d / "turns").glob("[0-9]*.json") if p.stem.isdigit()]) + 1
@@ -471,17 +472,23 @@ def turn(name, msg, key, inbox_file=None):
     try:
         if not os.path.isdir(meta["cwd"]):  # moved since the message was queued
             raise FileNotFoundError(GONE.format(name=name, old=meta["cwd"]))
+        STOP["working"] = True
+        if STOP["asked"]:  # stopped while the turn was set up
+            raise KeyboardInterrupt
         res = engine.execute(t, key, where, on_iso=keep_iso)
     except Exception as e:  # a bug or an I/O error: record it, and the runner goes on to the next message
         res = {"ok": False, "worker": worker, "text": f"{type(e).__name__}: {e}", "notes": [], "iso": None,
                "secs": round(time.time() - rec["started"], 1)}
     except BaseException:  # stopped
+        STOP["working"] = False
         rec.update(status="stopped", ended=time.time())
         write_json(d / "turns" / f"{n:04d}.json", rec)
         meta = load(name)
         meta["last"] = {"n": n, "status": "stopped", "ended": rec["ended"]}
         save(meta)
         raise
+    finally:
+        STOP["working"] = False
     out = d / "turns" / f"{n:04d}.md"
     out.write_text(res["text"])
     meta = load(name)
@@ -600,9 +607,21 @@ def handoff(name, n):
     return give
 
 
+STOP = {"working": False, "asked": False}  # the runner's: is a worker running now; was a stop asked for meanwhile
+
+
+def stopping(signum, frame):
+    """The runner's SIGTERM (`farmout stop`, an editor's cancel) stops the worker's run. One that comes while a turn is
+    set up stops it as the worker would start; one while a turn is wrapped up comes too late and is let go, so the
+    answer and the worker's conversation id are kept."""
+    if STOP["working"]:
+        raise KeyboardInterrupt
+    STOP["asked"] = True
+
+
 def runner_main(name):
     """`farmout _runner <name>`: work through the inbox while holding the lock, then check it once more."""
-    signal.signal(signal.SIGTERM, signal.default_int_handler)  # `farmout stop` sends SIGTERM
+    signal.signal(signal.SIGTERM, stopping)  # `farmout stop` and an editor's cancel send SIGTERM
     try:
         with holding(name) as got:
             if got:
@@ -617,12 +636,16 @@ def runner_main(name):
 
 def stop(name):
     """Drop the queued messages and stop the running turn, if any. True if something was running."""
-    for f in pending(name):
-        f.unlink(missing_ok=True)
-    pid = runner_pid(name)
-    if pid:
-        os.kill(pid, signal.SIGTERM)
-    return pid is not None
+    try:
+        with guarded(name):  # as the runner takes a message from the queue: each is dropped, or its turn stopped
+            for f in pending(name):
+                f.unlink(missing_ok=True)
+            pid = runner_pid(name)
+            if pid:
+                os.kill(pid, signal.SIGTERM)
+            return pid is not None
+    except FileNotFoundError:  # the session was removed
+        return False
 
 
 def cancel(name, msg_id):
