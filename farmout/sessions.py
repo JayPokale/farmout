@@ -429,13 +429,17 @@ def turn(name, msg, key, inbox_file=None):
     sw = msg.get("switch") or {}
     worker = sw.get("worker") or meta["worker"]
     model = sw.get("model") if sw.get("model") or worker != meta["worker"] else meta["model"]
-    # after the newest turn file too: a runner killed between writing one and saving meta mustn't have it overwritten
-    n = max([meta["turns"]] + [int(p.stem) for p in (d / "turns").glob("[0-9]*.json") if p.stem.isdigit()]) + 1
-    rec = {"n": n, "id": msg["id"], "prompt": msg["prompt"], "files": msg.get("files") or [],
-           "worker": worker, "started": time.time(), "status": "running"}
-    write_json(d / "turns" / f"{n:04d}.json", rec)
-    if inbox_file:
-        inbox_file.unlink(missing_ok=True)
+    with guarded(name):  # cancel() holds it too: a message is either still queued or recorded, never half taken
+        if inbox_file and not inbox_file.exists():
+            return None  # taken back (an editor's cancel, `farmout stop`) after this runner read it
+        # after the newest turn file too: a runner killed between writing one and saving meta mustn't have it
+        # overwritten
+        n = max([meta["turns"]] + [int(p.stem) for p in (d / "turns").glob("[0-9]*.json") if p.stem.isdigit()]) + 1
+        rec = {"n": n, "id": msg["id"], "prompt": msg["prompt"], "files": msg.get("files") or [],
+               "worker": worker, "started": time.time(), "status": "running"}
+        write_json(d / "turns" / f"{n:04d}.json", rec)
+        if inbox_file:
+            inbox_file.unlink(missing_ok=True)
     meta["turns"] = n
     save(meta)
 
@@ -624,15 +628,21 @@ def stop(name):
 def cancel(name, msg_id):
     """Take back one message: out of the queue if it waits, its turn stopped if it runs. The messages queued behind
     it stay (another front end's, say), and a new runner takes them. True if there was anything to take back."""
-    for f in pending(name):
-        if f.name.endswith(f"-{msg_id}.json"):
-            f.unlink(missing_ok=True)
-            return True
-    rec = find(name, msg_id)
-    pid = runner_pid(name) if rec and rec.get("status") == "running" else None
-    if pid:
-        os.kill(pid, signal.SIGTERM)
-    return pid is not None
+    try:
+        with guarded(name):  # the runner holds it while it moves a message from the queue to its record
+            for f in pending(name):
+                if f.name.endswith(f"-{msg_id}.json"):
+                    f.unlink(missing_ok=True)
+                    return True
+            # the runner's turn is the newest recorded: an older one still "running" was left by a runner that died,
+            # and stopping the runner then would stop another message's turn
+            rec = (turns(name) or [None])[-1]
+            pid = runner_pid(name) if rec and rec.get("id") == msg_id and rec.get("status") == "running" else None
+            if pid:
+                os.kill(pid, signal.SIGTERM)
+            return pid is not None
+    except FileNotFoundError:  # the session was removed
+        return False
 
 
 def remove(name):

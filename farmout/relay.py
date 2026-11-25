@@ -133,18 +133,37 @@ def test(sid, file, cwd, minutes, now=None):
     """`farmout relay test`: this Claude Code session acts as if at its usage limit for a while, so the relay can be
     tried before it's needed. `farmout relay back` (or the time running out) ends it, and Claude catches up."""
     now = now or time.time()
-    rec = record(sid) or {"session": sid, "file": file, "cwd": cwd, "since": now, "told": 0, "shown": []}
-    since = now if rec.get("back") else rec.get("since") or now  # after `relay back`: a relay of its own
-    keep(sid, {**rec, "test": now + minutes * 60, "back": 0, "since": since})
+    rec = record(sid)
+    if not rec or rec.get("back"):  # after `relay back`, a relay of its own
+        rec = {"session": sid, "file": file, "cwd": cwd, "since": now, "told": 0, "shown": []}
+    keep(sid, {**rec, "test": now + minutes * 60, "back": 0})
     return now + minutes * 60
 
 
 def keep(sid, rec):
     """Save a relay record. A `farmout relay back` written meanwhile by another process stays, on the same relay
     (its `since`): a new limit's relay, or a `relay test`, starts without the last one's."""
-    now = record(sid)
-    if now and now.get("since") == rec.get("since") and (now.get("back") or 0) > (rec.get("back") or 0):
-        rec = {**rec, "back": now["back"]}
+    with writing(sid):
+        now = record(sid)
+        if now and now.get("since") == rec.get("since") and (now.get("back") or 0) > (rec.get("back") or 0):
+            rec = {**rec, "back": now["back"]}
+        save_record(sid, rec)
+
+
+@contextlib.contextmanager
+def writing(sid):
+    """A short lock on one relay record while it's read and written again, so `relay back` and a hook saving the
+    record can't undo each other (only_one is held through a whole relayed turn)."""
+    RECORDS.mkdir(parents=True, exist_ok=True)
+    with open(record_path(sid).with_suffix(".write"), "a") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def save_record(sid, rec):
     RECORDS.mkdir(parents=True, exist_ok=True)
     tmp = record_path(sid).with_suffix(f".{os.getpid()}")
     tmp.write_text(json.dumps(rec))
@@ -152,12 +171,32 @@ def keep(sid, rec):
 
 
 def retire(sid, rec):
-    """Done with this limit's relay. After `farmout relay back`, a stub remembers it: the session file still ends in
-    that limit until Claude answers, and the next prompt mustn't be relayed again."""
-    if rec.get("back"):
-        keep(sid, {k: rec[k] for k in ("session", "back", "said", "said_done", "since") if k in rec})
-    else:
-        forget(sid)
+    """Done with this limit's relay. After `farmout relay back` (read again here: it may have come meanwhile), a
+    stub remembers it: the session file still ends in that limit until Claude answers, and the next prompt mustn't
+    be relayed again."""
+    with writing(sid):
+        now = record(sid) or {}
+        back = max(rec.get("back") or 0, (now.get("back") or 0) if now.get("since") == rec.get("since") else 0)
+        if back:
+            save_record(sid, {**{k: rec[k] for k in ("session", "said", "said_done", "since") if k in rec},
+                              "back": back})
+        else:
+            forget(sid)
+
+
+def back(now):
+    """`farmout relay back`: every relay not back already is marked so. How many there were."""
+    n = 0
+    for rec in records(now):
+        sid = rec.get("session")
+        if not isinstance(sid, str):
+            continue
+        with writing(sid):
+            cur = record(sid)  # again: a hook may have saved it, or a catch-up retired it, meanwhile
+            if cur and not cur.get("back"):
+                save_record(sid, {**cur, "back": now})
+                n += 1
+    return n
 
 
 def forget(sid):
@@ -363,8 +402,8 @@ def session_for(path, sid, cwd, rec, limit, cfg, now):
     started from the session file. Raises ValueError, KeyError or OSError when nothing can take over."""
     from . import sessions
     name = (rec or {}).get("name")
-    if name and (not sessions.path(name).is_dir() or (rec.get("until") or 0) < now - GRACE):
-        name = None  # removed, or carried on from an earlier limit
+    if name and (rec.get("back") or not sessions.path(name).is_dir() or (rec.get("until") or 0) < now - GRACE):
+        name = None  # Claude was back since (so this limit is a new one), the session was removed, or it's old
     if not name:
         s = {"from": "claude", "label": native.LABELS["claude"], "file": path, "cwd": cwd, "id": sid, "updated": now}
         mode = cfg.get("mode") if cfg.get("mode") in MODES else "read"
@@ -468,7 +507,7 @@ def catch_up(sid, rec):
     try:
         meta = sessions.load(name)
     except (KeyError, OSError, ValueError):
-        forget(sid)
+        retire(sid, rec)
         return None
     busy = sessions.busy(name) or bool(sessions.pending(name))  # before the turns: one could end in between
     base, told, shown = meta.get("base") or 0, rec.get("told") or 0, set(rec.get("shown") or [])

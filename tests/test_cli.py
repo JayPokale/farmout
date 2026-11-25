@@ -28,6 +28,12 @@ from farmout import graph  # noqa: E402
 from farmout import review as review_mod  # noqa: E402
 
 
+def in_farmout(env, body):
+    """stdout of Python run with this test's state and the farmout package importable, for what no command reaches."""
+    code = f"import json, sys, time\nsys.path.insert(0, {str(SERVER.parent)!r})\nfrom farmout import relay, sessions\n{body}"
+    return subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, check=True).stdout
+
+
 class CliBase(Base):
     def setUp(self):
         super().setUp()
@@ -81,6 +87,23 @@ class CliBase(Base):
 
 
 class SessionTest(CliBase):
+    def test_review8_a_message_taken_back_after_the_runner_read_it_never_runs(self):
+        self.fo("run", "codex", "say a", "-n", "s")
+        out = in_farmout(self.env, "f = sessions.path('s') / 'inbox' / '9999-x.json'  # gone: a cancel took it\n"
+                                   "print(sessions.turn('s', {'id': 'x', 'prompt': 'say b'}, ('session', 's'), f))\n"
+                                   "print(len(sessions.turns('s')))")
+        self.assertEqual(out.split(), ["None", "1"])
+
+    def test_review8_cancel_never_stops_another_messages_turn(self):
+        self.fo("run", "codex", "say a", "-n", "s")
+        in_farmout(self.env, "sessions.write_json(sessions.path('s') / 'turns' / '0002.json', {'n': 2, 'id': 'old', "
+                             "'prompt': 'x', 'status': 'running', 'started': time.time()})  # its runner died")
+        self.fo("send", "s", "nap 4", "--bg")
+        wait_until(lambda: in_farmout(self.env, "print(sessions.busy('s'))").strip() == "True", 20)
+        self.assertEqual(in_farmout(self.env, "print(sessions.cancel('s', 'old'))").strip(), "False")
+        wait_until(lambda: in_farmout(self.env, "print(sessions.busy('s'))").strip() == "False", 30)
+        self.assertIn("napped", self.fo("log", "s").stdout, "the running turn went on")
+
     def test_every_worker_resumes_its_own_conversation(self):
         for worker, cli in (("codex", "codex"), ("claude", "claude"), ("copilot", "copilot"), ("antigravity", "agy")):
             with self.subTest(worker):
@@ -3604,6 +3627,24 @@ class RelayTest(CliBase):
         self.assertIn("hookSpecificOutput", self.hook("hello", f), "caught up")
         self.assertIsNone(self.hook("again", f), "the file still ends in that limit: it goes to Claude, as asked")
         self.assertEqual(len(self.runs()), 1)
+
+    def test_review8_after_back_a_test_or_a_new_limit_is_a_relay_of_its_own(self):
+        self.fo("relay", "on", "-w", "codex")
+        f = self.limited_session()
+        self.assertIn("farmout session codex-1", self.hook("say one", f)["stopReason"])
+        self.fo("relay", "back")
+        self.fo("relay", "test", CLAUDE_CODE_SESSION_ID="s1")  # before any prompt reached Claude
+        self.assertIn("farmout session codex-2", self.hook("say two", f)["stopReason"])
+        self.fo("relay", "back")
+        self.limited_session(resets=time.time() + 7200)  # a new limit, again before any prompt reached Claude
+        self.assertIn("farmout session codex-3", self.hook("say three", f)["stopReason"])
+
+    def test_review8_a_back_that_came_while_the_catch_up_ran_is_kept(self):
+        stale = in_farmout(self.env, "relay.keep('s9', {'session': 's9', 'since': time.time(), 'name': 'codex-1'})\n"
+                                     "print(json.dumps(relay.record('s9')))").strip()
+        self.fo("relay", "back")  # while the catch-up held its copy of the record
+        in_farmout(self.env, f"relay.retire('s9', json.loads({stale!r}))")
+        self.assertTrue(json.loads(in_farmout(self.env, "print(json.dumps(relay.record('s9')))"))["back"])
 
     def test_what_back_leaves_behind_holds_back_no_later_relay(self):
         self.fo("relay", "on", "-w", "codex")

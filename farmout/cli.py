@@ -350,14 +350,11 @@ def cmd_relay(a):
     elif a.action == "off":
         cfg = relay.configure(on=False)
     elif a.action == "back":
-        now, recs = time.time(), [r for r in relay.records() if not r.get("back")]  # not those already back
-        for rec in recs:
-            relay.keep(rec["session"], {**rec, "back": now})
+        n = relay.back(time.time())
         cfg = relay.config()
         if not a.json:
-            n = len(recs)
             print(f"Claude is back: {'the relayed conversation goes' if n == 1 else f'{n} relayed conversations go'} to "
-                  f"Claude again, which is told what happened meanwhile with your next prompt there." if recs
+                  f"Claude again, which is told what happened meanwhile with your next prompt there." if n
                   else "Nothing is being relayed.")
             return 0
     else:
