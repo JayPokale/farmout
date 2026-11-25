@@ -157,6 +157,14 @@ class SessionTest(CliBase):
             os.kill(int(pid), 9)
         self.assertEqual(left, [], "kill_all() killed what was left of its process group")
 
+    def test_review13_a_worker_taken_down_is_forgotten_even_if_reading_its_output_broke_off(self):
+        out = in_farmout(self.env, "from farmout import proc\n"
+                                   "def drain(p):\n    raise KeyboardInterrupt  # a Ctrl-C after it was taken down\n"
+                                   "proc.drain = drain\ntry:\n"
+                                   f"    proc.run(['sleep', '30'], 'k', {str(self.work)!r}, timeout=0.5)\n"
+                                   "except KeyboardInterrupt:\n    pass\nprint(len(proc.running.get('k', ())))")
+        self.assertEqual(out.strip(), "0", "its process group id may be reused: kill_all() mustn't signal it")
+
     @staticmethod
     def cmdline(d):
         try:

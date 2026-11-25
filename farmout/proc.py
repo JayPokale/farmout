@@ -82,7 +82,9 @@ def run(cmd, key, cwd, stdin=None, env=None, timeout=None):
         down = True
         raise
     finally:
-        if down:  # else a stop broke off taking its process group down: kill_all() can still find it
+        # kept only while a stop that broke off left its process group alive, so kill_all() can still find it (a
+        # dead one is forgotten: its process group id may be reused)
+        if down or (p.poll() is not None and not group_alive(p)):
             with lock:
                 running.get(key, set()).discard(p)
     if p.returncode:
