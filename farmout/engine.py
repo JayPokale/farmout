@@ -80,12 +80,13 @@ def fallbacks(t):
     return out
 
 
-def auto_worker(cwd):
+def auto_worker(cwd, skip=()):
     """(worker, model) for `farmout run auto`: the first allowed lane that isn't at a usage limit or logged out,
-    your fallback order first (`farmout bench --apply` writes it best-first), then every other worker."""
+    your fallback order first (`farmout bench --apply` writes it best-first), then every other worker. skip: workers
+    not to pick (`farmout continue` leaves out the CLI that just ran out)."""
     s, held, why = settings(cwd), usage.limits(), usage.reasons()
     allowed = [lane(x) for x in (s.get("fallback") or []) + list(ENABLED)]
-    allowed = [(w, m) for w, m in allowed if w in ENABLED and w in s.get("workers", ENABLED)]
+    allowed = [(w, m) for w, m in allowed if w in ENABLED and w in s.get("workers", ENABLED) and w not in skip]
     pick = next(((w, m) for w, m in allowed if w != "api" and not held_by(lane_key(w, m, s), w, held, why)),
                 None)
     pick = pick or next(iter(allowed), None)

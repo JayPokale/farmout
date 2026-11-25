@@ -21,7 +21,7 @@ cd your-repo && farmout bench --share   # 哪个 AI 订阅最能在你自己的�
 
 <p align="center"><img src="../assets/limits-demo.gif" width="900" alt="真实运行的录屏，只有等待的部分被加速：farmout run claude 开始一段对话；Claude 退出登录后，farmout send 把下一轮交给 Codex，Codex 根据此前的对话作答；接着 farmout bench 在三个过去的 bug 修复上比较 Claude Opus 和 Sonnet，--apply 把胜者设为默认"></p>
 
-- **撞上限也不停**：某个订阅触及用量上限或已退出登录时，farmout 的任务、对话或流水线阶段会带着此前的对话交给下一个可用的模型，而不是直接失败。也可以主动切换（`farmout send cache -w codex`，或 `--model opus`）。farmout 转移的是它自己的任务和对话；已经用完额度的 Claude Code 交互式会话，它救不回来。
+- **撞上限也不停**：某个订阅触及用量上限或已退出登录时，farmout 的任务、对话或流水线阶段会带着此前的对话交给下一个可用的模型，而不是直接失败。也可以主动切换（`farmout send cache -w codex`，或 `--model opus`）。你自己的 Claude Code 或 Codex 会话也一样：它提示已达用量上限时，运行 `farmout continue --write`，同一段对话就由另一个订阅接着做（你的提问、它的回答，以及它做过的每一步，各占一行）。
 - **在 Claude Code 里少用额度**：Claude 会把长篇阅读和样板代码交给最合适的订阅。用这种方式总结三篇论文，答案完全相同，Claude 却少用了 **59% 的 token**（成本降低 74%）。
 - **`farmout bench`**：在你自己的代码上，哪个 AI 最强？Opus 值得占用你的额度吗？farmout 会在临时 worktree 里撤销你 git 历史中最近的 bug 修复，让你的每个订阅去把 bug 找出来；加上 `--share`，还能把得分做成一篇帖子和一张图片卡片（只有分数，绝不包含你的代码）。
 - **`farmout review`**：Codex、Gemini（通过 Antigravity）、GitHub Copilot 和第二个 Claude 账号同时以只读方式审查你的改动。各模型的发现会合并在一起，并标出有几个模型意见一致；凡是引用了不存在的文件或行号的发现，在你看到之前就会被剔除。在[我们的基准测试](../bench/README.md)中，32 个 bug（23 个人为植入，9 个是来自开源项目的真实回归）每一个都被四个模型中的至少三个指出。
@@ -87,6 +87,7 @@ farmout review -w claude:opus,claude:sonnet          # two models of one plan; a
 farmout bench -w claude:opus,claude:sonnet --apply   # the one that found more of your past bugs becomes the default here
 farmout send dates --model opus                      # the same conversation on a bigger model
 farmout send dates -w codex                          # or on another worker, which gets the conversation so far
+farmout continue --write                             # Claude Code 撞上限了？同一段对话换个订阅接着做
 
 # Sessions talk to each other
 farmout send dates --attach review-1-claude "Fix what this review found"
@@ -133,6 +134,7 @@ farmout hook install          # review every commit; block it when 2+ models fla
 | `run <worker> "<prompt>"` | 启动一个会话：`-n name`、`--write`（直接修改当前目录）、`--isolate`（在私有 worktree 中修改并生成补丁）、`--model`、`--effort`、`--fallback w1,w2`、`--bg`、`-f file`。worker 填 `auto` 时，会选第一个允许使用且未触及用量上限的 worker |
 | `send <session> "<msg>"` | 发送下一条消息；会话忙碌时消息会排队。`--attach <session>` 把那个会话的最后一条回复一并交过去，`-f` 附加文件，`--bg` 立即返回。`--model opus` 换个模型继续，`-w codex[:model]` 换个 worker 继续（它会以文件形式拿到此前的对话）。项目文件夹挪了位置后，`--here` 在当前文件夹继续（在同一个 git 仓库里，farmout 不用它也能自己找到） |
 | `fork <session> "<msg>"` | 给对话开一个分支：新会话保留到第 `--at N` 轮为止的对话（默认最新一轮；`0` 表示一轮都不保留），从那里接着聊，还可以用 `-w worker[:model]` 或 `--model` 换 worker 或模型。轮次编号与 `farmout tree` 显示的一致 |
+| `continue ["<msg>"]` | 撞上用量上限后，让另一个 worker 接着你自己的 Claude Code 或 Codex 会话：默认是你在这个文件夹（或它所在的 git 仓库）里最近的一段，`--session <id>` 指定别的，`--list` 列出它们。接手的 worker（`-w worker[:model]`；默认是第一个就绪、且不在刚用完额度的那个登录上的 worker；第二个 Claude 账号算另一个登录）会拿到你的提问、它的回答，以及每个操作一行，从该会话最后一次压缩算起；之后它就是一个普通的 farmout 会话。默认只读，加 `--write` 或 `--isolate` 才能改文件 |
 | `tree [session]` | 把每段对话画成一张图：每一轮的问题，每个分支各占一条线，从它分出的那一轮引出，就像 `git log --graph` 画分支那样（`--all` 连 review、ask、race 的运行也列出；支持 `--json`） |
 | `ui [session]` | 在终端里全屏显示同一张图：在旁边阅读任意一轮，从最新一轮继续（`c`），从任意一轮分叉（`b`），或把某个问题换个问法再问（`e`），可换任意 worker 或模型；在问题和回答里查找（`/`），复制回答（`y`），删除分支（`D`）；全部按键见[会话](#会话)一节。加 `--web` 则改在浏览器里打开，只监听 127.0.0.1，每次运行都生成新的密钥 |
 | `ask "<question>"` | 把同一个问题发给每个 worker（用 `-w` 挑选，`-w claude:opus,codex` 还能指定模型，`-w claude:opus,claude:sonnet` 用同一个订阅的两个模型），答案并排展示；`--debate` 让每个 worker 读完其他人的回答后再答一次 |
@@ -187,6 +189,10 @@ dates · claude · 2m ago
 | `Tab` · `g` `G` · `r` · `?` · `q` | 在图和阅读区之间切换 · 第一行、最后一行 · 重新加载 · 查看这些按键 · 退出 |
 
 问题和回答显示前会去掉转义序列和控制字符，所以 worker 的输出改不了你的终端。`farmout ui --web` 在浏览器里显示同样的内容：这个页面只监听 127.0.0.1，并且需要它打印的地址里带的密钥，所以你访问的其他网站用不了它。
+
+**你自己的会话。** Claude Code 提示你已达用量上限时，在另一个终端运行 `farmout continue --write`（或者在 Claude Code 的输入框里以 `!` 开头运行，这样命令会直接执行，不经过 Claude）。farmout 会读取 Claude Code 为这个文件夹保存的会话文件，取你当前所在的那条分支，从最后一次压缩开始（连同 Claude 对之前内容的总结），把你的提问、它的回答和每个操作一行（`Edit cache.py`、`Bash: pytest -q`）交给下一个就绪的 worker。Codex 的会话同样可以（`--from codex`）。只算你自己运行的会话：farmout 自己启动的 `claude -p` 和 `codex exec` 会被跳过。任何内容离开你的电脑之前，凭据都会按内置规则替换掉；新会话的轮次接着导入的轮次编号，所以 `send`、`fork`、`tree` 和 `ui` 照常可用（`export` 会包含导入的轮次）。等 Claude 恢复后，用 `farmout export <session>` 让它看看这段时间发生了什么。
+
+**长对话。** 接手对话的 worker（触及上限时、用 `send -w` 时、在分支上或通过 `continue`）是从一个文件里读对话的。超过约 12k token 时，这个文件会被缩短：较早的每一轮变成一行，包括问题和回答的开头，并标出整轮在第二个文件里的行号范围，第二个文件逐字保存全部内容；最新的三轮保持完整。worker 只打开需要的那几行，所以转移一段长对话的花费只是重读一遍的一小部分。
 
 **文件夹被移动或改名。** farmout 按名字找会话，而不是按文件夹，每个会话还记得自己的文件夹在 git 仓库里的位置。项目改名或挪走之后，在仓库里任何地方 `send` 即可：会话会跟过去，每个 worker 按 id 恢复自己的对话，下一条消息还会告诉它文件夹搬到了哪里。隔离会话的 worktree 会随仓库一起移动（farmout 用 `git worktree repair` 重新连上）。不在 git 仓库里时，用 `farmout send <session> --here "..."` 在当前文件夹继续。如果某个 worker 的 CLI 找不到自己的对话了（会话存储被清空，或旧版 Claude Code 只在原来的文件夹里找对话），farmout 会以文件形式把此前的对话交给它，而不是直接失败。
 
@@ -313,6 +319,8 @@ redact = true                   # strip credentials from briefs and piped input
 
 当某个 worker 因订阅触及用量上限而失败时，farmout 会记下该让它歇多久，并改由下一个 worker 执行该任务。重置时间从 CLI 的报错里读取（“try again in 4 days 2 hours”、“retry in 32.5s”、“resets 3pm (Asia/Kolkata)”、“try again at 3:04 PM”），读不到就按 15 分钟算。未登录、登录过期或订阅已结束的 worker 也按同样方式处理，暂停 30 分钟；如果没有别的 worker 能接手，会提示如何重新登录。下一个 worker 依次取自 `--fallback`、阶段的 `fallback` 或 `fallback` 设置，都没有时就是除 `api` 以外的其他所有可用 worker（`[]` 或 `--fallback ""` 可关闭）。条目可以指定模型，比如 `claude:opus` 触及上限后交给 `claude:sonnet`；上限按模型分别记录。对话进行到一半时，下一个 worker 会以文件形式拿到此前的对话，会话由它继续。审查从不改换 worker，因为“意见一致”必须来自不同的审查者；不加 `-w` 时，已知触及上限的 worker 会被排除在审查之外。在限制解除之前，发给这个 worker 的任务会直接转给下一个，`farmout run auto` 会跳过它，`farmout status` 和 `farmout doctor` 也会显示出来。`farmout stats` 根据用量日志（`~/.local/state/farmout/usage.jsonl`，从不记录 prompt 或输出内容）显示每个订阅的运行次数、失败次数、限额情况、耗时和 token 数。
 
+你自己的 Claude Code 或 Codex 会话不经过 farmout，所以照旧会在上限处停下；`farmout continue` 会让另一个 worker 接着那段对话（见[会话](#会话)）。想随时看到上限情况，可以把 `farmout status --line` 放进 tmux 的状态栏，或放进 Claude Code 的状态栏：在 `~/.claude/settings.json` 里写 `"statusLine": {"type": "command", "command": "farmout status --line"}`。
+
 ## git 钩子
 
 `farmout hook install` 会添加一个 pre-commit 钩子（加 `--pre-push` 则是 pre-push 钩子），运行 `farmout review --staged --min-agree 2 --fail-on high`：只要有两个或以上的模型指出高严重度问题，提交就会被拦下。`FARMOUT_SKIP=1`（或 `git commit --no-verify`）可以跳过一次；已有的钩子可以用 `--force` 挪到一边，执行 `farmout hook uninstall` 时会还原。
@@ -378,8 +386,9 @@ farmout 同时也是一个 MCP 服务器（`farmout mcp`，或 `python3 server.p
 - **数据会离开你的机器**。任务说明和文件会发送给各个 worker 的服务商。可以用 `workers` 设置让工作仓库远离个人账号。
 - **farmout 运行、发送和获取的全部内容：**
   - *运行：* 你安装的 worker CLI（`agy`、`codex`、`claude`、`copilot`、`dsh`）、`git`、`fix-pr` 和 `apply --pr` 用到的 `gh`、`race` 和流水线里你自己的测试命令、你设置或信任的钩子（`farmout hooks` 会列出它们）、你从商店安装的工具（用 `farmout tool run` 运行时，经由你的 shell）、`api` worker 收到 PDF 时用的 `pdftotext`、`bench --share` 生成 PNG 卡片时用的 SVG 转换工具（`rsvg-convert`、ImageMagick 或 Inkscape），以及在 `farmout ui` 里你要求时打开的分页器、编辑器和剪贴板工具。
-  - *发送：* 每份任务说明（你的提示词、你指定的文件、待审查的改动，以及继续一段对话时它此前的各轮）通过 CLI 发给对应 worker 的服务商，`api` 则发给你设置的端点。`apply --pr` 会把会话的分支推送到你的 `origin` 并创建 pull request。没有遥测，也没有分析统计。
+  - *发送：* 每份任务说明（你的提示词、你指定的文件、待审查的改动、继续一段对话时它此前的各轮，以及你用 `continue` 接着做的 Claude Code 或 Codex 会话，凭据已替换）通过 CLI 发给对应 worker 的服务商，`api` 则发给你设置的端点。`apply --pr` 会把会话的分支推送到你的 `origin` 并创建 pull request。没有遥测，也没有分析统计。
   - *获取：* 只在你要求时：`farmout store` 从 GitHub 上的本仓库（或你用 `FARMOUT_STORE` 或 `store` 设置指定的商店）读取商店索引和你安装的文件，每个文件都用 SHA-256 锁定；`farmout skill add` 下载你指定的技能。`bench/leaderboard.py` 是维护者用的脚本，不随包安装，它会克隆它评分的公开仓库。
+  - *读取：* 除了你指定的内容，只在你运行 `farmout continue` 时读取 Claude Code（`~/.claude/projects` 或 `$CLAUDE_CONFIG_DIR`）和 Codex（`~/.codex/sessions` 或 `$CODEX_HOME`）保存的会话文件，用来找到并读取这个文件夹最近的会话。它从不写入这些文件。
   - *监听：* `farmout ui --web` 只在 127.0.0.1 上提供页面，并且每次运行都生成新的密钥；`farmout mcp` 只通过 stdio 通信。
   - *写入：* 会话和结果在 `~/.local/state/farmout`，委派的结果在 `~/.cache/farmout`，设置在 `~/.config/farmout`，隔离的 worktree 在 `<repo>/.farmout/worktrees/`，每次审查读取的改动在 `<repo>/.git/farmout/`。在你的项目里只写你要求的：`--write` 的改动、你应用的补丁、你指定的文件（`export -o`）、`bench --apply` 写入的设置、你安装的 git 钩子。
 
@@ -431,7 +440,7 @@ farmout 在你的机器上以你的登录身份，按各厂商文档中说明的
 
 **它和 OpenAI 为 Claude Code 推出的 Codex 插件有什么不同？** 那个插件只能在 Claude Code 里驱动 Codex。farmout 能驱动你拥有的任何订阅（Codex、通过 Antigravity 使用的 Gemini、Copilot、第二个 Claude 账号、本地模型），可以同时用好几个，在终端或任何 MCP 客户端里都能用，还支持会话和流水线。
 
-**这是绕过用量上限的办法吗？** 不是。触及上限的任务会转到你付费的另一个订阅，或者（如果你指定了）同一订阅里的另一个模型（`fallback = ["claude:sonnet"]`）；每个订阅自己的上限照样有效，farmout 会在 worker 报告的重置时间之前不再使用它。它从不共享登录，也不轮换账号；已经用完额度的 Claude Code 交互式会话，它也挪不走，它挪的是它自己的任务和对话。真正省额度的是把长篇阅读和代码审查交给其他模型（在我们总结三篇论文的测试里，Claude 少用了 59% 的 token）。
+**这是绕过用量上限的办法吗？** 不是。触及上限的任务会转到你付费的另一个订阅，或者（如果你指定了）同一订阅里的另一个模型（`fallback = ["claude:sonnet"]`）；每个订阅自己的上限照样有效，farmout 会在 worker 报告的重置时间之前不再使用它。它从不共享登录，也不轮换账号。`farmout continue` 把你自己的 Claude Code 或 Codex 对话转给你付费的另一个订阅，不会延长任何上限。真正省额度的是把长篇阅读和代码审查交给其他模型（在我们总结三篇论文的测试里，Claude 少用了 59% 的 token）。
 
 **我只有一个订阅，farmout 适合我吗？** 适合，只是订阅越多能做的越多。一个订阅里就有好几个模型：Claude 的 Opus、Sonnet 和 Haiku，几个 Codex 模型，或者 Copilot 里来自多家厂商的模型。`farmout bench -w claude:opus,claude:sonnet --apply` 告诉你更大的模型能不能在你自己过去的 bug 上找得更多，并把更合适的那个设为默认；`farmout review -w claude:opus,claude:sonnet`（或 `-w codex,codex`）用一个订阅拿到两份独立的审查；`fallback = ["claude:sonnet"]` 让你在 Opus 触及上限时继续工作；遇到难题时，`farmout send <session> --model opus` 把对话换到更大的模型上。再通过 `api` worker 接一个本地模型（Ollama），就多了一个免费的第二意见。
 

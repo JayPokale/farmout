@@ -449,6 +449,8 @@ def turn(name, msg, key, inbox_file=None):
         t.update(resume=meta["fork_of"], fork=True, session_id=str(uuid.uuid4()))
     elif meta["worker"] in NEW_ID:
         t["session_id"] = str(uuid.uuid4())
+    if meta["worker"] == "api":  # its history, before deciding whether the earlier turns still have to go along
+        t["history"] = read_json(d / "messages.json", [])
     if not t.get("resume") and not t.get("history") and not msg.get("note") and (d / "context.md").exists():
         # a branch whose first turn didn't take: nothing holds its earlier turns yet, so this message carries them
         files, note = t["handoff"]()
@@ -456,8 +458,6 @@ def turn(name, msg, key, inbox_file=None):
     if meta.get("moved_from"):  # paths in the conversation so far point at the old folder
         t["prompt"] += (f"\n\n(This project's folder moved from {meta['moved_from']} to {meta['cwd']} since the last "
                         "message: files from earlier in the conversation are now under the new folder.)")
-    if meta["worker"] == "api":
-        t["history"] = read_json(d / "messages.json", [])
     if (worker, model) != (meta["worker"], meta["model"]):
         t = engine.switch(t, worker, model)
     where = meta["iso"] or ({"label": name, "branch": f"farmout/{name}"} if meta["isolate"] else None)
@@ -498,18 +498,98 @@ def turn(name, msg, key, inbox_file=None):
     return rec
 
 
+HANDOFF_FULL = 48_000  # characters (about 12k tokens): a longer conversation is handed over shortened
+KEEP_TURNS, TURN_CAP, INDEX_MAX = 3, 10_000, 100
+TURN = re.compile(r"## Turn (\d+) \(.*\)")
+
+
+def gist(text, n):
+    text = " ".join(text.split())
+    return text if len(text) <= n else text[:n - 1].rstrip() + "…"
+
+
+def shorten(text, full):
+    """A conversation too long to hand over whole, as what to read first: the older turns one line each, with their
+    line range in `full` (the file that holds all of text), and the newest turns in full. None if text is short
+    enough to go as it is, or shortening wouldn't save anything."""
+    if len(text) <= HANDOFF_FULL:
+        return None
+    lines = text.split("\n")
+    starts = [i for i, line in enumerate(lines) if TURN.fullmatch(line) and lines[i + 1:i + 3] == ["", "### Prompt"]
+              and (i == 0 or lines[i - 1] == "")]  # a heading quoted inside an answer seldom has all three
+    spans = list(zip(starts, starts[1:] + [len(lines)]))  # [start, end) of each turn
+    older, newest = spans[:-KEEP_TURNS], spans[-KEEP_TURNS:]
+
+    def at(a, b):
+        return f"lines {a + 1}–{b}"
+
+    def capped(a, b):  # a long part keeps its start and its end; the middle stays in the full file
+        part = "\n".join(lines[a:b])
+        if len(part) <= TURN_CAP:
+            return part
+        h, t = TURN_CAP // 3, len(part) - 2 * TURN_CAP // 3
+        first, last = a + part[:h].count("\n"), a + part[:t].count("\n") + (part[t - 1] != "\n")
+        return f"{part[:h]}\n[… {at(first, last)} of {full} are left out here, in part or whole …]\n{part[t:]}"
+
+    pre_end = starts[0] if starts else len(lines)
+    if not older and all(len("\n".join(lines[a:b])) <= TURN_CAP for a, b in [(0, pre_end)] + newest):
+        return None
+
+    def entry(a, b):
+        part = lines[a + 1:b]
+        reply = next((i for i, line in enumerate(part) if line == "### Reply"), None)
+        if part[:1] == [""] and part[1:2] == ["### Prompt"] and reply is not None:
+            said, got = "\n".join(part[2:reply]), "\n".join(part[reply + 1:])
+        else:
+            said, got = "\n".join(part), ""
+        return f"- {lines[a][3:]}, {at(a, b)}: {gist(said, 140)}" + (f" → {gist(got, 220)}" if got.strip() else "")
+
+    index = [entry(a, b) for a, b in older]
+    if len(older) > INDEX_MAX:  # the first turn (usually the task) and the newest ones; a range for the rest
+        cut = len(older) - (INDEX_MAX - 2)
+        first, last = TURN.fullmatch(lines[older[1][0]]).group(1), TURN.fullmatch(lines[older[cut - 1][0]]).group(1)
+        index = index[:1] + [f"- Turns {first}–{last}, {at(older[1][0], older[cut - 1][1])}: not listed one by one"] + index[cut:]
+    pre = "\n".join(lines[:pre_end]).strip()
+    out = ["# The conversation so far, shortened", "",
+           f"{len(spans)} turns, about {len(text) // 4000}k tokens in full. The older turns are one line each, the newest "
+           f"{len(newest)} in full. Word for word, everything is in {full}: open the lines given for any turn you need.", ""]
+    if pre:
+        out += [capped(0, pre_end).strip(), ""]
+    if index:
+        out += ["## Older turns, one line each", ""] + index + [""]
+    return "\n".join(out + [capped(a, b) for a, b in newest])
+
+
+def shortened(listed, full):
+    return (f"The listed file {listed.name} has it shortened: the older turns one line each, the newest in full. Read "
+            f"it first; for any older turn you need word for word, open the lines it gives in {full}.")
+
+
+def pack(text, ctx, full, who):
+    """Write the conversation so far for a worker to read: (the file to list, the note for the message). A long one
+    goes shortened in ctx and whole in full."""
+    short = shorten(text, full)
+    if short is None:
+        ctx.write_text(text)
+        return ctx, f"Context: this message continues an earlier conversation ({who}), which is in the listed file {ctx.name}. Read it first."
+    full.write_text(text)
+    ctx.write_text(short)
+    return ctx, f"Context: this message continues an earlier conversation ({who}). " + shortened(ctx, full)
+
+
 def handoff(name, n):
     """For turn n, if it can't resume the worker's own conversation (another worker, or a folder its CLI doesn't
-    know): () -> (files, note). The file holds the conversation so far, a branch's earlier turns included, and the
-    note, added to the message, points the worker at it."""
+    know): () -> (files, note). The file holds the conversation so far, a branch's earlier turns included (shortened
+    when long), and the note, added to the message, points the worker at it."""
     def give():
         meta, text = load(name), transcript(name, before=n)
         if not text.strip():
             return [], ""
-        ctx = path(name) / f"context-{n:04d}.md"
-        ctx.write_text(text)
-        return [str(ctx)], (f"\n\nContext: this message continues an earlier conversation (with {meta['worker']}), "
-                            f"which is in the listed file {ctx.name}. Read it first.")
+        d, imported = path(name), meta.get("imported") or {}
+        mine = any(r["n"] < n and r["status"] == "ok" for r in turns(name))
+        who = f"in {imported['label']}" if imported and not mine else f"with {meta['worker']}"
+        ctx, note = pack(text, d / f"context-{n:04d}.md", d / f"context-{n:04d}-full.md", who)
+        return [str(ctx)], "\n\n" + note
     return give
 
 
@@ -638,7 +718,13 @@ def fork(name, new_name=None, worker=None, at=None, model=None):
     if text.strip():  # kept even for a native fork: a later move to another worker or folder hands it over
         ctx = path(meta["name"]) / "context.md"
         ctx.write_text(text)
-        if not native:
+        short = None if native else shorten(text, ctx)
+        if short is not None:  # a long conversation: what to read first, with line ranges into context.md
+            brief = path(meta["name"]) / "context-brief.md"
+            brief.write_text(short)
+            note = f"\n\nContext: this continues an earlier conversation (with {parent['worker']}). " + shortened(brief, ctx)
+            files.append(str(brief))
+        elif not native:
             note = (f"\n\nContext: this continues an earlier conversation (with {parent['worker']}), which is in "
                     "the listed file context.md. Read it first.")
             files.append(str(ctx))
@@ -653,4 +739,4 @@ def summary(meta):
             "updated": (meta.get("last") or {}).get("ended") or meta.get("created"), "cwd": meta["cwd"],
             "group": meta.get("group"), "parent": meta.get("parent"), "fork_at": meta.get("fork_at"),
             "base": meta.get("base") or 0, "isolate": meta.get("isolate"), "top": (meta.get("home") or {}).get("top"),
-            "branch": (meta.get("iso") or {}).get("branch")}
+            "branch": (meta.get("iso") or {}).get("branch"), "imported": (meta.get("imported") or {}).get("label")}

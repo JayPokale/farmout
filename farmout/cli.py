@@ -12,11 +12,11 @@ import tempfile
 import time
 from pathlib import Path
 
-from . import VERSION, bench, engine, flows, graph, live, pipeline, proc, review, sessions, skills, store, usage
+from . import VERSION, bench, engine, flows, graph, live, native, pipeline, proc, review, sessions, skills, store, usage
 from . import hooks as farmout_hooks
 from .config import OUT_DIR, STATE, digest, find, project_root, read, repo_root, settings, trust_file
 from .graph import ago, short
-from .workers import API_BASE, API_MODEL, ENABLED, SETUP, WORKERS, lane, use_main_claude
+from .workers import API_BASE, API_MODEL, CLAUDE_DIR, ENABLED, SETUP, WORKERS, lane, use_main_claude
 
 HOOK_MARK = "# farmout review gate"
 
@@ -149,6 +149,57 @@ def cmd_run(a):
     if not a.json:
         err(f"[{meta['name']} · {worker}{' · isolated' if a.isolate else ' · writes' if a.write else ''}]")
     return send_and_show(a, meta["name"], prompt, a.file + extra)
+
+
+CARRY_ON = "Carry on from where this conversation stopped."
+
+
+def same_login(source):
+    """Is farmout's worker for this CLI on the login the session ran out on? A second Claude account isn't."""
+    return source != "claude" or not CLAUDE_DIR or os.path.realpath(CLAUDE_DIR) == os.path.realpath(native.claude_home())
+
+
+def cmd_continue(a):
+    found = native.find(a.cwd, a.source, a.session)
+    if a.list:
+        rows = [{**s, "title": native.title(s)} for s in found[:a.limit]]
+        if a.json:
+            return emit(a, rows)
+        if not rows:
+            print("No Claude Code or Codex session here, or anywhere in this git repository.")
+            return 1
+        for r in rows:
+            print(f"{r['from']:<7} {ago(r['updated']):>8}  {r['id'][:8]}  {short(r['cwd'])}  {sessions.gist(r['title'], 70)}")
+        return 0
+    if not found:
+        raise ValueError((f"no session {a.session!r}" if a.session else "no Claude Code or Codex session in this folder "
+                          "or its git repository") + " (`farmout continue --list` shows what there is)")
+    s = found[0]
+    summary, turns = native.read(s)
+    if not turns and not summary:
+        raise ValueError(f"{s['label']} session {s['id']} has nothing to carry on from yet")
+    text, secrets = farmout_hooks.redact(native.transcript(s, summary, turns))
+    prompt, extra = read_prompt(a.message, required=False, cwd=a.cwd)
+    try:
+        worker, model = lane(a.worker) if a.worker else engine.auto_worker(
+            a.cwd, skip={s["from"]} if same_login(s["from"]) else set())
+    except ValueError:
+        raise ValueError(f"no worker but {s['from']} is ready here (`farmout doctor`); name one with -w, "
+                         f"e.g. -w {s['from']}:<another model>") from None
+    check_workers([worker])
+    cwd = s["cwd"] if os.path.isdir(s["cwd"]) else a.cwd
+    meta = sessions.create(worker, cwd, name=a.name, write=a.write, isolate=a.isolate, model=a.model or model,
+                           effort=a.effort, fallback=None if a.fallback is None else split(a.fallback), base=len(turns))
+    meta["imported"] = {"from": s["from"], "label": s["label"], "id": s["id"], "file": s["file"], "turns": len(turns)}
+    sessions.save(meta)
+    (sessions.path(meta["name"]) / "context.md").write_text(text)
+    if not a.json:
+        mode = " · isolated" if a.isolate else " · writes" if a.write else " · read-only (--write lets it edit)"
+        err(f"[{meta['name']} · {worker} · carries on {s['label']} session {s['id'][:8]}, {len(turns)} turn"
+            f"{'s' * (len(turns) != 1)}{' and a summary' if summary else ''}{mode}]")
+        if secrets:
+            err(f"farmout: redacted {secrets} secret{'s' * (secrets != 1)} from the conversation")
+    return send_and_show(a, meta["name"], prompt or CARRY_ON, a.file + extra)
 
 
 def follow(a, name):
@@ -989,6 +1040,23 @@ def parser():
     f.add_argument("--model", help="continue on another model")
     f.add_argument("--here", action="store_true", help="the session's folder moved: use the current folder")
     f.add_argument("--bg", action="store_true")
+
+    c = add("continue", "carry on your own Claude Code or Codex session on another subscription, after a usage limit",
+            cmd_continue, (common, files))
+    c.add_argument("message", nargs="*", help=f"what to do next; or pipe it in (default: \"{CARRY_ON}\")")
+    c.add_argument("-w", "--worker", metavar="WORKER[:MODEL]", help="who carries on (default: the first ready worker "
+                   "not on the login that ran out; a second Claude account counts as another login)")
+    c.add_argument("--from", dest="source", choices=sorted(native.LABELS), help="only sessions from this CLI")
+    c.add_argument("--session", metavar="ID", help="this session (an id, or its start) instead of the newest here")
+    c.add_argument("--list", action="store_true", help="list the sessions it would pick from, newest first")
+    c.add_argument("-l", dest="limit", type=int, default=10, help="how many --list shows (default 10)")
+    c.add_argument("-n", "--name", help="name the new farmout session")
+    c.add_argument("--write", action="store_true", help="let the worker edit files")
+    c.add_argument("--isolate", action="store_true", help="edit in a private git worktree instead; makes a patch")
+    c.add_argument("--model", help="the worker's model")
+    c.add_argument("--effort", help="reasoning effort, e.g. low, medium, high")
+    c.add_argument("--fallback", metavar="W1,W2", help="workers to try if this one hits a limit too; \"\" for none")
+    c.add_argument("--bg", action="store_true", help="return at once; `farmout attach` to watch")
 
     tr = add("tree", "every conversation as a tree: its turns, and the branches off each one", cmd_tree)
     tr.add_argument("session", nargs="?", help="only the tree this session belongs to")

@@ -174,7 +174,7 @@ def pieces(row, width, mark=None, fold="", glyph=None, now=None, shut=False, her
             queued = node.get("queued") if node["state"] != "queued" else 0
             info.append(node["state"] + (f" ({queued} queued)" if queued else ""))
         if kind == "head":
-            info.append(ago(node.get("updated")) + " ago")
+            info += [f"from {node['imported']}"] * bool(node.get("imported")) + [ago(node.get("updated")) + " ago"]
         if shut:
             turns, branches = count(node)
             info.append(f"{turns} turn{'s' * (turns != 1)}"

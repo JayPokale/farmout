@@ -2844,5 +2844,262 @@ class WaitRaceTest(unittest.TestCase):
                 mock.patch.object(sessions, "busy", return_value=False):
             self.assertEqual(sessions.wait_msg("s", "m1", timeout=5)["status"], "ok")
 
+
+class ShortenTest(unittest.TestCase):
+    """A long conversation is handed over as an index with line ranges into the full file, the newest turns whole."""
+
+    def turn(self, n, prompt, reply):
+        return f"## Turn {n} (codex, ok)\n\n### Prompt\n\n{prompt}\n\n### Reply\n\n{reply}\n"
+
+    def test_short_goes_whole_and_long_gets_an_index_with_line_ranges(self):
+        from farmout import sessions
+        full = Path("/state/context-0009-full.md")
+        self.assertIsNone(sessions.shorten(self.turn(1, "hi", "hello"), full))
+        text = "\n".join(["# A conversation from Claude Code\n\nnotes\n"]
+                         + [self.turn(n, f"question {n}\nsecond line", f"answer {n} " * 900) for n in range(1, 9)])
+        short = sessions.shorten(text, full)
+        self.assertLess(len(short), len(text) // 2)
+        self.assertTrue(short.startswith("# The conversation so far, shortened"))
+        self.assertIn(str(full), short)
+        self.assertIn("# A conversation from Claude Code", short, "what came before the turns stays")
+        lines = text.split("\n")
+        index = re.findall(r"^- Turn (\d+) \(codex, ok\), lines (\d+)–(\d+): question \d+ second line → answer",
+                           short, re.M)
+        self.assertEqual([n for n, _, _ in index], ["1", "2", "3", "4", "5"], "the older turns, one line each")
+        for n, a, b in index:
+            self.assertEqual(lines[int(a) - 1], f"## Turn {n} (codex, ok)")
+            self.assertIn(f"answer {n}", "\n".join(lines[int(a) - 1:int(b)]))
+            self.assertNotIn(f"## Turn {int(n) + 1} ", "\n".join(lines[int(a) - 1:int(b)]))
+        for n in (6, 7, 8):
+            self.assertIn(self.turn(n, f"question {n}\nsecond line", f"answer {n} " * 900).strip(), short,
+                          "the newest turns in full")
+
+    def test_a_heading_quoted_in_an_answer_is_not_a_turn(self):
+        from farmout import sessions
+        quoted = "Here is the log:\n## Turn 99 (codex, ok)\nthat was it. " + "z" * 9000
+        text = "\n".join(self.turn(n, f"question {n}", quoted if n == 2 else f"answer {n} " * 900) for n in range(1, 8))
+        short = sessions.shorten(text, Path("/f.md"))
+        self.assertEqual(re.findall(r"^- Turn (\d+)", short, re.M), ["1", "2", "3", "4"])
+        self.assertIn("7 turns", short)
+
+    def test_a_long_summary_before_few_turns_is_shortened_too(self):
+        from farmout import sessions
+        text = "\n".join(["# A conversation from Codex\n\n## Summary\n\n" + "s" * 60000 + "\nSUMMARY END\n",
+                          self.turn(1, "q", "a")])
+        short = sessions.shorten(text, Path("/f.md"))
+        self.assertIsNotNone(short)
+        self.assertLess(len(short), sessions.TURN_CAP + 2000)
+        self.assertIn("SUMMARY END", short)
+        self.assertIn("## Turn 1 (codex, ok)", short)
+
+    def test_a_huge_newest_turn_keeps_its_start_and_end(self):
+        from farmout import sessions
+        text = "\n".join([self.turn(1, "small", "ok"), self.turn(2, "paste", "START" + "y" * 80000 + "END")])
+        short = sessions.shorten(text, Path("/f.md"))
+        self.assertLess(len(short), sessions.TURN_CAP + 2000)
+        self.assertIn("START", short)
+        self.assertIn("END", short)
+        self.assertRegex(short, r"\[… lines \d+–\d+ of /f\.md are left out here")
+
+    def test_a_very_long_conversation_lists_the_first_turn_and_the_newest_ones(self):
+        from farmout import sessions
+        text = "\n".join(self.turn(n, f"q{n}", "a" * 500) for n in range(1, 301))
+        short = sessions.shorten(text, Path("/f.md"))
+        self.assertIn("- Turn 1 (codex, ok)", short)
+        self.assertRegex(short, r"- Turns 2–\d+, lines 11–\d+: not listed one by one")
+        self.assertIn("- Turn 297 (codex, ok)", short)
+        self.assertLessEqual(short.count("\n- Turn"), sessions.INDEX_MAX)
+
+
+class ContinueTest(CliBase):
+    """`farmout continue`: your own Claude Code or Codex session goes on with another worker."""
+
+    def claude_session(self, sid="s1", entry="cli", cwd=None):
+        d = self.home / ".claude" / "projects" / "-work"
+        d.mkdir(parents=True, exist_ok=True)
+        rows = []
+
+        def add(uuid, parent, kind, **kw):
+            rows.append({"uuid": uuid, "parentUuid": parent, "type": kind, "cwd": str(cwd or self.work),
+                         "entrypoint": entry, "sessionId": sid, **kw})
+        add("u0", None, "user", message={"role": "user", "content": "old task from before the compaction"})
+        add("b1", None, "system", subtype="compact_boundary", logicalParentUuid="u0")
+        add("c1", "b1", "user", isCompactSummary=True, message={"content": "SUMMARY: we refactored the cache"})
+        add("u1", "c1", "user", message={"content": "fix the cache bug<system-reminder>hook noise</system-reminder>"})
+        add("a1", "u1", "assistant", message={"content": [
+            {"type": "thinking", "thinking": "private thoughts"}, {"type": "text", "text": "Looking at it."},
+            {"type": "tool_use", "name": "Edit", "input": {"file_path": f"{cwd or self.work}/cache.py", "old_string": "a"}}]})
+        add("r1", "a1", "user", message={"content": [{"type": "tool_result", "tool_use_id": "x", "content": "edited"}]})
+        add("a2", "r1", "assistant", message={"content": [{"type": "text", "text": "Fixed the TTL check."}]})
+        add("at", "a2", "attachment", attachment={"type": "file"})
+        add("u2", "at", "user", message={"content": "a question that was rewound"})
+        add("a3", "u2", "assistant", message={"content": [{"type": "text", "text": "a rewound answer"}]})
+        add("m1", "at", "user", isMeta=True, message={"content": "<local-command-caveat>x</local-command-caveat>"})
+        add("u3", "m1", "user", message={"content": "now add tests, key sk-ant-api03-" + "A" * 40})
+        add("a4", "u3", "assistant", message={"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "pytest -q"}}]})
+        add("e1", "a4", "assistant", isApiErrorMessage=True,
+            message={"content": [{"type": "text", "text": "5-hour limit reached ∙ resets 3pm"}]})
+        odd = [{"type": "ai-title", "aiTitle": "Cache work"}, {"type": "user", "cwd": {"bad": True}},
+               {"type": "user", "uuid": "x1", "message": "bad"}, {"type": "user", "uuid": "x2", "message": {"content": {"x": 1}}},
+               {"type": "assistant", "uuid": ["l"], "parentUuid": "u0"},
+               {"type": "assistant", "uuid": "x3", "parentUuid": ["z"],
+                "message": {"content": [{"type": "text", "text": 5}, {"type": "tool_use", "name": 7}]}}]
+        f = d / f"{sid}.jsonl"
+        f.write_text("\n".join(json.dumps(r) for r in odd + rows) + "\nnot json\n")
+        return f
+
+    def test_a_claude_code_session_goes_on_with_codex(self):
+        self.claude_session()
+        later = self.claude_session("by-farmout", entry="sdk-cli")  # `claude -p`, as farmout's own runs are
+        os.utime(later, (time.time() + 60,) * 2)
+        self.claude_session("elsewhere", cwd=self.tmp)
+        rows = self.json("continue", "--list")
+        self.assertEqual([(r["from"], r["id"]) for r in rows], [("claude", "s1")], "this folder's, interactive only")
+        self.assertIn("Cache work", self.fo("continue", "--list").stdout, "Claude Code's own title, read cheaply")
+
+        p = self.fo("continue", "-w", "codex", "say carried on", "-n", "go")
+        self.assertEqual(p.stdout, "carried on\n")
+        self.assertIn("[go · codex · carries on Claude Code session s1, 2 turns and a summary · read-only", p.stderr)
+        self.assertIn("redacted 1 secret from the conversation", p.stderr)
+        brief = self.last("codex")["brief"]
+        self.assertIn("continues an earlier conversation (in Claude Code)", brief)
+        ctx = Path(re.search(r"^- (.+context-0001\.md)$", brief, re.M).group(1)).read_text()
+        for want in ("SUMMARY: we refactored the cache", "fix the cache bug", "Looking at it.", "Fixed the TTL check.",
+                     "- Edit cache.py", "now add tests, key [REDACTED]", "- Bash: pytest -q",
+                     "[Claude Code stopped here: 5-hour limit reached ∙ resets 3pm]"):
+            self.assertIn(want, ctx)
+        for unwanted in ("old task", "hook noise", "private thoughts", "rewound", "local-command", "edited", "AAAAAAAA"):
+            self.assertNotIn(unwanted, ctx)
+        meta = self.meta("go")
+        self.assertEqual((meta["imported"]["from"], meta["imported"]["id"], meta["base"]), ("claude", "s1", 2))
+        self.assertEqual(self.fo("send", "go", "recall").stdout, "say carried on\n", "then codex's own conversation")
+        tree = self.fo("tree", "go").stdout
+        self.assertIn("● 3  say carried on", tree, "numbered on from the imported turns")
+        self.assertIn("go · codex · from Claude Code ·", tree)
+
+    def test_the_default_worker_is_not_on_the_login_that_ran_out(self):
+        self.claude_session()
+        cfg = self.home / ".config" / "farmout"
+        cfg.mkdir(parents=True, exist_ok=True)
+        (cfg / "settings.json").write_text(json.dumps({"fallback": ["claude", "codex"]}))
+        self.fo("continue", "-n", "second")
+        self.assertEqual(self.meta("second")["worker"], "claude", "a second Claude account is another login")
+        self.assertEqual(self.runs()[-1]["brief"].split("\n")[0], "Carry on from where this conversation stopped.")
+        self.fo("continue", "-n", "main", FARMOUT_CLAUDE_DIR="", FARMOUT_CLAUDE_MAIN="1")
+        self.assertEqual(self.meta("main")["worker"], "codex", "the claude worker on your main login ran out too")
+        self.assertIn("--write lets it edit", self.fo("continue", "-n", "d2", "say x").stderr)
+        self.fo("continue", "-n", "w", "--write", "-w", "codex", "say x")
+        self.assertEqual(flag(self.last("codex")["argv"], "-s"), "workspace-write")
+
+    def test_a_codex_session_goes_on_with_claude(self):
+        day = self.home / ".codex" / "sessions" / "2026" / "11" / "25"
+        day.mkdir(parents=True)
+
+        def rollout(sid, source, *items):
+            meta = {"type": "session_meta", "payload": {"id": sid, "cwd": str(self.work), "source": source}}
+            (day / f"rollout-2026-11-25T10-00-00-{sid}.jsonl").write_text(
+                "\n".join(json.dumps(x) for x in (meta, *items)) + "\n")
+
+        def msg(role, *texts):
+            kind = "input_text" if role == "user" else "output_text"
+            return {"type": "response_item", "payload": {"type": "message", "role": role,
+                                                         "content": [{"type": kind, "text": t} for t in texts]}}
+        rollout("cx1", "cli", msg("user", "# AGENTS.md instructions for /w\nbe nice", "<environment_context>x</environment_context>"),
+                msg("user", "rename the flag"),
+                {"type": "response_item", "payload": {"type": "function_call", "name": "shell",
+                                                      "arguments": json.dumps({"command": ["bash", "-lc", "rg old_flag"]})}},
+                {"type": "response_item", "payload": {"type": "custom_tool_call", "name": "apply_patch",
+                                                      "input": "*** Begin Patch\n*** Update File: cli.py\n@@\n-a\n+b\n*** End Patch"}},
+                msg("assistant", "Renamed it in cli.py."))
+        rollout("cx2", "exec", msg("user", "a farmout run"))
+        self.assertEqual([r["id"] for r in self.json("continue", "--list")], ["cx1"], "`codex exec` runs are not yours")
+        self.fo("continue", "--from", "codex", "-w", "claude", "say ok", "-n", "k")
+        brief = self.last("claude")["brief"]
+        ctx = Path(re.search(r"^- (.+context-0001\.md)$", brief, re.M).group(1)).read_text()
+        for want in ("# A conversation from Codex (session cx1", "rename the flag", "- shell: rg old_flag",
+                     "- apply_patch cli.py", "Renamed it in cli.py."):
+            self.assertIn(want, ctx)
+        self.assertNotIn("AGENTS.md", ctx)
+        self.assertNotIn("environment_context", ctx)
+        self.fo("continue", "--session", "cx", "-w", "copilot", "say again", "-n", "k2")
+        self.assertEqual(self.meta("k2")["imported"]["id"], "cx1", "by the start of its id")
+
+    def test_a_codex_compaction_keeps_what_it_replaced_the_history_with(self):
+        day = self.home / ".codex" / "sessions" / "2026" / "11" / "25"
+        day.mkdir(parents=True)
+
+        def msg(role, text):
+            kind = "input_text" if role == "user" else "output_text"
+            return {"type": "message", "role": role, "content": [{"type": kind, "text": text}]}
+
+        def rollout(sid, *items):
+            meta = {"type": "session_meta", "payload": {"id": sid, "cwd": str(self.work), "source": "cli"}}
+            (day / f"rollout-2026-11-25T11-00-00-{sid}.jsonl").write_text("\n".join(json.dumps(x) for x in (meta, *items)))
+
+        def context(sid):
+            self.fo("continue", "--session", sid, "-w", "codex", "say ok", "-n", sid)
+            return Path(re.search(r"^- (.+context-0001\.md)$", self.last("codex")["brief"], re.M).group(1)).read_text()
+        rollout("cx3", {"type": "response_item", "payload": msg("user", "first question")},
+                {"type": "compacted", "payload": {"message": ""}},  # says nothing: nothing is dropped
+                {"type": "response_item", "payload": msg("assistant", "first answer")},
+                {"type": "response_item", "payload": "not an object"})
+        ctx = context("cx3")
+        self.assertIn("first question", ctx)
+        self.assertIn("first answer", ctx)
+        rollout("cx4", {"type": "response_item", "payload": msg("user", "old question")},
+                {"type": "compacted", "payload": {"message": "", "replacement_history": [
+                    msg("user", "kept question"), msg("assistant", "kept answer")]}},
+                {"type": "response_item", "payload": msg("user", "after the compaction")})
+        ctx = context("cx4")
+        for want in ("kept question", "kept answer", "after the compaction"):
+            self.assertIn(want, ctx)
+        self.assertNotIn("old question", ctx, "replaced by the history the compaction kept")
+        self.assertEqual(self.meta("cx4")["base"], 2)
+
+    def test_an_api_session_gets_the_earlier_turns_once(self):
+        api = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeAPI)
+        api.seen, api.release = [], threading.Event()
+        threading.Thread(target=api.serve_forever, daemon=True).start()
+        self.addCleanup(api.server_close)
+        self.addCleanup(api.shutdown)
+        env = {"FARMOUT_API_BASE": f"http://127.0.0.1:{api.server_port}/v1", "FARMOUT_API_MODEL": "m"}
+        self.claude_session()
+        self.fo("continue", "-w", "api", "first", "-n", "a", **env)
+        self.fo("send", "a", "second", **env)
+        self.assertIn("fix the cache bug", api.seen[0]["body"]["messages"][-1]["content"], "the conversation, inlined")
+        self.assertEqual(api.seen[1]["body"]["messages"][-1]["content"], "second", "and not again")
+
+    def test_nothing_to_continue_says_so(self):
+        p = self.fo("continue", "-w", "codex", "say x", rc=1)
+        self.assertIn("no Claude Code or Codex session in this folder or its git repository", p.stderr)
+        self.assertEqual(self.fo("continue", "--list", rc=1).stdout,
+                         "No Claude Code or Codex session here, or anywhere in this git repository.\n")
+        self.assertEqual(self.runs(), [], "nothing ran")
+
+    def test_a_long_conversation_is_handed_over_shortened(self):
+        self.fo("run", "codex", "big 30000", "-n", "L")
+        self.fo("send", "L", "big 30000")
+        for i in range(3):
+            self.fo("send", "L", f"say reply {i}")
+        self.fo("send", "L", "-w", "claude", "say moved")
+        brief = self.last("claude")["brief"]
+        self.assertIn("has it shortened", brief)
+        listed = Path(re.search(r"^- (.+context-0006\.md)$", brief, re.M).group(1))
+        full = listed.with_name("context-0006-full.md")
+        self.assertIn(str(full), brief)
+        short, whole = listed.read_text(), full.read_text()
+        self.assertLess(len(short), 12000)
+        self.assertIn("x" * 30000, whole)
+        a, b = map(int, re.search(r"- Turn 1 \(codex, ok\), lines (\d+)–(\d+)", short).groups())
+        self.assertEqual(whole.split("\n")[a - 1], "## Turn 1 (codex, ok)")
+        self.assertIn("say reply 2", short, "the newest turns in full")
+
+        self.fo("fork", "L", "--at", "5", "-w", "copilot", "say branched", "-n", "B")
+        brief = self.last("copilot")["brief"]
+        self.assertRegex(brief, r"(?m)^- .+/B/context-brief\.md$")
+        self.assertIn("has it shortened", brief)
+        self.assertIn(str(self.state / "sessions" / "B" / "context.md"), brief)
+
+
 if __name__ == "__main__":
     unittest.main()
