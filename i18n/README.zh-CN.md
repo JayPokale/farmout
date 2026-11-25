@@ -67,6 +67,18 @@ claude plugin install farmout --marketplace JayPokale/farmout
 
 **第二个 Claude 账号**：先用 `CLAUDE_CONFIG_DIR=~/.claude-2 claude` 登录一次，然后在 shell 配置文件里加上 `export FARMOUT_CLAUDE_DIR=~/.claude-2`。**只有一个 Claude 账号？** `farmout bench` 仍会给主账号排名；设置 `export FARMOUT_CLAUDE_MAIN=1` 后，它会用该账号的额度将主账号作为每个命令的 worker。farmout 在 Claude Code 内部绝不会使用它，因为那里是主控自身的账号。
 
+**任意订阅的更多登录**（工作和个人两个 Codex、第二个 Copilot、第三个 Claude）：在你自己的 `~/.config/farmout/settings.json` 里给每个登录起个名字，写明它运行哪个 CLI、那个 CLI 把这个登录存在哪个文件夹，然后用那个文件夹登录一次：
+
+```json
+{"accounts": {
+  "codex-work": {"worker": "codex", "home": "~/.codex-work"},
+  "copilot-2": {"worker": "copilot", "home": "~/.copilot-2"},
+  "claude-3": {"worker": "claude", "home": "~/.claude-3"}
+}}
+```
+
+`CODEX_HOME=~/.codex-work codex login`、`COPILOT_HOME=~/.copilot-2 copilot login`、`CLAUDE_CONFIG_DIR=~/.claude-3 claude`。DeepSeek Harness 读 `DSH_HOME`；Antigravity 没有这样的变量，所以 farmout 运行它时把 `HOME` 设成那个文件夹（登录用 `HOME=~/.agy-2 agy`）。每个账号都是一个独立的 worker：`farmout run codex-work "..."`、`-w codex,codex-work`、`fallback = ["codex", "codex-work"]`，有自己的上限和自己的对话，`farmout doctor` 也会检查它。`farmout continue` 和转交会跳过用完额度的那个登录，但可以交给同一 CLI 的另一个登录。项目的设置不能添加账号。添加之前请先看[服务条款](#服务条款)。
+
 **OpenAI 兼容接口**：`export FARMOUT_API_BASE=http://localhost:11434/v1 FARMOUT_API_MODEL=qwen3:32b`（需要的话再加上 `FARMOUT_API_KEY`）；如果直接用 DeepSeek 官方的 API，就设置 `FARMOUT_API_BASE=https://api.deepseek.com FARMOUT_API_MODEL=deepseek-flash` 并提供你的密钥。`api` worker 没有任何工具，所以文件内容会直接放进 prompt；处理 PDF 需要 `pdftotext`。
 
 ## 功能速览
@@ -420,6 +432,7 @@ farmout 在你的机器上以你的登录身份，按各厂商文档中说明的
 - **通过 Antigravity 使用 Gemini：**Google 的 [Antigravity 条款](https://antigravity.google/terms)第 6 节将“using the Service in connection with products not provided by us”（将服务与非我们提供的产品一起使用）列为违约行为，可能成为暂停或终止你的 Antigravity 和 Gemini CLI 账号的理由。farmout 调用官方 `agy` 二进制文件，绝不触碰其登录信息，但 Google 尚未说明这是否被允许。若不能承担该账号的风险，请不要使用 Antigravity：在 `~/.config/farmout/settings.toml` 中设置 `workers = ["codex", "claude", "copilot"]`，或每个命令使用 `-w`。
 - **Codex 和 Copilot：**`codex exec` 和 `copilot -p` 分别是两者 CLI 文档说明的非交互模式，且在你的套餐限额内运行；Copilot 会消耗你套餐的 AI 积分。
 - **DeepSeek 和 `api`：**使用你自己的 API 密钥，由服务商按 token 计费。
+- **同一订阅的多个登录**（`accounts`）：每个都必须是你自己的账号，比如一个工作账号、一个个人账号。有些服务商的条款不允许用多个账号绕过用量上限；这个选择以及相应的条款，由你自己负责。
 
 ## 踩坑笔记
 

@@ -27,10 +27,17 @@ CARRY_ON = "Carry on from where this conversation stopped."
 USAGE = re.compile(r"hit your (?:[\w-]+ )?limit|usage limit|limit reached", re.I)
 
 
-def same_login(source):
-    """Is farmout's worker for this CLI on the login the session ran out on? A second Claude account isn't."""
-    from .workers import CLAUDE_DIR
-    return source != "claude" or not CLAUDE_DIR or os.path.realpath(CLAUDE_DIR) == os.path.realpath(native.claude_home())
+def same_login(source, worker=None):
+    """Is this worker (default: farmout's own worker for that CLI) on the login the session ran out on? A second
+    Claude account isn't, nor an account from your settings with a login folder of its own."""
+    from .workers import ACCOUNTS, CLAUDE_DIR, base_of
+    worker = worker or source
+    if base_of(worker) != source:
+        return False
+    home = {"claude": native.claude_home, "codex": native.codex_home, "copilot": native.copilot_home}[source]()
+    if worker in ACCOUNTS:
+        return os.path.realpath(ACCOUNTS[worker]["home"]) == os.path.realpath(home)
+    return source != "claude" or not CLAUDE_DIR or os.path.realpath(CLAUDE_DIR) == os.path.realpath(home)
 
 
 def pick(s, cwd, asked=None):
@@ -40,8 +47,9 @@ def pick(s, cwd, asked=None):
     from .workers import lane
     if asked:
         return lane(asked)
+    from .workers import ENABLED
     try:
-        return engine.auto_worker(cwd, skip={s["from"]} if same_login(s["from"]) else set())
+        return engine.auto_worker(cwd, skip={w for w in ENABLED if same_login(s["from"], w)})
     except ValueError:
         raise ValueError(f"no worker but {s['from']} is ready here (`farmout doctor`); name one with -w, "
                          f"e.g. -w {s['from']}:<another model>") from None

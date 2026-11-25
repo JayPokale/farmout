@@ -3870,5 +3870,52 @@ class AcpTest(CliBase):
         self.assertLess(time.time() - start, 15)
 
 
+class AccountsTest(CliBase):
+    """More logins of any subscription: `accounts` in your own settings, each a worker of its own."""
+
+    def test_more_logins_of_any_subscription(self):
+        cfg = self.home / ".config" / "farmout"
+        cfg.mkdir(parents=True, exist_ok=True)
+        for d in ("codex-work", "agy-2", "copilot-2"):
+            (self.tmp / d).mkdir()
+        (cfg / "settings.json").write_text(json.dumps({"accounts": {
+            "codex-work": {"worker": "codex", "home": str(self.tmp / "codex-work")},
+            "agy-2": {"worker": "antigravity", "home": str(self.tmp / "agy-2")},
+            "copilot-2": {"worker": "copilot", "home": str(self.tmp / "copilot-2")},
+            "claude-3": {"worker": "claude", "home": str(self.tmp / "nope")},
+            "Bad Name": {"worker": "codex", "home": "x"}, "codex": {"worker": "codex", "home": "x"},
+            "odd": {"worker": "api", "home": "x"}}}))
+        doc = self.fo("doctor").stdout
+        self.assertRegex(doc, r"ready    codex-work +codex on the login in .*codex-work")
+        self.assertIn(f"missing  claude-3     no folder {self.tmp / 'nope'} yet: log in once with "
+                      f"`CLAUDE_CONFIG_DIR={self.tmp / 'nope'} claude`", doc)
+        for bad in ("Bad Name", "codex ", "odd "):
+            self.assertIn(f"ignored  {bad}", doc)
+        self.fo("run", "codex-work", "say hi", "-n", "w")
+        self.assertEqual(self.last("codex")["env"].get("CODEX_HOME"), str(self.tmp / "codex-work"))
+        self.fo("run", "agy-2", "say hi")
+        self.assertEqual(self.last("agy")["home"], str(self.tmp / "agy-2"), "agy keeps its login under HOME")
+        self.fo("run", "copilot-2", "say hi", "-n", "c2")
+        self.assertEqual(self.last("copilot")["env"].get("COPILOT_HOME"), str(self.tmp / "copilot-2"))
+        self.assertIn("--session-id", self.last("copilot")["argv"], "a login of copilot still picks its own ids")
+        self.assertEqual(self.fo("send", "w", "recall").stdout, "say hi\n", "an account's conversation resumes")
+        p = self.fo("run", "codex", "homelimit say rescued", "-n", "f", "--fallback", "codex-work")
+        self.assertEqual(p.stdout, "rescued\n", "the default login at its limit: the other login takes over")
+        self.assertIn("codex is at a usage limit", p.stderr)
+        day = self.home / ".codex" / "sessions" / "2026" / "11" / "26"
+        day.mkdir(parents=True)
+        (day / "rollout-x.jsonl").write_text("\n".join(json.dumps(r) for r in (
+            {"type": "session_meta", "payload": {"id": "cx", "cwd": str(self.work), "source": "cli"}},
+            {"type": "response_item", "payload": {"type": "message", "role": "user",
+                                                  "content": [{"type": "input_text", "text": "rename the flag"}]}})) + "\n")
+        settings = json.loads((cfg / "settings.json").read_text())
+        (cfg / "settings.json").write_text(json.dumps({**settings, "fallback": ["codex", "codex-work"]}))
+        self.fo("continue", "--from", "codex", "-n", "cx", "say go")
+        self.assertEqual(self.meta("cx")["worker"], "codex-work", "not the login that ran out; another login of it")
+        self.fo("ask", "-w", "codex,codex-work", "say both")
+        homes = [r["env"].get("CODEX_HOME") for r in self.runs()[-2:]]
+        self.assertEqual(sorted(h or "" for h in homes), ["", str(self.tmp / "codex-work")], "one lane per login")
+
+
 if __name__ == "__main__":
     unittest.main()

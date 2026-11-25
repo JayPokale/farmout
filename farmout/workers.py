@@ -27,6 +27,11 @@ AGY_ANSWER = ("\n\nReply with the complete answer itself in this message. "
               "Do not write a plan, create files or ask for approval.")
 
 
+def login(t):
+    """The environment for an account's run (its own login folder), or None: the CLI's usual login."""
+    return {**os.environ, **t["login"]} if t.get("login") else None
+
+
 def lane(text):
     """`codex` or `claude:opus` -> (worker, model or None); an api model may hold colons (`api:qwen3:32b`)."""
     worker, _, model = text.partition(":")
@@ -117,7 +122,7 @@ def antigravity(t, key):
     # where print mode would otherwise run shell commands unasked.
     cmd += ["--mode", "accept-edits", "--sandbox"] if t.get("write") else ["--mode", "plan"]
     cmd += dirs + opt("--model", t.get("model")) + opt("--effort", t.get("effort")) + opt("--conversation", t.get("resume"))
-    res = parse_json(run(cmd, key, cwd, timeout=t.get("timeout")))
+    res = parse_json(run(cmd, key, cwd, env=login(t), timeout=t.get("timeout")))
     text = res.get("response") or ""
     if res.get("status") == "SUCCESS" and not text.strip() and not t.get("write"):  # nothing to show for the run
         denied = ", ".join(str(d.get("action")) for d in res.get("denied_actions") or [] if isinstance(d, dict))
@@ -146,7 +151,7 @@ def codex(t, key):
         cmd += ["-c", f'model_reasoning_effort="{t["effort"]}"'] if t.get("effort") else []
         cmd += [] if t.get("web", True) else ["-c", 'web_search="disabled"']  # in case your config turns it on
         cmd += [t["resume"]] if t.get("resume") else []
-        out = run(cmd + ["-"], key, cwd, stdin=brief, timeout=t.get("timeout"))
+        out = run(cmd + ["-"], key, cwd, stdin=brief, env=login(t), timeout=t.get("timeout"))
         events = [parse_json(line) for line in out.splitlines() if line.startswith("{")]
         tid = next((e["thread_id"] for e in events if e.get("type") == "thread.started" and e.get("thread_id")), None)
         usage = next((e.get("usage") for e in reversed(events) if e.get("type") == "turn.completed"), None)
@@ -163,6 +168,7 @@ def claude(t, key):
     config = CLAUDE_DIR or os.environ.get("CLAUDE_CONFIG_DIR")
     if config:
         env["CLAUDE_CONFIG_DIR"] = config
+    env.update(t.get("login") or {})  # an account from your settings: its own login folder
     cmd = ["claude", "-p", "--output-format", "json", "--model", t.get("model") or "sonnet"]
     if t.get("resume"):
         cmd += ["--resume", t["resume"]] + (["--fork-session", "--session-id", t["session_id"]] if t.get("fork") else [])
@@ -203,7 +209,7 @@ def copilot(t, key):
     sid = t.get("resume") or t.get("session_id")
     cmd = ["copilot", "-p", brief, "-s", "--no-color", "--allow-all-tools", "--available-tools", *tools]
     cmd += dirs + opt("--model", t.get("model")) + opt("--reasoning-effort", t.get("effort")) + opt("--session-id", sid)
-    return {"text": run(cmd, key, cwd, timeout=t.get("timeout")), "native_id": sid, "usage": None}
+    return {"text": run(cmd, key, cwd, env=login(t), timeout=t.get("timeout")), "native_id": sid, "usage": None}
 
 
 def deepseek(t, key):
@@ -214,7 +220,7 @@ def deepseek(t, key):
     mode = "workspace-write" if t.get("write") else "read-only"
     cmd = ["dsh", "headless", "--json", "--permission-mode", mode, "--approval-policy", "never"]
     cmd += dirs + opt("--session-id", t.get("resume")) + ["-"]
-    out = run(cmd, key, cwd, stdin=brief, timeout=t.get("timeout"))
+    out = run(cmd, key, cwd, stdin=brief, env=login(t), timeout=t.get("timeout"))
     events = [parse_json(line) for line in out.splitlines() if line.startswith("{")]
     final = next((e for e in reversed(events) if e.get("type") == "final"), None)
     if final is None:
@@ -271,7 +277,71 @@ WORKERS = {  # web_off: can farmout turn its web access off when a repo's settin
                   f"{API_MODEL} via an OpenAI-compatible API; no tools, listed files are inlined as text (PDFs via "
                   "pdftotext). For bulk/simple work: extract, classify, reformat, translate, short summaries, boilerplate."),
 }
+# More logins of a subscription: `accounts` in your own settings names each, with the CLI it runs and the folder
+# that CLI keeps its login in, pointed to by the variable below (agy has none: its HOME is moved instead).
+HOMES = {"claude": "CLAUDE_CONFIG_DIR", "codex": "CODEX_HOME", "copilot": "COPILOT_HOME", "deepseek": "DSH_HOME",
+         "antigravity": "HOME"}
+ACCOUNT_NAME = re.compile(r"[a-z][a-z0-9-]{0,31}")
+ACCOUNTS = {}  # name: {"worker", "home", "var"}, the valid ones from your settings
+BASE = {}  # account name: the worker it runs
+
+
+def accounts():
+    """`accounts` from your own settings (~/.config/farmout/settings.toml or .json); a project's never count.
+    {name: (spec, problem or None)}."""
+    from .config import CONFIG, find, read
+    p = find(CONFIG, "settings")
+    try:
+        data = read(p) if p else {}
+    except Exception:  # `farmout doctor` and the commands report a broken settings file themselves
+        return {}
+    got = data.get("accounts")
+    out = {}
+    for name, spec in (got.items() if isinstance(got, dict) else ()):
+        spec = spec if isinstance(spec, dict) else {}
+        base, home = spec.get("worker"), spec.get("home")
+        problem = (None if ACCOUNT_NAME.fullmatch(str(name)) and name not in WORKERS_BUILTIN else
+                   f"the name must be new, lowercase letters, digits and dashes")
+        if not problem and base not in HOMES:
+            problem = f"worker must be one of {', '.join(HOMES)}"
+        elif not problem and not isinstance(home, str):
+            problem = "home must be the folder its CLI keeps this login in"
+        out[str(name)] = ({"worker": base, "home": os.path.expanduser(home) if isinstance(home, str) else None,
+                           "var": HOMES.get(base)}, problem)
+    return out
+
+
+def as_account(name, spec):
+    base = WORKERS[spec["worker"]]
+
+    def run_as(t, key, fn=base.fn, extra={spec["var"]: spec["home"]}):
+        return fn({**t, "login": extra}, key)
+    ready = (shutil.which("claude") if spec["worker"] == "claude" else base.ready) and os.path.isdir(spec["home"])
+    return Worker(run_as, ready, base.web_off,
+                  f"{spec['worker']} on another login of yours ({spec['home']}): " + base.hint)
+
+
+WORKERS_BUILTIN = set(WORKERS)
+for _name, (_spec, _problem) in accounts().items():
+    if not _problem:
+        ACCOUNTS[_name], BASE[_name] = _spec, _spec["worker"]
+        WORKERS[_name] = as_account(_name, _spec)
 ENABLED = {name: w for name, w in WORKERS.items() if w.ready}
+
+
+def login_hint(worker):
+    """How to log in (again) to this worker's subscription."""
+    spec = ACCOUNTS.get(worker)
+    if not spec:
+        return SETUP.get(worker, (None, "log in again"))[1]
+    exe = {"claude": "claude", "codex": "codex login", "copilot": "copilot login", "deepseek": "dsh",
+           "antigravity": "agy"}[spec["worker"]]
+    return f"log in once with `{spec['var']}={spec['home']} {exe}`"
+
+
+def base_of(worker):
+    """The CLI a worker runs: itself, or for an account from your settings, the worker it's a login of."""
+    return BASE.get(worker, worker)
 
 
 def use_main_claude():

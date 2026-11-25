@@ -1145,8 +1145,10 @@ def cmd_completion(a):
 def cmd_doctor(a):
     from .mcp import run_all
     print(f"farmout {VERSION} on Python {sys.version.split()[0]}; sessions and runs in {STATE}, results in {OUT_DIR}")
+    from .workers import ACCOUNTS, accounts, base_of, login_hint
     for name, w in WORKERS.items():
-        exe, how = SETUP[name]
+        exe, how = SETUP[base_of(name)]
+        how = login_hint(name) if name in ACCOUNTS else how
         detail = f"{API_MODEL} at {API_BASE}" if w.ready and not exe else how
         if w.ready and exe:
             try:
@@ -1154,10 +1156,16 @@ def cmd_doctor(a):
                 detail = f"{shutil.which(exe)} {((out.stdout or out.stderr).strip().splitlines() or ['?'])[0]}"
             except Exception as e:
                 detail = f"{shutil.which(exe)} (--version failed: {e})"
+        if name in ACCOUNTS:
+            detail = (f"{base_of(name)} on the login in {short(ACCOUNTS[name]['home'])}" if w.ready
+                      else f"no folder {short(ACCOUNTS[name]['home'])} yet: {login_hint(name)}")
         print(f"  {'ready  ' if w.ready else 'missing'}  {name:<12} {detail}")
         if name == "antigravity" and w.ready:
             print(f"  note     {'':<12} Google's terms (section 6) may forbid using Antigravity with other tools;"
                   " see Terms of service in the README")
+    for name, (spec, problem) in accounts().items():
+        if problem:
+            print(f"  ignored  {name:<12} accounts.{name} in your settings: {problem}")
     for w in usage.limits():
         print(f"  skipped  {usage.describe(w)}")
     ready = [w for w in ENABLED if w != "api"]
@@ -1170,7 +1178,7 @@ def cmd_doctor(a):
         print("No worker is ready yet: install one of the CLIs above and log in to it.")
     if len(ready) == 1:
         w = ready[0]
-        big, small = ("opus", "sonnet") if w == "claude" else ("<model>", "<model>")  # the ones every Claude plan has
+        big, small = ("opus", "sonnet") if base_of(w) == "claude" else ("<model>", "<model>")  # every Claude plan has
         print(f"One subscription is enough: compare its models (`farmout bench -w {w}:{big},{w}:{small}`), review "
               f"with two of them (`farmout review -w {w}:{big},{w}:{small}`), and set a fallback model for its limits "
               f"(`fallback = [\"{w}:{small}\"]` in your settings).")

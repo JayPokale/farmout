@@ -26,7 +26,7 @@ from pathlib import Path
 
 from . import engine, hooks, isolate, proc
 from .config import STATE
-from .workers import ENABLED
+from .workers import ENABLED, base_of
 
 ROOT = STATE / "sessions"
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
@@ -445,9 +445,9 @@ def turn(name, msg, key, inbox_file=None):
          "persist": True, "fallback": meta.get("fallback"), "session": name, "handoff": handoff(name, n)}
     if meta["native_id"]:
         t["resume"] = meta["native_id"]
-    elif meta.get("fork_of") and meta["worker"] == "claude":
+    elif meta.get("fork_of") and base_of(meta["worker"]) == "claude":
         t.update(resume=meta["fork_of"], fork=True, session_id=str(uuid.uuid4()))
-    elif meta["worker"] in NEW_ID:
+    elif base_of(meta["worker"]) in NEW_ID:
         t["session_id"] = str(uuid.uuid4())
     if meta["worker"] == "api":  # its history, before deciding whether the earlier turns still have to go along
         t["history"] = read_json(d / "messages.json", [])
@@ -682,7 +682,7 @@ def fork(name, new_name=None, worker=None, at=None, model=None):
         raise ValueError(f"{name} has no finished turn {base + at} to branch from"
                          + (f"; its turns are {base + 1} to {base + done[-1]}" if done else "; it has none yet"))
     worker = worker or parent["worker"]
-    native = worker == parent["worker"] == "claude" and parent["native_id"] and at == parent["turns"]
+    native = worker == parent["worker"] and base_of(worker) == "claude" and parent["native_id"] and at == parent["turns"]
     owner = parent
     while not owner.get("iso") and owner.get("parent"):  # whose worktree, if any, the branch will work in
         try:

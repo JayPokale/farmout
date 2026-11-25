@@ -69,6 +69,18 @@ claude plugin install farmout --marketplace JayPokale/farmout
 
 **Second Claude account:** log in once with `CLAUDE_CONFIG_DIR=~/.claude-2 claude`, then `export FARMOUT_CLAUDE_DIR=~/.claude-2` in your shell profile. **Only one Claude account?** `farmout bench` ranks your main login anyway, and `export FARMOUT_CLAUDE_MAIN=1` makes it a worker for every command, on that account's quota. farmout never uses it from inside Claude Code, where it's the head's own account.
 
+**More logins of any subscription** (a work and a personal Codex, a second Copilot, a third Claude): name each in your own `~/.config/farmout/settings.json`, with the CLI it runs and the folder that CLI keeps that login in, and log in once with that folder:
+
+```json
+{"accounts": {
+  "codex-work": {"worker": "codex", "home": "~/.codex-work"},
+  "copilot-2": {"worker": "copilot", "home": "~/.copilot-2"},
+  "claude-3": {"worker": "claude", "home": "~/.claude-3"}
+}}
+```
+
+`CODEX_HOME=~/.codex-work codex login`, `COPILOT_HOME=~/.copilot-2 copilot login`, `CLAUDE_CONFIG_DIR=~/.claude-3 claude`. DeepSeek Harness reads `DSH_HOME`; Antigravity has no such variable, so farmout runs it with `HOME` set to the folder (log in with `HOME=~/.agy-2 agy`). Each account is a worker of its own: `farmout run codex-work "..."`, `-w codex,codex-work`, `fallback = ["codex", "codex-work"]`, its own limits, its own conversations, and `farmout doctor` checks it. `farmout continue` and the relay skip a login that ran out but can hand over to another login of the same CLI. A project's settings can't add accounts. See [Terms of service](#terms-of-service) before you add one.
+
 **OpenAI-compatible endpoint:** `export FARMOUT_API_BASE=http://localhost:11434/v1 FARMOUT_API_MODEL=qwen3:32b` (and `FARMOUT_API_KEY` if needed); for DeepSeek's API itself, `FARMOUT_API_BASE=https://api.deepseek.com FARMOUT_API_MODEL=deepseek-flash` and your key. The `api` worker has no tools, so file text goes into the prompt; PDFs need `pdftotext`.
 
 ## A quick tour
@@ -318,7 +330,7 @@ models = { claude = "sonnet", codex = "gpt-5.6-terra" }   # each worker's defaul
 timeout = 900                   # seconds per task
 redact = true                   # strip credentials from briefs and piped input
 rules = false                   # don't hand workers the project's CLAUDE.md, AGENTS.md or GEMINI.md (see below)
-# [[hooks]] tables (see Hooks); in your own settings only: store = "<index URL or path>"
+# [[hooks]] tables (see Hooks); in your own settings only: store = "<index URL or path>", and accounts (see Install)
 ```
 
 Neither file can loosen the other: worker lists intersect, `write`, `web` and `rules` are off if either says so, and the shorter timeout wins. The project's `fallback` replaces yours and its `models` override yours (an explicit `--model` or `worker:model` always wins). Settings are always read from the main working tree, so a worker editing its worktree's copy changes nothing.
@@ -422,6 +434,7 @@ farmout runs each vendor's official, unmodified CLI in its documented non-intera
 - **Gemini through Antigravity:** Google's [Antigravity terms](https://antigravity.google/terms), section 6, count "using the Service in connection with products not provided by us" as a breach that may be grounds to suspend or terminate your Antigravity and Gemini CLI accounts. farmout calls the official `agy` binary and never touches its login, but Google hasn't said whether that's allowed. If you can't risk that account, leave Antigravity out: `workers = ["codex", "claude", "copilot"]` in `~/.config/farmout/settings.toml`, or `-w` per command.
 - **Codex and Copilot:** `codex exec` and `copilot -p` are each CLI's documented non-interactive mode, and run within your plan's limits; Copilot spends your plan's AI credits.
 - **DeepSeek and `api`:** your own API key, billed per token by the provider.
+- **More than one login of a subscription** (`accounts`): each must be an account you hold yourself, such as a work and a personal one. Some providers' terms don't allow using several accounts to get past their usage limits; farmout leaves that choice, and its terms, to you.
 
 ## Field notes
 

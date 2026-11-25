@@ -19,7 +19,7 @@ STATE = Path(os.environ["FARMOUT_STATE"]).expanduser() if os.environ.get("FARMOU
 OUT_DIR = _dir("XDG_CACHE_HOME", "~/.cache")
 CONFIG = _dir("XDG_CONFIG_HOME", "~/.config")
 SETTINGS = {"workers": list, "write": bool, "web": bool, "fallback": list, "timeout": int, "hooks": list,
-            "redact": bool, "store": str, "models": dict, "rules": bool}
+            "redact": bool, "store": str, "models": dict, "rules": bool, "accounts": dict}
 EVENTS = ("SessionStart", "MessageReceived", "TaskStart", "TaskEnd", "StageEnd", "PipelineEnd")
 HOOK_KEYS = {"event", "command", "matcher", "timeout"}
 

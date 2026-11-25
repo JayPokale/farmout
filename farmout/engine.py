@@ -8,7 +8,7 @@ import uuid
 
 from . import hooks, isolate, usage
 from .config import settings
-from .workers import ENABLED, SETUP, lane, limited_for, logged_out, lost_conversation
+from .workers import ENABLED, base_of, lane, limited_for, logged_out, login_hint, lost_conversation
 
 LOGIN_PAUSE = 1800  # a worker that can't log in is left alone this long (or until it works again)
 
@@ -103,7 +103,7 @@ def switch(t, worker, model):
         fresh = t.get("session_id") and not t.get("resume")
         return {**t, "model": model, **({"session_id": str(uuid.uuid4())} if fresh else {})}
     nt = {**t, "worker": worker, "model": model, "resume": None, "fork": None, "history": None,
-          "session_id": str(uuid.uuid4()) if t.get("persist") and worker in ("claude", "copilot") else None}
+          "session_id": str(uuid.uuid4()) if t.get("persist") and base_of(worker) in ("claude", "copilot") else None}
     if t.get("handoff") and (t.get("resume") or t.get("history")):
         files, note = t["handoff"]()
         nt.update(files=list(t.get("files") or []) + files, prompt=t["prompt"] + note, handoff=None)
@@ -171,7 +171,7 @@ def execute(t, key, where=None, on_iso=None):
             notes.append(LOST_NOTE.format(w))
             t = {**t, "resume": None, "fork": None, "handoff": None, "files": list(t.get("files") or []) + files,
                  "prompt": t["prompt"] + note,
-                 "session_id": str(uuid.uuid4()) if t.get("persist") and w in ("claude", "copilot") else None}
+                 "session_id": str(uuid.uuid4()) if t.get("persist") and base_of(w) in ("claude", "copilot") else None}
             continue
         if res["ok"] or not res.get("limited"):
             break
@@ -184,7 +184,7 @@ def execute(t, key, where=None, on_iso=None):
         if not nxt:
             if res["why"] == "login":
                 res["text"] += (f"\n\n[farmout] {w} isn't logged in, or its subscription ended. To use it again: "
-                                f"{SETUP.get(w, (None, 'log in again'))[1]}. `farmout doctor --live` checks every login.")
+                                f"{login_hint(w)}. `farmout doctor --live` checks every login.")
             break
         notes.append(f"{usage.describe(w if res['why'] == 'login' else k)}; retried on {lane_key(*nxt)}")
         if iso and iso is not where:  # a worktree this task made: the next worker starts from its base, not from

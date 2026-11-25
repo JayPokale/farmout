@@ -67,7 +67,9 @@ brief = args[args.index("-p") + 1] if name in ("agy", "copilot") else sys.stdin.
 session = sid() or (str(uuid.uuid4()) if name in ("codex", "agy") else f"session-{uuid.uuid4()}" if name == "dsh" else None)
 with open(os.path.join(log, f"{os.getpid()}.json"), "w") as f:
     json.dump({"name": name, "argv": args, "cwd": os.getcwd(), "brief": brief, "session": session,
-               "env": {k: v for k, v in os.environ.items() if k.startswith(("CLAUDE", "ANTHROPIC", "FARMOUT_WORKER"))}}, f)
+               "env": {k: v for k, v in os.environ.items() if k.startswith(("CLAUDE", "ANTHROPIC", "FARMOUT_WORKER"))
+                       or k in ("CODEX_HOME", "COPILOT_HOME", "DSH_HOME")},
+               "home": os.environ.get("HOME")}, f)
 
 store = os.path.join(log, "store")
 if name == "claude":  # ~/.claude/projects/<folder>/, searched only from that folder (older Claude Code)
@@ -100,6 +102,10 @@ elif cmd == "claudeout" and name == "claude":
     sys.exit(1)
 elif cmd == "limit" or (cmd == "limited" and reply.split()[0] == name):
     sys.exit("Error: you've hit your usage limit. Try again in 2 minutes.")
+elif cmd == "homelimit":  # homelimit <cmd>: the CLI's default login is at its limit; another login runs <cmd>
+    if not any(os.environ.get(k) for k in ("CODEX_HOME", "COPILOT_HOME", "DSH_HOME")):
+        sys.exit("Error: you've hit your usage limit. Try again in 2 minutes.")
+    cmd, _, reply = reply.partition(" ")
 elif cmd == "limited":
     reply = reply.split(" ", 2)[2]  # limited <cli> say <text>
 if cmd in ("loggedout", "busymodel"):  # a new chain: the inner command runs through the branches below
