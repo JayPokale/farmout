@@ -305,6 +305,20 @@ def install_hook(remove=False):
 def cmd_relay(a):
     if a.action == "hook":
         return relay.main()
+    if a.action == "test":
+        sid = os.environ.get("CLAUDE_CODE_SESSION_ID")  # set for commands run from Claude Code (`!farmout relay test`)
+        found = [x for x in native.find(a.cwd, "claude", sid)] if sid else native.find(a.cwd, "claude")
+        if not found:
+            raise ValueError("no Claude Code session here to test with: run it as `!farmout relay test` in Claude Code")
+        s, cfg = found[0], relay.config()
+        until = relay.test(s["id"], s["file"], s["cwd"], a.minutes)
+        if a.json:
+            return emit(a, {"session": s["id"], "until": until, "relay": cfg})
+        print(f"Claude Code session {s['id'][:8]} acts as if at its usage limit until {relay.clock(until)}: what you "
+              f"type there goes to {cfg.get('worker') or 'the first ready worker not on its login'}, and the answer "
+              f"shows there. `farmout relay back` ends it, and Claude is told what happened."
+              + ("" if cfg.get("on") else "\nThe relay is off: `farmout relay on` first, or you only get a line about it."))
+        return 0
     if a.action in ("install", "uninstall"):
         if a.action == "install" and plugin_on():
             print("The farmout plugin is on in Claude Code and has the hook already; nothing added.")
@@ -1256,10 +1270,11 @@ def parser():
 
     rl = add("relay", "at Claude Code's usage limit, what you type there goes to another subscription; Claude "
              "catches up after", cmd_relay)
-    rl.add_argument("action", nargs="?", choices=("on", "off", "back", "install", "uninstall", "hook"),
-                    help="on, off, back (Claude is back before the reset: stop relaying), install or uninstall (the "
-                    "hook in Claude Code's settings.json, without the plugin), hook (what Claude Code runs); none: "
-                    "show the setting")
+    rl.add_argument("action", nargs="?", choices=("on", "off", "back", "test", "install", "uninstall", "hook"),
+                    help="on, off, back (Claude is back before the reset: stop relaying), test (act as if Claude "
+                    "Code hit its limit, to try it), install or uninstall (the hook in Claude Code's settings.json, "
+                    "without the plugin), hook (what Claude Code runs); none: show the setting")
+    rl.add_argument("--minutes", type=int, default=10, help="with test: how long (default 10)")
     rl.add_argument("-w", "--worker", metavar="WORKER[:MODEL]", help="with on: who answers (default: the first ready "
                     "worker not on Claude's login)")
     rl.add_argument("--write", action="store_true", help="with on: let it edit files")

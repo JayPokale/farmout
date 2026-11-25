@@ -102,6 +102,15 @@ def records():
     return out
 
 
+def test(sid, file, cwd, minutes, now=None):
+    """`farmout relay test`: this Claude Code session acts as if at its usage limit for a while, so the relay can be
+    tried before it's needed. `farmout relay back` (or the time running out) ends it, and Claude catches up."""
+    now = now or time.time()
+    rec = record(sid) or {"session": sid, "file": file, "cwd": cwd, "since": now, "told": 0, "shown": []}
+    keep(sid, {**rec, "test": now + minutes * 60, "back": 0, "since": rec.get("since") or now})
+    return now + minutes * 60
+
+
 def keep(sid, rec):
     RECORDS.mkdir(parents=True, exist_ok=True)
     tmp = record_path(sid).with_suffix(f".{os.getpid()}")
@@ -174,6 +183,9 @@ def limit_in(path):
 
 def heading(limit):
     """"Claude is at its usage limit until 15:00", and, for one model's weekly limit, how to stay on Claude."""
+    if limit.get("kind") == "test":
+        return (f"farmout relay test: Claude acts as if at its usage limit until {clock(limit['until'])} "
+                f"(`farmout relay back` ends it)")
     head = f"Claude is at its usage limit until {clock(limit['until'])}"
     model = {"seven_day_opus": "Opus", "seven_day_sonnet": "Sonnet"}.get(limit.get("kind") or "")
     if model:
@@ -213,6 +225,8 @@ def hook(event, now=None):
     if not prompt.strip() or prompt.lstrip().startswith(("/", "!")):
         return None  # Claude Code's own commands: never relayed, and the catch-up waits for a real prompt
     rec, limit = record(sid), limit_in(path)
+    if rec and (rec.get("test") or 0) > now and not rec.get("back"):  # `farmout relay test`
+        limit = {"until": rec["test"], "text": "", "at": rec.get("since") or now, "kind": "test"}
     if limit is None and rec and (rec.get("until") or 0) > now and not rec.get("back"):
         limit = {"until": rec["until"], "text": rec.get("limit") or "", "at": rec.get("since") or now}  # relayed
         # answers can push Claude's last reply out of the part of the file read
@@ -235,6 +249,29 @@ def hook(event, now=None):
         if not (rec and rec.get("name")):
             return None  # told already, by the other hook
         return catch_up(sid, rec)
+
+
+def changed_since(cwd, since):
+    """Files git sees as changed or new in cwd's checkout, touched since `since` (Unix seconds); [] outside git."""
+    import subprocess
+    try:
+        out = subprocess.run(["git", "-C", cwd, "status", "--porcelain", "-uall", "-z"], capture_output=True,
+                             text=True, timeout=10)
+        top = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"], capture_output=True, text=True,
+                             timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if out.returncode or not top:
+        return []
+    paths = [x[3:] for x in out.stdout.split("\0") if len(x) > 3 and x[2] == " "]
+    keep = []
+    for p in paths:
+        try:
+            if os.path.getmtime(os.path.join(top, p)) >= since - 1:
+                keep.append(p)
+        except OSError:
+            keep.append(p)  # deleted since
+    return keep
 
 
 def turn_text(r, base):
@@ -307,6 +344,11 @@ def catch_up(sid, rec):
                             f"`farmout diff {name}` shows them and `farmout apply {name}` applies them.",
                  "read": f"{worker} had read-only access and changed no files."}
         mode = "isolate" if meta.get("isolate") else "write" if meta.get("write") else "read"
+        if mode == "write":
+            changed = changed_since(meta["cwd"], rec.get("since") or 0)
+            if changed:
+                files["write"] += (" Changed since then: " + ", ".join(changed[:30]) + (" …" if len(changed) > 30 else "")
+                                   + ".")
         parts.append(f"While you were at your usage limit (until {clock(rec.get('until') or 0)}), the user's prompts "
                      f"went to {worker} through farmout (farmout session {name}, which had this whole conversation): the "
                      f"replies marked \"Operation stopped by hook\" since then are {worker}'s, not yours. {files[mode]}")

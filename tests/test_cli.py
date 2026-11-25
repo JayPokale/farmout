@@ -3387,14 +3387,32 @@ class RelayTest(CliBase):
         self.fo("relay", "install")
         self.assertIn("The relay is on: at Claude Code's usage limit, what you type goes to codex", self.fo("doctor").stdout)
 
+    def test_relay_test_tries_it_before_a_real_limit(self):
+        f = self.limited_session(error=False)  # Claude is fine
+        self.assertIn("The relay is off: `farmout relay on` first", self.fo("relay", "test").stdout)
+        self.fo("relay", "on", "-w", "codex")
+        out = self.fo("relay", "test", "--minutes", "5", CLAUDE_CODE_SESSION_ID="s1").stdout
+        self.assertRegex(out, r"Claude Code session s1 acts as if at its usage limit until \d\d:\d\d: what you type "
+                              r"there goes to codex")
+        said = self.hook("say tested", f)["stopReason"]
+        self.assertRegex(said, r"^farmout relay test: Claude acts as if at its usage limit until \d\d:\d\d "
+                               r"\(`farmout relay back` ends it\), so codex answered \(farmout session codex-1\):"
+                               r"\n\ntested$")
+        self.fo("relay", "back")
+        back = self.hook("and now?", f)
+        self.assertIn("the user's prompts went to codex through farmout", back["hookSpecificOutput"]["additionalContext"])
+        self.assertIsNone(self.hook("again", f), "over")
+
     def test_back_early_and_a_new_limit_starts_afresh(self):
         self.fo("relay", "on", "--write", "-w", "codex")
+        self.repo()
         f = self.limited_session()
-        self.hook("say one", f)
+        self.hook("write a.py x = 2", f)
         self.assertTrue(self.meta("codex-1")["write"])
         self.assertIn("Claude is back: the relayed conversation goes to Claude again", self.fo("relay", "back").stdout)
         back = self.hook("hello again", f)
-        self.assertIn("`git status` and `git diff` show what it changed", back["hookSpecificOutput"]["additionalContext"])
+        ctx = back["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("`git status` and `git diff` show what it changed. Changed since then: a.py.", ctx)
         self.limited_session(resets=time.time() + 7200)  # Claude ran out again later: a new limit, a new session
         self.assertIn("farmout session codex-2", self.hook("say two", f)["stopReason"])
         self.fo("relay", "off")
@@ -3450,7 +3468,7 @@ class CompletionTest(CliBase):
         self.assertIn("codex", complete("send", "alpha", "-w", ""))
         self.assertIn("auto", complete("run", ""))
         self.assertEqual(complete("pipe", "run", "--s"), ["--set"])
-        self.assertEqual(complete("relay", ""), ["on", "off", "back", "install", "uninstall", "hook"])
+        self.assertEqual(complete("relay", ""), ["on", "off", "back", "test", "install", "uninstall", "hook"])
         if shutil.which("zsh"):
             zsh = self.tmp / "c.zsh"
             zsh.write_text(self.fo("completion", "zsh").stdout)
