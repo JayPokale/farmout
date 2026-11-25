@@ -437,9 +437,13 @@ What we found building this, in case it saves you an afternoon:
 - **Python's `text=True` turns CRLF into LF.** A diff read that way no longer applies to a CRLF file, so farmout moves patches as bytes.
 - **Git hooks fire on internal commits and checkouts.** A review gate in pre-commit would review every worktree farmout makes, and `--no-verify` still runs post-commit and post-checkout hooks; farmout's own git calls use `-c core.hooksPath=/dev/null`.
 - **Claude Code refuses edits under `.git`**, even inside a worktree placed there, so worktrees live in `<repo>/.farmout/worktrees/`.
+- **Claude Code writes a usage limit into the session file.** The assistant entry carries `apiError: "usage_limit_reached"` and `apiErrorParams.rate_limit_info.resetsAt` (Unix seconds), not only the "You've hit your 5-hour limit · resets 3:40am" text; that's what `farmout relay` reads.
+- **A `UserPromptSubmit` hook can answer in Claude's place.** `{"continue": false, "stopReason": "..."}` keeps the prompt in the conversation, shows the text under it and clears the input; Claude sees it later as a meta message. `{"decision": "block"}` instead puts the prompt back in the input box. `systemMessage` shows only when the prompt goes on.
+- **`StopFailure` fires before the error is in the session file**, about 30 ms ahead; its `last_assistant_message` already has Claude Code's words. Commands typed after `!` in Claude Code get `CLAUDE_CODE_SESSION_ID`, but a new session's file holds no prompt until the first one is sent.
+- **Codex keeps its usage figures in its session files** (`token_count` events: `used_percent` and `resets_at` for the 5-hour and weekly windows) but never writes errors there, so a Codex limit can't be read back the way Claude Code's can.
 - **Models cite paths relative to whatever directory they think in** (`cli.py` for `pkg/cli.py`) and line numbers inside a `.diff` file unless told otherwise. farmout's review brief asks for current-file line numbers, and its citation check accepts a unique suffix match.
 
-Tested with agy 1.4.6, codex-cli 0.163.0, Claude Code 2.1.323, GitHub Copilot CLI 1.0.114 and Python 3.14 on Arch Linux (November 2026); the offline test suite also passes on Python 3.9 and 3.12. CLIs change often, so if a worker breaks, please open an issue with your CLI version. The `deepseek` worker is experimental: its flags follow DeepSeek Harness 0.2.2's documentation and haven't had a real smoke test yet.
+Tested with agy 1.4.6, codex-cli 0.163.0, Claude Code 2.1.323, GitHub Copilot CLI 1.0.116 and Python 3.14 on Arch Linux (November 2026); the offline test suite also passes on Python 3.9 and 3.12. CLIs change often, so if a worker breaks, please open an issue with your CLI version. The `deepseek` worker is experimental: its flags follow DeepSeek Harness 0.2.2's documentation and haven't had a real smoke test yet.
 
 ## Configuration
 

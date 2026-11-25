@@ -435,9 +435,13 @@ farmout 在你的机器上以你的登录身份，按各厂商文档中说明的
 - **Python 的 `text=True` 会把 CRLF 转成 LF**。这样读进来的 diff 无法再应用到 CRLF 文件上，所以 farmout 以字节形式传递补丁。
 - **git 钩子在内部的提交和检出时也会触发**。放在 pre-commit 里的审查门禁会把 farmout 创建的每个 worktree 都审查一遍，而 `--no-verify` 仍然会运行 post-commit 和 post-checkout 钩子；因此 farmout 自己调用 git 时都会带上 `-c core.hooksPath=/dev/null`。
 - **Claude Code 拒绝修改 `.git` 下的内容**，即使 worktree 就放在那里面也不行，所以 worktree 都放在 `<repo>/.farmout/worktrees/`。
+- **Claude Code 会把用量上限写进会话文件。** 那条 assistant 记录带有 `apiError: "usage_limit_reached"` 和 `apiErrorParams.rate_limit_info.resetsAt`（Unix 秒），不只是“You've hit your 5-hour limit · resets 3:40am”这句话；`farmout relay` 读的就是它。
+- **`UserPromptSubmit` 钩子可以替 Claude 回答。** `{"continue": false, "stopReason": "..."}` 会把提问留在对话里，在下面显示这段文字并清空输入框；Claude 之后会把它当作一条 meta 消息看到。`{"decision": "block"}` 则会把提问放回输入框。`systemMessage` 只在提问继续发出时显示。
+- **`StopFailure` 会在错误写进会话文件之前触发**，大约早 30 毫秒；它的 `last_assistant_message` 里已经有 Claude Code 的原话。在 Claude Code 里用 `!` 运行的命令能拿到 `CLAUDE_CODE_SESSION_ID`，但新会话的文件在第一次提问之前还没有任何提问。
+- **Codex 把用量数字记在自己的会话文件里**（`token_count` 事件：5 小时和每周窗口的 `used_percent` 与 `resets_at`），却从不把错误写进去，所以没法像 Claude Code 那样从文件里读出 Codex 的上限。
 - **模型引用路径时，是相对于它自认为所在的目录**（把 `pkg/cli.py` 写成 `cli.py`），而且除非另有说明，给出的行号是 `.diff` 文件内的行号。farmout 的审查任务说明会要求给出当前文件中的行号，它的引用检查也接受唯一的后缀匹配。
 
-测试环境：Arch Linux 上的 agy 1.4.6、codex-cli 0.163.0、Claude Code 2.1.323、GitHub Copilot CLI 1.0.114 和 Python 3.14（2026 年 11 月）；离线测试套件在 Python 3.9 和 3.12 上也能通过。这些 CLI 变化很快，如果某个 worker 出了问题，请提交 issue 并附上你的 CLI 版本。`deepseek` worker 尚处于实验阶段：它的参数依据 DeepSeek Harness 0.2.2 的文档编写，还没经过真正的冒烟测试。
+测试环境：Arch Linux 上的 agy 1.4.6、codex-cli 0.163.0、Claude Code 2.1.323、GitHub Copilot CLI 1.0.116 和 Python 3.14（2026 年 11 月）；离线测试套件在 Python 3.9 和 3.12 上也能通过。这些 CLI 变化很快，如果某个 worker 出了问题，请提交 issue 并附上你的 CLI 版本。`deepseek` worker 尚处于实验阶段：它的参数依据 DeepSeek Harness 0.2.2 的文档编写，还没经过真正的冒烟测试。
 
 ## 配置
 
