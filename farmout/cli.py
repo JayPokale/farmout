@@ -1141,12 +1141,12 @@ def answers_here(a):
     newest Claude Code, Codex or Copilot CLI session in this folder, else the newest farmout conversation here."""
     if a.session:
         recs = [r for r in sessions.turns(a.session) if r["status"] == "ok"]
-        return [flows.text(r) for r in recs][-5:], f"farmout session {a.session}"
+        return [flows.text(r) for r in recs][-10:], f"farmout session {a.session}"
     found = native.find(a.cwd, a.source)
     if found:
         s = found[0]
         _, turns = native.read(s)
-        return ["\n\n".join(t["reply"]) for t in turns if t["reply"]][-5:], f"your {s['label']} session {s['id'][:8]}"
+        return ["\n\n".join(t["reply"]) for t in turns if t["reply"]][-10:], f"your {s['label']} session {s['id'][:8]}"
     here = [sessions.load(n) for n in sessions.names()]
     here = sorted((m for m in here if m["cwd"] == a.cwd and not m.get("group")), key=lambda m: -(m.get("created") or 0))
     if not here:
@@ -1158,9 +1158,18 @@ def answers_here(a):
 def cmd_copy(a):
     from . import clip
     texts, where = answers_here(a)
-    items = next((found for found in map(clip.commands, reversed(texts)) if found), [])
+    if a.all:  # every command in the newest answers, the newest first
+        items, seen = [], set()
+        for found in map(clip.commands, reversed(texts)):
+            items += [c for c in found if c["text"] not in seen and not seen.add(c["text"])]
+    else:
+        items = next((found for found in map(clip.commands, reversed(texts)) if found), [])
     if not items:
         raise ValueError(f"no commands in the newest answers of {where}")
+    if a.number is None and not a.list and not a.json and sys.stdin.isatty() and sys.stdout.isatty():
+        a.number = pick_one(items, where)
+        if a.number is None:
+            return 0
     if a.json and a.number is None:
         return emit(a, {"from": where, "commands": items})
     if a.number is None:
@@ -1188,6 +1197,54 @@ def cmd_copy(a):
     err(f"copied {a.number} ({item['lines']} line{'s' * (item['lines'] != 1)}, {len(item['text'])} characters) "
         f"with {tool}, from {where}")
     return 0
+
+
+def pick_one(items, where):
+    """↑↓ and ⏎ over the commands, full screen; the number picked, or None (q, Esc)."""
+    import curses
+
+    def run(scr):
+        curses.curs_set(0)
+        at = 0
+        while True:
+            h, w = scr.getmaxyx()
+            scr.erase()
+            scr.addnstr(0, 0, f"Copy which command? ({where})  ↑↓ pick · ⏎ copy · q quit", w - 1, curses.A_BOLD)
+            rows = max(1, h - 3)
+            first = max(0, min(at - rows + 1, len(items) - rows))
+            for k, item in enumerate(items[first:first + rows]):
+                n = first + k
+                lines = item["text"].splitlines()
+                more = f"  (+{len(lines) - 1} lines)" if len(lines) > 1 else ""
+                scr.addnstr(2 + k, 0, f"{n + 1:>3}  {lines[0]}{more}", w - 1, curses.A_REVERSE if n == at else 0)
+            preview = items[at]["text"].splitlines()
+            if len(preview) > 1 and h > rows + 3:
+                scr.addnstr(h - 1, 0, " ⏎ copies all of it, the lines as they are", w - 1, curses.A_DIM)
+            scr.refresh()
+            k = scr.getch()
+            if k in (curses.KEY_UP, ord("k")):
+                at = max(0, at - 1)
+            elif k in (curses.KEY_DOWN, ord("j")):
+                at = min(len(items) - 1, at + 1)
+            elif k in (10, 13, curses.KEY_ENTER):
+                return at + 1
+            elif k == 27:  # Esc alone quits; a key's escape sequence curses didn't know doesn't
+                scr.nodelay(True)
+                rest = scr.getch()
+                while scr.getch() != -1:
+                    pass
+                scr.nodelay(False)
+                if rest == -1:
+                    return None
+            elif k == ord("q"):
+                return None
+    try:
+        return curses.wrapper(run)
+    except curses.error:  # a terminal curses can't draw on: the numbered list and a question instead
+        for n, item in enumerate(items, 1):
+            print(f"{n:>3}  {item['text'].splitlines()[0]}")
+        got = input(f"Copy which? [1-{len(items)}, Enter: 1] ").strip() or "1"
+        return int(got) if got.isdigit() else 0
 
 
 def cmd_paste(a):
@@ -1551,6 +1608,7 @@ def parser():
     cy.add_argument("-s", "--session", help="a farmout conversation instead")
     cy.add_argument("--from", dest="source", choices=sorted(native.LABELS), help="only your sessions of this CLI")
     cy.add_argument("--list", action="store_true", help="list them, copy nothing")
+    cy.add_argument("--all", action="store_true", help="the commands in the last ten answers, not only the newest")
     pa = add("paste", "save the image on the clipboard to a file and print its path (in Claude Code: "
              "`!farmout paste`, then ask about it)", cmd_paste)
     pa.add_argument("-o", "--out", metavar="PATH", help="where (a file, or a folder; default ~/.cache/farmout/pastes/)")

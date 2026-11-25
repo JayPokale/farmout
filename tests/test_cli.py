@@ -4043,6 +4043,44 @@ class ClipTest(CliBase):
         self.clipboard()
         self.assertNotIn("Clipboard:", self.fo("doctor", PATH=str(self.bindir)).stdout)
 
+    def test_the_picker_copies_with_arrows_and_enter(self):
+        import pty
+        env = self.clipboard()
+        d = self.home / ".claude" / "projects" / "-work"
+        d.mkdir(parents=True)
+        rows = [{"uuid": "u1", "parentUuid": None, "type": "user", "cwd": str(self.work), "entrypoint": "cli",
+                 "message": {"content": "how?"}},
+                {"uuid": "a1", "parentUuid": "u1", "type": "assistant", "message": {"content": [
+                    {"type": "text", "text": "Run `git status`, then `git log -1`."}]}}]
+        (d / "s1.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+        pid, fd = pty.fork()
+        if pid == 0:
+            os.chdir(self.work)
+            os.execve(sys.executable, [sys.executable, str(SERVER), "copy"],
+                      {**self.env, **env, "TERM": "xterm-256color", "COLUMNS": "80", "LINES": "20"})
+        out, end = b"", time.time() + 20
+        sent = False
+        while time.time() < end:
+            ready, _, _ = select.select([fd], [], [], 0.2)
+            if ready:
+                try:
+                    chunk = os.read(fd, 65536)
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                out += chunk
+            if not sent and b"Copy which command?" in out:
+                os.write(fd, b"\x1b[B")  # not this terminal's Down (keypad mode sends ESC O B): ignored, not a quit
+                time.sleep(0.5)
+                os.write(fd, b"j")
+                time.sleep(0.3)
+                os.write(fd, b"\r")
+                sent = True
+        os.waitpid(pid, 0)
+        self.assertTrue(sent, out[-500:])
+        self.assertEqual((self.tmp / "copied").read_text(), "git log -1")
+
     def test_paste_saves_the_clipboards_image(self):
         png = b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR" + struct.pack(">II", 2, 3) + b"\x08\x02\x00\x00\x00"
         env = self.clipboard(png)

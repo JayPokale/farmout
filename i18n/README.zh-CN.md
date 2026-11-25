@@ -169,7 +169,7 @@ farmout hook install          # review every commit; block it when 2+ models fla
 | `pipe run\|ls\|status\|resume\|approve\|stop` | 流水线及其运行记录 |
 | `stats` | 每个订阅的运行次数、失败次数、用量上限、耗时和 token 数 |
 | `hook install\|uninstall [--pre-push]` | 安装（或卸载）一个审查每次提交或推送的 git 钩子 |
-| `copy [n]` · `paste` | 把最新回答里的一条命令完整复制出来（终端会把长命令拆成几行）：`farmout copy` 列出这个文件夹里你自己的 Claude Code、Codex 或 Copilot CLI 会话（或 `-s <farmout 会话>`）里的代码块和命令，`farmout copy 2` 复制第二条；`farmout paste` 把剪贴板里的图片存成文件并打印路径，所以在 Claude Code 里 `!farmout paste` 就能把截图放进对话，不用再绕道截图文件夹（`-o` 指定位置，`--copy` 把路径放进剪贴板）。它们使用 wl-clipboard（Wayland）、xclip（X11）或 pbcopy/pngpaste（macOS）；都没有时，复制会经由你的终端（OSC 52），粘贴则无法工作，`farmout doctor` 会提示 |
+| `copy [n]` · `paste` | 把最新回答里的一条命令完整复制出来（终端会把长命令拆成几行）：`farmout copy` 显示这个文件夹里你自己的 Claude Code、Codex 或 Copilot CLI 会话（或 `-s <farmout 会话>`；`--all` 看最近十条回答）最新回答里的代码块和命令，用 `↑` `↓` `⏎` 选一条，`farmout copy 2` 复制第二条（在 Claude Code 里，`!farmout copy` 会列出它们）；`farmout paste` 把剪贴板里的图片存成文件并打印路径，所以在 Claude Code 里 `!farmout paste` 就能把截图放进对话，不用再绕道截图文件夹（`-o` 指定位置，`--copy` 把路径放进剪贴板）。它们使用 wl-clipboard（Wayland）、xclip（X11）或 pbcopy/pngpaste（macOS）；都没有时，复制会经由你的终端（OSC 52），粘贴则无法工作，`farmout doctor` 会提示 |
 | `doctor [--live]`, `mcp`, `acp`, `completion <shell>` | 检查各个 worker；通过 stdio 提供 MCP 工具；作为编辑器的 [ACP](#在编辑器里用acp) agent；输出 bash、zsh 或 fish 的 tab 补全脚本 |
 
 所有命令都支持 `--json`（方便脚本使用）和 `-C <dir>`。prompt 也可以从 stdin 传入；如果命令里已经给了 prompt，通过管道传入的 stdin 会作为文件一起附上。退出码：0 表示成功，1 表示失败（或触发了审查门禁），130 表示被停止。
