@@ -103,12 +103,17 @@ def record(sid):
     return data if isinstance(data, dict) else None
 
 
-def records():
-    out = []
+def records(now=None):
+    """Every relay record; one untouched for a week (a limit long over that nobody was caught up on) goes."""
+    out, now = [], now or time.time()
     for p in sorted(RECORDS.glob("*.json")) if RECORDS.is_dir() else []:
         rec = record(p.stem)
-        if rec:
-            out.append(rec)
+        if not rec:
+            continue
+        if max(rec.get("until") or 0, rec.get("test") or 0, rec.get("since") or 0) < now - 7 * 86400:
+            forget(p.stem)
+            continue
+        out.append(rec)
     return out
 
 
@@ -122,6 +127,10 @@ def test(sid, file, cwd, minutes, now=None):
 
 
 def keep(sid, rec):
+    """Save a relay record. A `farmout relay back` written meanwhile by another process stays."""
+    now = record(sid)
+    if now and (now.get("back") or 0) > (rec.get("back") or 0):
+        rec = {**rec, "back": now["back"]}
     RECORDS.mkdir(parents=True, exist_ok=True)
     tmp = record_path(sid).with_suffix(f".{os.getpid()}")
     tmp.write_text(json.dumps(rec))
@@ -230,6 +239,20 @@ def only_one(sid, wait=0.0):
             fcntl.flock(f, fcntl.LOCK_UN)
 
 
+def current(path, rec, now):
+    """The limit this Claude Code session is under now, if any: from its session file, `farmout relay test`, or the
+    relay record (relayed answers can push Claude's last reply out of the part of the file read); none after
+    `farmout relay back`."""
+    limit = limit_in(path)
+    if rec and (rec.get("test") or 0) > now and not rec.get("back"):  # `farmout relay test`
+        limit = {"until": rec["test"], "text": "", "at": rec.get("since") or now, "kind": "test"}
+    if limit is None and rec and (rec.get("until") or 0) > now and not rec.get("back"):
+        limit = {"until": rec["until"], "text": rec.get("limit") or "", "at": rec.get("since") or now}
+    if limit and rec and rec.get("back", 0) >= limit["at"]:  # Claude is back before the reset
+        limit = None
+    return limit
+
+
 def hook(event, now=None):
     """What Claude Code's UserPromptSubmit hook answers, as a dict; None lets the prompt go on as usual."""
     now = now or time.time()
@@ -239,23 +262,19 @@ def hook(event, now=None):
     prompt = event.get("prompt") if isinstance(event.get("prompt"), str) else ""
     if not prompt.strip() or prompt.lstrip().startswith(("/", "!")):
         return None  # Claude Code's own commands: never relayed, and the catch-up waits for a real prompt
-    rec, limit = record(sid), limit_in(path)
-    if rec and (rec.get("test") or 0) > now and not rec.get("back"):  # `farmout relay test`
-        limit = {"until": rec["test"], "text": "", "at": rec.get("since") or now, "kind": "test"}
-    if limit is None and rec and (rec.get("until") or 0) > now and not rec.get("back"):
-        limit = {"until": rec["until"], "text": rec.get("limit") or "", "at": rec.get("since") or now}  # relayed
-        # answers can push Claude's last reply out of the part of the file read
-    if limit and rec and rec.get("back", 0) >= limit["at"]:  # `farmout relay back`: Claude is back before the reset
-        limit = None
+    started = now
+    rec, limit = record(sid), current(path, record(sid), now)
     if not (limit and limit["until"] > now) and not (rec and rec.get("name")):
         return None
     said = hashlib.sha256(prompt.encode()).hexdigest()[:16]
     with only_one(sid, wait=HOOK_TIMEOUT - 60) as mine:
         if not mine:
             return None
-        rec = record(sid)  # again: another hook may have changed it meanwhile
-        if rec and rec.get("said") == said and (rec.get("said_at") or 0) >= now - 5:
-            return None  # the other hook on this same prompt (the plugin's and one added by hand) has it
+        now = time.time()  # again, after any wait: the reset may have come, or `relay back`
+        rec = record(sid)
+        limit = current(path, rec, now)
+        if rec and rec.get("said") == said and started < (rec.get("said_done") or float("inf")):
+            return None  # the other hook on this same prompt (the plugin's and one added by hand) had it
         if limit and limit["until"] > now:
             cfg = config()
             if not cfg.get("on"):
@@ -378,7 +397,17 @@ def stopped(event, now=None):
 def relay(event, sid, cwd, prompt, rec, limit, cfg, now, said=None):
     """Send the prompt to the farmout session carrying this conversation on (started on the first one) and answer
     with its reply. Claude Code shows the prompt as sent and the reply under it, and keeps both in its session file,
-    so Claude sees them when it's back."""
+    so Claude sees them when it's back. When it's done, it notes so: a second hook that waited on this same prompt
+    gives way, and the same prompt typed again later doesn't."""
+    try:
+        return relaying(event, sid, cwd, prompt, rec, limit, cfg, now, said)
+    finally:
+        done = record(sid)
+        if done and said and done.get("said") == said:
+            keep(sid, {**done, "said_done": time.time()})
+
+
+def relaying(event, sid, cwd, prompt, rec, limit, cfg, now, said=None):
     from . import flows, hooks, sessions
     head = heading(limit)
     try:

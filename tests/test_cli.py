@@ -2045,7 +2045,7 @@ class TerminalUiTest(CliBase):
         brief = self.runs()[-1]["brief"]
         self.assertTrue(brief.startswith("Carry on from where this conversation stopped."), brief)
         self.assertIn("continues an earlier conversation (in Claude Code)", brief)
-        self.assertIn(f"Sent to {row['name']}", after)
+        self.assertRegex(after, rf"Sent to {row['name']}|{row['name']} answered turn 2", "sent, and maybe answered already")
         (d / "s1.jsonl").unlink()
         self.assertIn("No Claude Code, Codex or Copilot CLI session in this folder", self.ui("C", ["screen"])[0])
 
@@ -3508,6 +3508,36 @@ class RelayTest(CliBase):
         self.assertNotIn("sub/gone.py", changed, "deleted before the relay began")
         self.assertNotIn("c.txt", " ".join(changed).replace("sub/d.txt", ""), "a rename's old path isn't a file")
 
+    def test_a_week_old_record_goes(self):
+        (self.state / "relay").mkdir(parents=True)
+        old = time.time() - 8 * 86400
+        (self.state / "relay" / "old.json").write_text(json.dumps({"session": "old", "since": old, "until": old + 3600}))
+        (self.state / "relay" / "new.json").write_text(json.dumps({"session": "new", "since": time.time(), "name": "x"}))
+        self.fo("relay", "back")
+        self.assertEqual(sorted(p.name for p in (self.state / "relay").glob("*.json")), ["new.json"])
+
+    def test_review5_a_quick_repeat_is_relayed_and_a_wait_past_the_reset_lets_it_go(self):
+        import fcntl
+        self.fo("relay", "on", "-w", "codex")
+        f = self.limited_session()
+        self.assertTrue(self.hook("say twice", f)["stopReason"].endswith("twice"))
+        self.assertTrue(self.hook("say twice", f)["stopReason"].endswith("twice"), "the same prompt again: relayed")
+        g = self.limited_session("s8", resets=time.time() + 1.5)
+        lockdir = self.state / "relay"
+        with open(lockdir / "s8.lock", "a") as held:
+            fcntl.flock(held, fcntl.LOCK_EX)
+            p = subprocess.Popen([sys.executable, str(SERVER), "relay", "hook"], stdin=subprocess.PIPE,
+                                 stdout=subprocess.PIPE, text=True, env=self.env, cwd=self.work)
+            p.stdin.write(json.dumps({"session_id": "s8", "transcript_path": str(g), "cwd": str(self.work),
+                                      "prompt": "say late"}))
+            p.stdin.close()
+            time.sleep(3)
+            fcntl.flock(held, fcntl.LOCK_UN)
+        out = p.stdout.read()
+        p.wait(timeout=60)
+        p.stdout.close()
+        self.assertNotIn('"continue": false', out, "the reset came while it waited: the prompt goes to Claude")
+
     def test_back_early_and_a_new_limit_starts_afresh(self):
         self.fo("relay", "on", "--write", "-w", "codex")
         self.repo()
@@ -3801,6 +3831,30 @@ class AcpTest(CliBase):
         self.assertEqual(self.last("codex")["name"], "codex", "on its own worker")
         self.assertEqual(self.answer(self.say("session/load", {"sessionId": "nope", "cwd": str(self.work),
                                                                "mcpServers": []}))["error"]["code"], -32002)
+
+    def test_review5_load_replays_turns_reuses_an_open_thread_and_checks_the_cursor(self):
+        d = self.home / ".claude" / "projects" / "-work"
+        d.mkdir(parents=True)
+        rows = [{"uuid": "u1", "parentUuid": None, "type": "user", "cwd": str(self.work), "entrypoint": "cli",
+                 "message": {"content": "plan the cache"}},
+                {"uuid": "a1", "parentUuid": "u1", "type": "assistant", "message": {"content": [
+                    {"type": "text", "text": "A 5-minute TTL."}]}}]
+        (d / "s1.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+        self.fo("continue", "-w", "codex", "-n", "carried", "say carried")
+        self.start()
+        self.answer(self.say("initialize", {"protocolVersion": 1}))
+        self.assertEqual(self.answer(self.say("session/list", {"cursor": "LTE="}))["error"]["code"], -32602)
+        self.seen.clear()
+        self.answer(self.say("session/load", {"sessionId": "carried", "cwd": str(self.work), "mcpServers": []}))
+        replay = [(m["params"]["update"]["sessionUpdate"], m["params"]["update"]["content"]["text"]) for m in self.seen]
+        self.assertEqual(replay[1:], [("user_message_chunk", "plan the cache"), ("agent_message_chunk", "A 5-minute TTL."),
+                                      ("user_message_chunk", "say carried"), ("agent_message_chunk", "carried")])
+        self.assertTrue(replay[0][1].startswith("# A conversation from Claude Code"))
+        mid = self.say("session/prompt", {"sessionId": "carried", "prompt": [{"type": "text", "text": "nap 20"}]})
+        wait_until(lambda: self.json("ls")[0]["state"] == "running", 20)
+        self.answer(self.say("session/load", {"sessionId": "carried", "cwd": str(self.work), "mcpServers": []}))
+        self.say("session/cancel", {"sessionId": "carried"}, notify=True)
+        self.assertEqual(self.answer(mid)["result"], {"stopReason": "cancelled"}, "the reopened thread is the same one")
 
     def test_cancel_stops_the_turn(self):
         self.start()

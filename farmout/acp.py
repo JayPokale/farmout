@@ -18,7 +18,6 @@ from .workers import ENABLED, lane
 PROTOCOL = 1
 ACCESS = {"read": "Read only", "write": "Edit files", "isolate": "Own git worktree"}
 PAGE = 50  # sessions per session/list page
-REPLAY_CONTEXT = 20_000  # characters of a conversation's earlier part (a branch's, or an imported one) replayed
 
 
 class Missing(KeyError):
@@ -153,6 +152,8 @@ class Agent:
             start = int(base64.b64decode(params["cursor"]).decode()) if params.get("cursor") else 0
         except (ValueError, TypeError):
             raise KeyError("cursor") from None
+        if start < 0:
+            raise KeyError("cursor")
         rows = []
         for name in sessions.names():
             try:
@@ -179,16 +180,15 @@ class Agent:
             meta = sessions.load(name)
         except (KeyError, OSError, ValueError):
             raise Missing(name) from None
-        self.chats[name] = chat = {"cwd": meta["cwd"], "worker": "auto",  # auto: the session keeps its own worker
-                                   "access": "isolate" if meta.get("isolate") else "write" if meta.get("write") else "read",
-                                   "name": name, "gen": 0, "lock": threading.Lock()}
+        open_ = next((c for k, c in self.chats.items() if k == name or c.get("name") == name), None)
+        self.chats[name] = chat = open_ or {  # a thread already on it here: the same one, its lock and its cancels
+            "cwd": meta["cwd"], "worker": "auto",  # auto: the session keeps its own worker
+            "access": "isolate" if meta.get("isolate") else "write" if meta.get("write") else "read",
+            "name": name, "gen": 0, "lock": threading.Lock()}
         ctx = sessions.path(name) / "context.md"
-        if ctx.exists():
-            text = ctx.read_text()
-            if len(text) > REPLAY_CONTEXT:
-                text = f"{text[:REPLAY_CONTEXT]}\n\n[… the rest is in {ctx}]"
-            self.update(name, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text":
-                               "(The conversation before this session's own turns:)\n\n" + text}})
+        if ctx.exists():  # the conversation before this session's own turns (a branch's, or one carried over)
+            for who, text in earlier(ctx.read_text()):
+                self.update(name, {"sessionUpdate": f"{who}_message_chunk", "content": {"type": "text", "text": text}})
         for r in sessions.turns(name):
             self.update(name, {"sessionUpdate": "user_message_chunk", "content": {"type": "text", "text": r["prompt"]}})
             if r["status"] != "running":
@@ -280,6 +280,24 @@ class Agent:
             said += f"\n\n_{notes}_"
         self.update(sid, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": said}})
         return {"stopReason": "end_turn"}
+
+
+def earlier(text):
+    """[("user"|"agent", text)] from a context.md: its turns' prompts and replies in order, and what comes before the
+    first turn (a heading, a summary) as the agent's."""
+    lines, out = text.split("\n"), []
+    starts = [i for i, line in enumerate(lines) if sessions.TURN.fullmatch(line) and lines[i + 1:i + 3] == ["", "### Prompt"]
+              and (i == 0 or lines[i - 1] == "")]
+    head = "\n".join(lines[:starts[0] if starts else len(lines)]).strip()
+    if head:
+        out.append(("agent", head))
+    for a, b in zip(starts, starts[1:] + [len(lines)]):
+        part = lines[a + 3:b]
+        reply = next((i for i, line in enumerate(part) if line == "### Reply"), None)
+        said = "\n".join(part[:reply] if reply is not None else part).strip()
+        got = "\n".join(part[reply + 1:]).strip() if reply is not None else ""
+        out += [("user", said)] + ([("agent", got)] if got else [])
+    return out
 
 
 def title(name, meta):
