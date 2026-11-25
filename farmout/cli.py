@@ -623,7 +623,21 @@ def status_line():
     why = usage.reasons()
     bits += [f"{w} {'logged out' if why.get(w) == 'login' else 'limited'} till "
              f"{time.strftime('%H:%M', time.localtime(u))}" for w, u in usage.limits().items()]
+    q = native.codex_quota() if "codex" in ENABLED else None
+    high = [w for w in (q or {}).get("windows", []) if w["used"] >= 50]
+    bits += [f"codex {w['name'].replace('-hour', 'h').replace('weekly', 'week')} {round(w['used'])}%" for w in high]
     return "farmout: " + (" · ".join(bits) if bits else "idle")
+
+
+def quota_text(q):
+    """codex (plus): 5-hour 4% used, resets 15:40 · weekly 1%, resets Tue 10:00 (as of 12m ago)"""
+    def at(t):
+        return time.strftime("%H:%M" if t - time.time() < 86400 else "%a %H:%M", time.localtime(t))
+    parts = [f"{w['name']} {round(w['used'])}%" + (" used" if i == 0 else "")
+             + (f", resets {at(w['resets'])}" if w["resets"] and w["resets"] > time.time() else
+                " (reset since)" if w["resets"] else "") for i, w in enumerate(q["windows"])]
+    plan = f" ({q['plan']})" if q["plan"] else ""
+    return f"codex{plan}: {' · '.join(parts)} (as of {ago(q['at'])} ago)"
 
 
 def cmd_status(a):
@@ -631,7 +645,7 @@ def cmd_status(a):
         names = sessions.names()
         return emit(a, {"running": [n for n in names if sessions.busy(n)],
                         "queued": sum(len(sessions.pending(n)) for n in names), "limited": usage.limits(),
-                        "why": usage.reasons(),
+                        "why": usage.reasons(), "quota": {"codex": native.codex_quota() if "codex" in ENABLED else None},
                         "pipelines": [{"run": st["id"], "status": pipeline.status(st)} for st in pipeline.runs()
                                       if pipeline.status(st) in ("running", "waiting")]})
     print(status_line())
@@ -641,6 +655,9 @@ def cmd_status(a):
                 print(f"  {n} ({sessions.load(n)['worker']}) running")
         for w in usage.limits():
             print(f"  {usage.describe(w)}")
+        q = native.codex_quota() if "codex" in ENABLED else None
+        if q:
+            print(f"  {quota_text(q)}")
 
 
 def cmd_trust(a):
@@ -1289,6 +1306,7 @@ def parser():
     d = add("doctor", "check which workers are installed (and, with --live, logged in)", cmd_doctor)
     d.add_argument("--live", action="store_true")
     add("mcp", "serve the MCP tools on stdio (what `python3 server.py` does)", None, ())
+    add("acp", "be an Agent Client Protocol agent on stdio, for editors such as Zed and JetBrains IDEs", None, ())
     cp = add("completion", "tab completion for your shell: eval \"$(farmout completion bash)\" in ~/.bashrc (zsh the "
              "same), or farmout completion fish > ~/.config/fish/completions/farmout.fish", cmd_completion, ())
     cp.add_argument("shell", choices=("bash", "zsh", "fish"))
@@ -1320,6 +1338,9 @@ def main(argv=None):
     if a.cmd == "mcp":
         from . import mcp
         return mcp.main()
+    if a.cmd == "acp":
+        from . import acp
+        return acp.main()
     if a.cmd == "_runner":
         return sessions.runner_main(a.target)
     if a.cmd == "_pipe":

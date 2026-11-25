@@ -156,7 +156,7 @@ farmout hook install          # review every commit; block it when 2+ models fla
 | `pipe run\|ls\|status\|resume\|approve\|stop` | 流水线及其运行记录 |
 | `stats` | 每个订阅的运行次数、失败次数、用量上限、耗时和 token 数 |
 | `hook install\|uninstall [--pre-push]` | 安装（或卸载）一个审查每次提交或推送的 git 钩子 |
-| `doctor [--live]`, `mcp`, `completion <shell>` | 检查各个 worker；通过 stdio 提供 MCP 工具；输出 bash、zsh 或 fish 的 tab 补全脚本 |
+| `doctor [--live]`, `mcp`, `acp`, `completion <shell>` | 检查各个 worker；通过 stdio 提供 MCP 工具；作为编辑器的 [ACP](#在编辑器里用acp) agent；输出 bash、zsh 或 fish 的 tab 补全脚本 |
 
 所有命令都支持 `--json`（方便脚本使用）和 `-C <dir>`。prompt 也可以从 stdin 传入；如果命令里已经给了 prompt，通过管道传入的 stdin 会作为文件一起附上。退出码：0 表示成功，1 表示失败（或触发了审查门禁），130 表示被停止。
 
@@ -328,7 +328,7 @@ rules = false                   # don't hand workers the project's CLAUDE.md, AG
 
 当某个 worker 因订阅触及用量上限而失败时，farmout 会记下该让它歇多久，并改由下一个 worker 执行该任务。重置时间从 CLI 的报错里读取（“try again in 4 days 2 hours”、“retry in 32.5s”、“resets 3pm (Asia/Kolkata)”、“try again at 3:04 PM”），读不到就按 15 分钟算。未登录、登录过期或订阅已结束的 worker 也按同样方式处理，暂停 30 分钟；如果没有别的 worker 能接手，会提示如何重新登录。下一个 worker 依次取自 `--fallback`、阶段的 `fallback` 或 `fallback` 设置，都没有时就是除 `api` 以外的其他所有可用 worker（`[]` 或 `--fallback ""` 可关闭）。条目可以指定模型，比如 `claude:opus` 触及上限后交给 `claude:sonnet`；上限按模型分别记录。对话进行到一半时，下一个 worker 会以文件形式拿到此前的对话，会话由它继续。审查从不改换 worker，因为“意见一致”必须来自不同的审查者；不加 `-w` 时，已知触及上限的 worker 会被排除在审查之外。在限制解除之前，发给这个 worker 的任务会直接转给下一个，`farmout run auto` 会跳过它，`farmout status` 和 `farmout doctor` 也会显示出来。`farmout stats` 根据用量日志（`~/.local/state/farmout/usage.jsonl`，从不记录 prompt 或输出内容）显示每个订阅的运行次数、失败次数、限额情况、耗时和 token 数。
 
-你自己的 Claude Code 会话不经过 farmout，但打开 `farmout relay on` 之后，你在上限处输入的内容会交给另一个 worker，并在 Claude Code 里得到回答；`farmout continue` 则能在任意终端里让另一个 worker 接着一段 Claude Code、Codex 或 Copilot CLI 对话（见[会话](#会话)）。想随时看到上限情况，可以把 `farmout status --line` 放进 tmux 的状态栏，或放进 Claude Code 的状态栏：在 `~/.claude/settings.json` 里写 `"statusLine": {"type": "command", "command": "farmout status --line"}`。
+你自己的 Claude Code 会话不经过 farmout，但打开 `farmout relay on` 之后，你在上限处输入的内容会交给另一个 worker，并在 Claude Code 里得到回答；`farmout continue` 则能在任意终端里让另一个 worker 接着一段 Claude Code、Codex 或 Copilot CLI 对话（见[会话](#会话)）。`farmout status` 还会显示 Codex 的 5 小时和每周额度用了多少，数字来自 Codex 自己写进会话文件的记录（任何一轮之后都会写，包括 farmout 发起的）；某个窗口用过一半后，`--line` 也会显示它。想随时看到上限情况，可以把 `farmout status --line` 放进 tmux 的状态栏，或放进 Claude Code 的状态栏：在 `~/.claude/settings.json` 里写 `"statusLine": {"type": "command", "command": "farmout status --line"}`。
 
 ## git 钩子
 
@@ -377,6 +377,16 @@ farmout 同时也是一个 MCP 服务器（`farmout mcp`，或 `python3 server.p
         cwd: !!js process.cwd()
 ```
 
+## 在编辑器里用（ACP）
+
+`farmout acp` 是一个 [Agent Client Protocol](https://agentclientprotocol.com) agent，所以支持 ACP 的编辑器（Zed、JetBrains IDE、通过 CodeCompanion 或 avante.nvim 的 Neovim、通过 agent-shell 的 Emacs，以及几个 VS Code 扩展）都能经由 farmout 使用你的各个订阅。在 Zed 里，把它加进设置：
+
+```json
+"agent_servers": { "farmout": { "type": "custom", "command": "farmout", "args": ["acp"] } }
+```
+
+每个对话线程就是一个 farmout 会话（`farmout ls`、`log`、`send` 和 `ui` 都能看到），所以某个 worker 撞上用量上限时，线程会连同对话交给下一个。线程有两个选项：**Worker**（`auto` 即第一个就绪的，或者你指定一个）和 **Files**（默认只读；可以改文件；或者在私有 git worktree 里改，用 `farmout apply` 应用补丁）。你在提问里链接的文件会作为文件交给 worker。回答在 worker 完成后一次性出现（不是逐字流式输出），期间有一行进度；取消会停止这一轮。
+
 ## 安全
 
 | worker | 只读（默认） | 写入（`--write`、`--isolate`、`write: true`） |
@@ -397,8 +407,8 @@ farmout 同时也是一个 MCP 服务器（`farmout mcp`，或 `python3 server.p
   - *运行：* 你安装的 worker CLI（`agy`、`codex`、`claude`、`copilot`、`dsh`）、`git`、`fix-pr` 和 `apply --pr` 用到的 `gh`、`race` 和流水线里你自己的测试命令、你设置或信任的钩子（`farmout hooks` 会列出它们）、你从商店安装的工具（用 `farmout tool run` 运行时，经由你的 shell）、`api` worker 收到 PDF 时用的 `pdftotext`、`bench --share` 生成 PNG 卡片时用的 SVG 转换工具（`rsvg-convert`、ImageMagick 或 Inkscape），以及在 `farmout ui` 里你要求时打开的分页器、编辑器和剪贴板工具。
   - *发送：* 每份任务说明（你的提示词、你指定的文件、待审查的改动、继续一段对话时它此前的各轮，你用 `continue` 接着做的 Claude Code、Codex 或 Copilot CLI 会话，以及打开 `farmout relay on` 后你在撞上限的 Claude Code 里输入的内容和那段会话；凭据已替换）通过 CLI 发给对应 worker 的服务商，`api` 则发给你设置的端点。`apply --pr` 会把会话的分支推送到你的 `origin` 并创建 pull request。没有遥测，也没有分析统计。
   - *获取：* 只在你要求时：`farmout store` 从 GitHub 上的本仓库（或你用 `FARMOUT_STORE` 或 `store` 设置指定的商店）读取商店索引和你安装的文件，每个文件都用 SHA-256 锁定；`farmout skill add` 下载你指定的技能。`bench/leaderboard.py` 是维护者用的脚本，不随包安装，它会克隆它评分的公开仓库。
-  - *读取：* 除了你指定的内容，只在你运行 `farmout continue` 时读取 Claude Code（`~/.claude/projects` 或 `$CLAUDE_CONFIG_DIR`）、Codex（`~/.codex/sessions` 或 `$CODEX_HOME`）和 Copilot CLI（`~/.copilot/session-state` 或 `$COPILOT_HOME`）保存的会话文件，用来找到并读取这个文件夹最近的会话；以及插件的转交钩子在你每次向 Claude Code 提问时读取该会话文件的末尾（看 Claude 的上一条回复是不是用量上限提示）。它从不写入这些文件。
-  - *监听：* `farmout ui --web` 只在 127.0.0.1 上提供页面，并且每次运行都生成新的密钥；`farmout mcp` 只通过 stdio 通信。
+  - *读取：* 除了你指定的内容，只在你运行 `farmout continue` 时读取 Claude Code（`~/.claude/projects` 或 `$CLAUDE_CONFIG_DIR`）、Codex（`~/.codex/sessions` 或 `$CODEX_HOME`）和 Copilot CLI（`~/.copilot/session-state` 或 `$COPILOT_HOME`）保存的会话文件，用来找到并读取这个文件夹最近的会话；插件的转交钩子在你每次向 Claude Code 提问时读取该会话文件的末尾（看 Claude 的上一条回复是不是用量上限提示）；以及 `farmout status` 读取 Codex 最新会话文件的末尾，取 Codex 写在那里的用量数字。它从不写入这些文件。
+  - *监听：* `farmout ui --web` 只在 127.0.0.1 上提供页面，并且每次运行都生成新的密钥；`farmout mcp` 和 `farmout acp` 只通过 stdio 通信。
   - *写入：* 会话和结果在 `~/.local/state/farmout`，委派的结果在 `~/.cache/farmout`，设置在 `~/.config/farmout`，隔离的 worktree 在 `<repo>/.farmout/worktrees/`，每次审查读取的改动在 `<repo>/.git/farmout/`。在你的项目里只写你要求的：`--write` 的改动、你应用的补丁、你指定的文件（`export -o`）、`bench --apply` 写入的设置、你安装的 git 钩子。
 
 ## 服务条款

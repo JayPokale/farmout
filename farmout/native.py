@@ -113,6 +113,48 @@ def copilot_sessions(root=None):
             yield found("copilot", f, cwd, str(start.get("sessionId") or f.parent.name))
 
 
+def codex_quota(now=None):
+    """What Codex last reported about its own usage limits; it writes them into its session files after each turn
+    (farmout's runs included). {"plan", "at", "windows": [{"name", "used", "resets"}]} or None. A window whose reset
+    has passed since then reads 0% used."""
+    import time
+    now = now or time.time()
+    files = sorted(codex_home().glob("sessions/**/rollout-*.jsonl"), key=os.path.getmtime, reverse=True)[:5]
+    for f in files:
+        last = None
+        try:
+            for o in lines(f, tail=512 * 1024):
+                p = o.get("payload")
+                if (o.get("type") == "event_msg" and isinstance(p, dict) and p.get("type") == "token_count"
+                        and isinstance(p.get("rate_limits"), dict)):
+                    last = o
+        except OSError:
+            continue
+        if not last:
+            continue
+        limits, at = last["payload"]["rate_limits"], os.path.getmtime(f)
+        try:
+            import datetime
+            at = datetime.datetime.fromisoformat(str(last.get("timestamp")).replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            pass
+        windows = []
+        for key in ("primary", "secondary"):
+            w = limits.get(key)
+            if not isinstance(w, dict) or not isinstance(w.get("used_percent"), (int, float)):
+                continue
+            resets = w.get("resets_at") if isinstance(w.get("resets_at"), (int, float)) else (
+                at + w["resets_in_seconds"] if isinstance(w.get("resets_in_seconds"), (int, float)) else None)
+            mins = w.get("window_minutes") if isinstance(w.get("window_minutes"), int) else None
+            name = {300: "5-hour", 10080: "weekly"}.get(mins) or (f"{mins // 60}-hour" if mins and mins % 60 == 0
+                                                                   else f"{mins}-minute" if mins else key)
+            windows.append({"name": name, "used": 0 if resets and resets < now else w["used_percent"], "resets": resets})
+        if windows:
+            return {"plan": limits.get("plan_type") if isinstance(limits.get("plan_type"), str) else None, "at": at,
+                    "windows": windows}
+    return None
+
+
 READERS = {"claude": claude_sessions, "codex": codex_sessions, "copilot": copilot_sessions}
 
 

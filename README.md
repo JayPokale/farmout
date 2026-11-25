@@ -158,7 +158,7 @@ A real `farmout review`, replayed: one change, four subscriptions, one merged ta
 | `pipe run\|ls\|status\|resume\|approve\|stop` | pipelines and their runs |
 | `stats` | runs, failures, usage limits, time and tokens per subscription |
 | `hook install\|uninstall [--pre-push]` | a git hook that reviews each commit or push |
-| `doctor [--live]`, `mcp`, `completion <shell>` | check the workers; serve the MCP tools on stdio; print tab completion for bash, zsh or fish |
+| `doctor [--live]`, `mcp`, `acp`, `completion <shell>` | check the workers; serve the MCP tools on stdio; be an [ACP](#inside-editors-acp) agent for editors; print tab completion for bash, zsh or fish |
 
 Every command but `mcp` takes `--json` for scripts and `-C <dir>`. Prompts can come from stdin; with a prompt given, piped stdin goes along as a file. Exit codes: 0 ok, 1 failed (or a review gate tripped), 130 stopped.
 
@@ -330,7 +330,7 @@ Neither file can loosen the other: worker lists intersect, `write`, `web` and `r
 
 When a worker fails because its subscription hit a limit, farmout notes how long to leave it alone and runs the task on the next worker instead. The reset time is read from the CLI's message ("try again in 4 days 2 hours", "retry in 32.5s", "resets 3pm (Asia/Kolkata)", "try again at 3:04 PM"); if there's none, 15 minutes. A worker that isn't logged in, whose login expired or whose subscription ended gets the same treatment for 30 minutes, with a hint on how to log in again when nothing can take over. The next worker is the first available one from `--fallback`, a stage's `fallback` or the `fallback` setting, and otherwise every other ready worker except `api` (`[]` or `--fallback ""` turns it off). An entry can name a model, so `claude:opus` at its limit can hand over to `claude:sonnet`; limits are kept per model. In the middle of a conversation the next worker gets the turns so far as a file and the session carries on with it. Reviews never fall back, since agreement must count distinct reviewers; with no `-w`, a review leaves out workers known to be limited. Until a limit passes, tasks for that worker go straight to the next one, `farmout run auto` skips it, and `farmout status` and `farmout doctor` show it. `farmout stats` shows each subscription's runs, failures, limits, time and tokens from the usage log (`~/.local/state/farmout/usage.jsonl`, which never records prompts or outputs).
 
-Your own Claude Code session doesn't run through farmout, but with `farmout relay on` what you type at its limit goes to another worker, answered in Claude Code, and `farmout continue` carries a Claude Code, Codex or Copilot CLI conversation on from any terminal ([Sessions](#sessions)). To keep an eye on limits, put `farmout status --line` in tmux's status bar, or in Claude Code's status line: `"statusLine": {"type": "command", "command": "farmout status --line"}` in `~/.claude/settings.json`.
+Your own Claude Code session doesn't run through farmout, but with `farmout relay on` what you type at its limit goes to another worker, answered in Claude Code, and `farmout continue` carries a Claude Code, Codex or Copilot CLI conversation on from any terminal ([Sessions](#sessions)). `farmout status` also shows how much of Codex's 5-hour and weekly limits is used, as Codex last wrote it into its own session files (after any turn, farmout's included); `--line` adds it once a window is half used. To keep an eye on limits, put `farmout status --line` in tmux's status bar, or in Claude Code's status line: `"statusLine": {"type": "command", "command": "farmout status --line"}` in `~/.claude/settings.json`.
 
 ## The git hook
 
@@ -379,6 +379,16 @@ Other heads: `codex mcp add farmout -- farmout mcp`, `copilot mcp add farmout --
         cwd: !!js process.cwd()
 ```
 
+## Inside editors (ACP)
+
+`farmout acp` is an [Agent Client Protocol](https://agentclientprotocol.com) agent, so editors that speak ACP (Zed, JetBrains IDEs, Neovim through CodeCompanion or avante.nvim, Emacs through agent-shell, several VS Code extensions) can use your subscriptions through farmout. In Zed, add it to your settings:
+
+```json
+"agent_servers": { "farmout": { "type": "custom", "command": "farmout", "args": ["acp"] } }
+```
+
+Each thread is a farmout session (`farmout ls`, `log`, `send` and `ui` see it), so a worker at its usage limit hands the thread to the next one, conversation included. Two pickers set a thread up: **Worker** (`auto`, the first ready one, or one you name) and **Files** (read only, the default; edit files; or a private git worktree whose patch you `farmout apply`). Files you link in the prompt go to the worker as files. An answer arrives when the worker finishes (no word-by-word streaming), with a progress row meanwhile; cancel stops the turn.
+
 ## Safety
 
 | worker | read-only (default) | write (`--write`, `--isolate`, `write: true`) |
@@ -399,8 +409,8 @@ Other heads: `codex mcp add farmout -- farmout mcp`, `copilot mcp add farmout --
   - *Runs:* the worker CLIs you installed (`agy`, `codex`, `claude`, `copilot`, `dsh`), `git`, `gh` for `fix-pr` and `apply --pr`, your own test command for `race` and pipelines, hooks you set up or trusted (`farmout hooks` lists them), tools you installed from the store when you run them (`farmout tool run`, through your shell), `pdftotext` when the `api` worker gets a PDF, an SVG converter (`rsvg-convert`, ImageMagick or Inkscape) for `bench --share`'s PNG card, and in `farmout ui` your pager, your editor and a clipboard tool when you ask for them.
   - *Sends:* each brief (your prompt, the files you name, the change under review, a continued conversation's earlier turns, the Claude Code, Codex or Copilot CLI session you `continue`, and, with `farmout relay on`, what you type in Claude Code at its usage limit with that session; credentials replaced) to that worker's provider through its CLI, or to the endpoint you set for `api`. `apply --pr` pushes the session's branch to your `origin` and opens a pull request. No telemetry and no analytics.
   - *Fetches:* only on request: `farmout store` reads the store index and the files you install from this repository on GitHub (or the store you set with `FARMOUT_STORE` or the `store` setting), each pinned by SHA-256, and `farmout skill add` downloads the skill you name. `bench/leaderboard.py`, a maintainer script the package doesn't install, clones the public repositories it scores.
-  - *Reads:* besides what you name, only when you run `farmout continue`: the session files Claude Code (`~/.claude/projects`, or `$CLAUDE_CONFIG_DIR`), Codex (`~/.codex/sessions`, or `$CODEX_HOME`) and Copilot CLI (`~/.copilot/session-state`, or `$COPILOT_HOME`) keep, to find and read this folder's newest session; and, through the plugin's relay hook, on each prompt you type in Claude Code, the end of that session's file (to see whether Claude's last reply was a usage-limit message). It never writes to them.
-  - *Listens:* `farmout ui --web` serves its page on 127.0.0.1 with a key made for each run; `farmout mcp` speaks over stdio only.
+  - *Reads:* besides what you name, only when you run `farmout continue`: the session files Claude Code (`~/.claude/projects`, or `$CLAUDE_CONFIG_DIR`), Codex (`~/.codex/sessions`, or `$CODEX_HOME`) and Copilot CLI (`~/.copilot/session-state`, or `$COPILOT_HOME`) keep, to find and read this folder's newest session; through the plugin's relay hook, on each prompt you type in Claude Code, the end of that session's file (to see whether Claude's last reply was a usage-limit message); and for `farmout status`, the end of Codex's newest session files, for the usage figures Codex writes there. It never writes to them.
+  - *Listens:* `farmout ui --web` serves its page on 127.0.0.1 with a key made for each run; `farmout mcp` and `farmout acp` speak over stdio only.
   - *Writes:* sessions and results under `~/.local/state/farmout`, delegated results under `~/.cache/farmout`, settings under `~/.config/farmout`, isolated worktrees under `<repo>/.farmout/worktrees/`, the change each review read under `<repo>/.git/farmout/`. In your project, only what you ask for: edits with `--write`, a patch you apply, a file you name (`export -o`), the settings `bench --apply` writes, a git hook you install.
 
 ## Terms of service

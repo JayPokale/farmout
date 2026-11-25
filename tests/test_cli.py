@@ -3391,5 +3391,126 @@ class RulesTest(CliBase):
         self.assertNotIn("CLAUDE.md", self.last("codex")["brief"], "rules = false turns it off")
 
 
+class QuotaTest(CliBase):
+    """`farmout status` shows how much of Codex's limits is used, as Codex last wrote it in its session files."""
+
+    def test_codex_usage_from_its_own_session_files(self):
+        day = self.home / ".codex" / "sessions" / "2026" / "11" / "26"
+        day.mkdir(parents=True)
+        now = time.time()
+
+        def count(primary, secondary, ts):
+            return {"timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(ts)), "type": "event_msg",
+                    "payload": {"type": "token_count", "info": None, "rate_limits": {
+                        "primary": {"used_percent": primary, "window_minutes": 300, "resets_at": int(now + 3600)},
+                        "secondary": {"used_percent": secondary, "window_minutes": 10080, "resets_at": int(now - 60)},
+                        "plan_type": "plus"}}}
+        f = day / "rollout-2026-11-26T00-00-00-x.jsonl"
+        f.write_text("\n".join(json.dumps(r) for r in (
+            {"type": "session_meta", "payload": {"id": "x", "cwd": str(self.work), "source": "exec"}},
+            count(10, 20, now - 900), {"type": "event_msg", "payload": {"type": "token_count", "rate_limits": "odd"}},
+            count(82, 40, now - 600))) + "\n")
+        out = self.fo("status").stdout
+        self.assertRegex(out, r"codex \(plus\): 5-hour 82% used, resets \d\d:\d\d · weekly 0% \(reset since\) "
+                              r"\(as of 10m ago\)")
+        self.assertIn("codex 5h 82%", self.fo("status", "--line").stdout, "50% or more shows in the one-liner")
+        q = self.json("status")["quota"]["codex"]
+        self.assertEqual([(w["name"], w["used"]) for w in q["windows"]], [("5-hour", 82), ("weekly", 0)])
+        f.unlink()
+        self.assertEqual(self.fo("status", "--line").stdout, "farmout: idle\n")
+
+
+class AcpTest(CliBase):
+    """`farmout acp`: an Agent Client Protocol agent an editor talks to over stdio."""
+
+    def start(self):
+        import queue
+        p = subprocess.Popen([sys.executable, str(SERVER), "acp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, text=True, env=self.env, cwd=self.work)
+        self.addCleanup(lambda: (p.kill(), p.wait(), p.stdin.close(), p.stdout.close(), p.stderr.close()))
+        self.acp, self.seen, self.n, self.lines = p, [], 0, queue.Queue()
+        threading.Thread(target=lambda: [self.lines.put(x) for x in p.stdout], daemon=True).start()
+        return p
+
+    def say(self, method, params=None, notify=False):
+        msg = {"jsonrpc": "2.0", "method": method, "params": params or {}}
+        if not notify:
+            self.n += 1
+            msg["id"] = self.n
+        self.acp.stdin.write(json.dumps(msg) + "\n")
+        self.acp.stdin.flush()
+        return None if notify else self.n
+
+    def answer(self, mid, timeout=60):
+        """The response to request mid; the notifications before it go to self.seen."""
+        import queue
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                line = self.lines.get(timeout=1)
+            except queue.Empty:
+                self.assertIsNone(self.acp.poll(), "the agent exited: " + self.acp.stderr.read())
+                continue
+            msg = json.loads(line)
+            self.assertEqual(msg["jsonrpc"], "2.0")
+            if msg.get("id") == mid:
+                return msg
+            self.seen.append(msg)
+        self.fail(f"no answer to {mid}")
+
+    def test_an_editor_thread_is_a_farmout_session(self):
+        self.start()
+        init = self.answer(self.say("initialize", {"protocolVersion": 1, "clientCapabilities": {}}))["result"]
+        self.assertEqual(init["protocolVersion"], 1)
+        self.assertFalse(init["agentCapabilities"]["loadSession"])
+        new = self.answer(self.say("session/new", {"cwd": str(self.work), "mcpServers": []}))["result"]
+        sid = new["sessionId"]
+        self.assertEqual([o["id"] for o in new["configOptions"]], ["worker", "access"])
+        self.assertEqual(new["configOptions"][1]["currentValue"], "read")
+        r = self.answer(self.say("session/set_config_option", {"sessionId": sid, "configId": "worker", "value": "codex"}))
+        self.assertEqual(r["result"]["configOptions"][0]["currentValue"], "codex")
+        done = self.answer(self.say("session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": "say hi"}]}))
+        self.assertEqual(done["result"], {"stopReason": "end_turn"})
+        updates = [m["params"]["update"] for m in self.seen if m.get("method") == "session/update"]
+        self.assertEqual([u["sessionUpdate"] for u in updates], ["tool_call", "tool_call_update", "agent_message_chunk"])
+        self.assertEqual(updates[0]["status"], "in_progress")
+        self.assertEqual(updates[1]["status"], "completed")
+        self.assertEqual(updates[2]["content"], {"type": "text", "text": "hi"})
+        self.assertEqual(self.json("ls")[0]["name"], "acp-1", "a farmout session like any other")
+        self.seen.clear()
+        f = self.work / "notes.txt"
+        f.write_text("x")
+        self.answer(self.say("session/prompt", {"sessionId": sid, "prompt": [
+            {"type": "text", "text": "recall"}, {"type": "resource_link", "uri": f.as_uri(), "name": "notes.txt"}]}))
+        self.assertIn(str(f), self.last("codex")["brief"], "a linked file goes to the worker")
+        self.assertEqual(self.json("ls")[0]["turns"], 2, "the same conversation")
+        self.answer(self.say("session/set_config_option", {"sessionId": sid, "configId": "access", "value": "write"}))
+        self.seen.clear()
+        self.answer(self.say("session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": "say edits"}]}))
+        rows = {r["name"]: r for r in self.json("ls")}
+        self.assertTrue(self.meta("acp-2")["write"], "file access changed: a new session carries the conversation on")
+        self.assertEqual(self.meta("acp-2")["base"], 2)
+        self.assertIn("continues an earlier conversation", self.last("codex")["brief"])
+        self.assertEqual(set(rows), {"acp-1", "acp-2"})
+        bad = self.answer(self.say("session/prompt", {"sessionId": "nope", "prompt": []}))
+        self.assertEqual((bad["error"]["code"], bad["error"]["data"]), (-32002, {"sessionId": "nope"}))
+        bad = self.answer(self.say("session/set_config_option", {"sessionId": sid, "configId": "worker", "value": "x"}))
+        self.assertEqual(bad["error"]["code"], -32602)
+        self.assertEqual(self.answer(self.say("no/such"))["error"]["code"], -32601)
+
+    def test_cancel_stops_the_turn(self):
+        self.start()
+        self.assertEqual(self.answer(self.say("session/new", {"cwd": str(self.work)}))["error"]["code"], -32600)
+        self.answer(self.say("initialize", {"protocolVersion": 1}))
+        sid = self.answer(self.say("session/new", {"cwd": str(self.work), "mcpServers": []}))["result"]["sessionId"]
+        self.answer(self.say("session/set_config_option", {"sessionId": sid, "configId": "worker", "value": "codex"}))
+        mid = self.say("session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": "nap 20"}]})
+        wait_until(lambda: self.json("ls") and self.json("ls")[0]["state"] == "running", 20)
+        start = time.time()
+        self.say("session/cancel", {"sessionId": sid}, notify=True)
+        self.assertEqual(self.answer(mid)["result"], {"stopReason": "cancelled"})
+        self.assertLess(time.time() - start, 15)
+
+
 if __name__ == "__main__":
     unittest.main()
