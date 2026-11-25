@@ -67,19 +67,23 @@ def run(cmd, key, cwd, stdin=None, env=None, timeout=None):
                              stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         running.setdefault(key, set()).add(p)
+    down = False  # it ended, or was taken down all the way
     try:
         out, err = p.communicate(stdin, timeout=timeout)
+        down = True
     except subprocess.TimeoutExpired:
         stop(p)
         drain(p)
+        down = True
         raise RuntimeError(f"timed out after {timeout}s") from None
     except BaseException:  # Ctrl-C or SIGTERM in a CLI process: take the worker down too
         stop(p)
         drain(p)
+        down = True
         raise
     finally:
-        with lock:
-            if p.poll() is not None:  # still running (a stop broke off taking it down): kill_all() can find it
+        if down:  # else a stop broke off taking its process group down: kill_all() can still find it
+            with lock:
                 running.get(key, set()).discard(p)
     if p.returncode:
         raise RuntimeError(f"{cmd[0]} exited {p.returncode}: {(err or out).strip()[-1500:]}")

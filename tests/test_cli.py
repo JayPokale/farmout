@@ -141,6 +141,22 @@ class SessionTest(CliBase):
             os.kill(int(pid), 9)
         self.assertEqual(left, [], "kill_all() found the worker")
 
+    def test_review12_a_child_left_when_a_stop_broke_off_is_still_killed(self):
+        mark = "37.2512"  # the CLI dies on TERM; its child ignores TERM
+        out = in_farmout(self.env, "from farmout import proc\nreal = proc.stop\n"
+                                   "def stop(p, grace=None):\n    proc.signal_group(p)\n    p.wait(5)\n"
+                                   "    raise KeyboardInterrupt  # a second Ctrl-C before the KILL\n"
+                                   "proc.stop = stop\ntry:\n"
+                                   f"    proc.run(['sh', '-c', \"(trap '' TERM; exec sleep {mark}) & sleep 30\"], 'k', "
+                                   f"{str(self.work)!r}, timeout=1)\n"
+                                   "except KeyboardInterrupt:\n    pass\nproc.stop = real\nproc.kill_all(grace=1)\n"
+                                   "time.sleep(0.5)\nprint('done')")
+        self.assertEqual(out.strip(), "done")
+        left = [d.name for d in Path("/proc").iterdir() if d.name.isdigit() and self.cmdline(d) == f"sleep\0{mark}\0"]
+        for pid in left:  # tidy up before failing
+            os.kill(int(pid), 9)
+        self.assertEqual(left, [], "kill_all() killed what was left of its process group")
+
     @staticmethod
     def cmdline(d):
         try:
