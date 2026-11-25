@@ -2026,6 +2026,27 @@ class TerminalUiTest(CliBase):
         self.fo("send", "t", "say three")
         self.fo("fork", "t", "--at", "1", "-w", "copilot", "say other", "-n", "b")
 
+    def test_C_carries_on_your_own_claude_code_session(self):
+        d = self.home / ".claude" / "projects" / "-work"
+        d.mkdir(parents=True)
+        rows = [{"uuid": "u1", "parentUuid": None, "type": "user", "cwd": str(self.work), "entrypoint": "cli",
+                 "message": {"content": "plan the cache layer"}},
+                {"uuid": "a1", "parentUuid": "u1", "type": "assistant", "message": {"content": [
+                    {"type": "text", "text": "A 5-minute TTL."}]}},
+                {"type": "ai-title", "aiTitle": "Cache layer"}]
+        (d / "s1.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+        box, after = self.ui("C", ["screen"], "enter", ["idle"], ["screen"])
+        self.assertIn("Carry on your Claude Code session s1: Cache layer", box)
+        [row] = self.json("ls")
+        meta = self.meta(row["name"])
+        self.assertEqual((meta["imported"]["id"], meta["write"]), ("s1", False), "read-only, like the ui's others")
+        brief = self.runs()[-1]["brief"]
+        self.assertTrue(brief.startswith("Carry on from where this conversation stopped."), brief)
+        self.assertIn("continues an earlier conversation (in Claude Code)", brief)
+        self.assertIn(f"Sent to {row['name']}", after)
+        (d / "s1.jsonl").unlink()
+        self.assertIn("No Claude Code, Codex or Copilot CLI session in this folder", self.ui("C", ["screen"])[0])
+
     def test_the_graph_draws_every_branch_off_its_turn(self):
         self.conversation()
         self.fo("run", "claude", "lines a|b", "-n", "older")
@@ -3319,6 +3340,14 @@ class RelayTest(CliBase):
         self.assertEqual(cfg.read_text(), "{not json", "left as it is")
         cfg.write_text(json.dumps({"enabledPlugins": {"farmout@farmout": True}}))
         self.assertIn("has the hook already", self.fo("relay", "install").stdout)
+
+    def test_doctor_says_where_the_relay_stands(self):
+        self.assertIn("`farmout relay on --write` sends what you type next", self.fo("doctor").stdout)
+        self.fo("relay", "on", "-w", "codex")
+        self.assertIn("doesn't have its hook: install the farmout plugin or run `farmout relay install`",
+                      self.fo("doctor").stdout)
+        self.fo("relay", "install")
+        self.assertIn("The relay is on: at Claude Code's usage limit, what you type goes to codex", self.fo("doctor").stdout)
 
     def test_back_early_and_a_new_limit_starts_afresh(self):
         self.fo("relay", "on", "--write", "-w", "codex")

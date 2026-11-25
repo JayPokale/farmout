@@ -29,6 +29,7 @@ HELP = [("↑↓ j k", "move"), ("← → h l", "fold, unfold; ← also goes up 
         ("J K", "next, previous conversation"), ("/ · u", "find in questions and answers; next unread answer"),
         ("c · R", "continue from the newest turn; send a failed one again"), ("b", "branch from this turn"),
         ("e", "ask this turn differently, as a branch"), ("n · x", "new conversation; stop a running turn"),
+        ("C", "carry on your own Claude Code, Codex or Copilot session from here"),
         ("o O", "the turn, or its whole conversation, in your pager"),
         ("y · d", "copy the answer; an isolated session's patch"),
         ("D", "delete a conversation or branch, with its branches"),
@@ -450,11 +451,12 @@ class App:
                "enter": self.enter, " ": self.enter, "tab": self.swap, "btab": self.swap,
                "c": lambda: self.compose("continue"), "b": lambda: self.compose("branch"),
                "e": lambda: self.compose("edit"), "R": lambda: self.compose("retry"), "n": lambda: self.compose("new"),
+               "C": lambda: self.compose("carry"),
                "x": self.stop,
                "/": self.find, "o": self.page, "O": self.whole, "y": self.yank, "d": self.patch, "D": self.delete,
                "a": self.all_runs, "f": self.here_only, "u": self.next_new, "S": self.stats, "r": self.load,
                "?": self.open_help, "q": self.quit}.get(k)
-        if act and (node or k in ("n", "a", "f", "u", "S", "r", "?", "q")):
+        if act and (node or k in ("n", "C", "a", "f", "u", "S", "r", "?", "q")):
             act()
 
     def move(self, d):
@@ -660,6 +662,21 @@ class App:
                     worker = self.workers[0]
             box = {"session": None, "n": None, "lane": Field(worker), "choices": self.workers,
                    "title": f"New conversation in {short(self.here)}"}
+        elif mode == "carry":
+            from . import native, relay
+            found = native.find(self.here)
+            if not found:
+                return self.say("No Claude Code, Codex or Copilot CLI session in this folder or its repository", "err")
+            s = found[0]
+            try:
+                w, m = relay.pick(s, self.here)
+                worker = f"{w}:{m}" if m else w
+            except ValueError:
+                worker = self.workers[0] if self.workers else ""
+            title = sessions.gist(native.title(s), 40)
+            box = {"session": None, "n": None, "lane": Field(worker), "choices": self.workers, "source": s["id"],
+                   "title": f"Carry on your {s['label']} session {s['id'][:8]}" + (f": {title}" if title else "")
+                            + " (read-only; empty: carry on where it stopped)"}
         else:
             node = row["node"]
             own = [t["n"] for t in node["turns"]]
@@ -720,11 +737,13 @@ class App:
 
     def send(self):
         b = self.box
-        prompt = b["text"].text.strip()
+        prompt = b["text"].text.strip() or ("Carry on from where this conversation stopped." if b["mode"] == "carry"
+                                            else "")
         if not prompt:
             return self.say("Write a message first", "err")
         body = {"mode": {"edit": "branch", "retry": "continue"}.get(b["mode"], b["mode"]), "edit": b["mode"] == "edit",
-                "session": b["session"], "n": b["n"], "prompt": prompt, "worker": b["lane"].text.strip() or None}
+                "session": b["session"], "n": b["n"], "prompt": prompt, "worker": b["lane"].text.strip() or None,
+                "source": b.get("source")}
         try:
             r = ui.send(body, self.here)
         except Exception as e:  # a refusal or a failure is shown, never fatal

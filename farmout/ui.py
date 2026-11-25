@@ -49,8 +49,8 @@ def detail(name, n):
 
 
 def send(body, here):
-    """{mode: new | continue | branch, session, n (the turn picked), edit (branch before it, to ask it differently),
-    prompt, worker, model} -> {session, message, moved}."""
+    """{mode: new | continue | branch | carry, session, n (the turn picked), edit (branch before it, to ask it
+    differently), source (carry: the native session's id), prompt, worker, model} -> {session, message, moved}."""
     prompt = str(body.get("prompt") or "").strip()
     if not prompt:
         raise ValueError("write a message first")
@@ -59,6 +59,15 @@ def send(body, here):
     if worker and worker not in ENABLED:
         raise ValueError(f"{worker} isn't available here (`farmout doctor` says why)")
     mode = body.get("mode")
+    if mode == "carry":  # your own Claude Code, Codex or Copilot CLI session, carried on here (read-only)
+        from . import native, relay
+        found = [x for x in native.find(here) if not body.get("source") or x["id"] == body["source"]]
+        if not found:
+            raise ValueError("no Claude Code, Codex or Copilot CLI session in this folder or its git repository")
+        w, m = (worker, model) if worker else relay.pick(found[0], here)
+        meta = relay.carry(found[0], w, m, here)[0]
+        msg = sessions.deliver(meta["name"], prompt, cwd=meta["cwd"], wait=False)
+        return {"session": meta["name"], "message": msg["id"]}
     if mode == "new":
         if not worker:
             raise ValueError("pick a worker")

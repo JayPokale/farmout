@@ -1111,6 +1111,17 @@ def cmd_doctor(a):
                   "`fallback` setting changes it.")
         except Exception as e:
             print(f"{len(ready)} subscriptions ready, but this repository's settings can't be read: {e}")
+    if shutil.which("claude"):
+        cfg, hooked = relay.config(), plugin_on(a.cwd) or any(ours(e) for e in claude_hooks())
+        if not cfg.get("on"):
+            print("Claude Code at its usage limit: `farmout relay on --write` sends what you type next to another "
+                  "subscription, answered right there; Claude catches up when it's back.")
+        elif not hooked:
+            print("The relay is on, but Claude Code doesn't have its hook: install the farmout plugin or run "
+                  "`farmout relay install`.")
+        else:
+            print(f"The relay is on: at Claude Code's usage limit, what you type goes to "
+                  f"{cfg.get('worker') or 'the first ready worker not on its login'}.")
     if not a.live:
         print("Logins are not checked. `farmout doctor --live` sends each ready worker one tiny prompt.")
         return 0
