@@ -167,7 +167,19 @@ def limit_in(path):
         from .workers import reset_in
         secs = reset_in(text, now=datetime.datetime.fromtimestamp(at).astimezone())
         until = at + (secs if secs is not None else 900)
-    return {"until": until, "text": text, "at": at, "uuid": str(last.get("uuid") or "")}
+    kind = dig(last, "apiErrorParams", "rate_limit_info", "rateLimitType") or dig(last, "quotaLimits", "rateLimitType")
+    return {"until": until, "text": text, "at": at, "uuid": str(last.get("uuid") or ""),
+            "kind": kind if isinstance(kind, str) else None}
+
+
+def heading(limit):
+    """"Claude is at its usage limit until 15:00", and, for one model's weekly limit, how to stay on Claude."""
+    head = f"Claude is at its usage limit until {clock(limit['until'])}"
+    model = {"seven_day_opus": "Opus", "seven_day_sonnet": "Sonnet"}.get(limit.get("kind") or "")
+    if model:
+        other = "sonnet" if model == "Opus" else "opus"
+        head += (f" (its weekly {model} limit: `/model {other}` and then `!farmout relay back` keep you on Claude)")
+    return head
 
 
 def clock(t):
@@ -215,9 +227,9 @@ def hook(event, now=None):
         if limit and limit["until"] > now:
             cfg = config()
             if not cfg.get("on"):
-                return {"systemMessage": f"farmout: Claude is at its usage limit until {clock(limit['until'])}. `farmout "
-                                         f"relay on` sends what you type next to another subscription, with this "
-                                         f"conversation; or run `!farmout continue --write`."}
+                return {"systemMessage": f"farmout: {heading(limit)}. `farmout relay on` sends what you type next to "
+                                         f"another subscription, with this conversation; or run `!farmout continue "
+                                         f"--write`."}
             cwd = event.get("cwd") if isinstance(event.get("cwd"), str) and os.path.isdir(event["cwd"]) else os.getcwd()
             return relay(event, sid, cwd, prompt, rec, limit, cfg, now)
         if not (rec and rec.get("name")):
@@ -239,7 +251,7 @@ def relay(event, sid, cwd, prompt, rec, limit, cfg, now):
     name = (rec or {}).get("name")
     if name and (not sessions.path(name).is_dir() or (rec.get("until") or 0) < now - GRACE):
         name = None  # removed, or carried on from an earlier limit
-    head = f"Claude is at its usage limit until {clock(limit['until'])}"
+    head = heading(limit)
     if not name:
         s = {"from": "claude", "label": native.LABELS["claude"], "file": event["transcript_path"], "cwd": cwd, "id": sid,
              "updated": now}

@@ -3205,6 +3205,12 @@ class RelayTest(CliBase):
             "s4", error="API Error: Request rejected (429) · overloaded, retrying")), "a passing 429 isn't the limit")
         self.assertIsNone(self.hook("say hi", self.limited_session("s6", entrypoint="sdk-cli")),
                           "`claude -p` runs, farmout's own among them, handle their limits themselves")
+        f = self.limited_session("s7")
+        rows = [json.loads(x) for x in f.read_text().splitlines()]
+        rows[-1]["apiErrorParams"]["rate_limit_info"]["rateLimitType"] = "seven_day_opus"
+        f.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+        self.assertIn("(its weekly Opus limit: `/model sonnet` and then `!farmout relay back` keep you on Claude)",
+                      self.hook("say hi", f, sid="s7")["systemMessage"])
 
     def test_on_the_prompt_goes_to_codex_and_claude_catches_up(self):
         p = self.fo("relay", "on", "-w", "codex")
