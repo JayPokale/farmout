@@ -3071,9 +3071,9 @@ class ContinueTest(CliBase):
 
     def test_nothing_to_continue_says_so(self):
         p = self.fo("continue", "-w", "codex", "say x", rc=1)
-        self.assertIn("no Claude Code or Codex session in this folder or its git repository", p.stderr)
+        self.assertIn("no Claude Code, Codex or Copilot CLI session in this folder or its git repository", p.stderr)
         self.assertEqual(self.fo("continue", "--list", rc=1).stdout,
-                         "No Claude Code or Codex session here, or anywhere in this git repository.\n")
+                         "No Claude Code, Codex or Copilot CLI session here, or anywhere in this git repository.\n")
         self.assertEqual(self.runs(), [], "nothing ran")
 
     def test_a_long_conversation_is_handed_over_shortened(self):
@@ -3100,15 +3100,43 @@ class ContinueTest(CliBase):
         self.assertIn("has it shortened", brief)
         self.assertIn(str(self.state / "sessions" / "B" / "context.md"), brief)
 
+    def test_a_copilot_session_goes_on_with_codex(self):
+        def events(sid, told, *rows):
+            d = self.home / ".copilot" / "session-state" / sid
+            d.mkdir(parents=True)
+            start = {"type": "session.start", "data": {"sessionId": sid, "context": {"cwd": str(self.work)}}}
+            system = {"type": "system.message", "data": {"role": "system", "content": told}}
+            (d / "events.jsonl").write_text("\n".join(json.dumps(r) for r in (start, system, *rows)) + "\n")
 
-if __name__ == "__main__":
-    unittest.main()
+        def said(kind, **data):
+            return {"type": kind, "data": data}
+        events("cp1", "You are the GitHub Copilot CLI, a terminal assistant built by GitHub.",
+               said("session.model_change", newModel="auto"), said("user.message", content="rename the flag"),
+               said("assistant.message", content="Renaming.", toolRequests=[
+                   {"name": "bash", "arguments": {"command": "rg old_flag"}}, {"name": "edit", "arguments": {
+                       "path": f"{self.work}/cli.py"}}, "odd"]),
+               said("tool.execution_complete", result={"content": "tool output stays out"}),
+               said("assistant.message", content="Done: renamed in cli.py."), said("user.message", content="now the docs"),
+               said("assistant.message", content=7, toolRequests="odd"),
+               said("session.error", message="You've hit your rate limit. Try again later."), {"type": "x", "data": "odd"})
+        events("cp2", "You are running in non-interactive mode and have no way to communicate with the user.",
+               said("user.message", content="a farmout brief"))
+        self.assertEqual([(r["from"], r["id"]) for r in self.json("continue", "--list")], [("copilot", "cp1")])
+        self.fo("continue", "--from", "copilot", "-w", "codex", "say carried on", "-n", "cp")
+        ctx = Path(re.search(r"^- (.+context-0001\.md)$", self.last("codex")["brief"], re.M).group(1)).read_text()
+        for want in ("# A conversation from Copilot CLI (session cp1", "rename the flag", "Renaming.", "- bash: rg old_flag",
+                     "- edit cli.py", "Done: renamed in cli.py.", "now the docs",
+                     "[Copilot CLI stopped here: You've hit your rate limit. Try again later.]"):
+            self.assertIn(want, ctx)
+        self.assertNotIn("tool output stays out", ctx)
+        self.assertEqual(self.meta("cp")["imported"]["label"], "Copilot CLI")
+        self.assertEqual(self.meta("cp")["base"], 2)
 
 
 class RelayTest(CliBase):
     """`farmout relay`: at Claude Code's usage limit, the prompt goes to another worker; Claude catches up after."""
 
-    def limited_session(self, sid="s1", resets=None, error=None, **extra):
+    def limited_session(self, sid="s1", resets=None, error=None, after=(), **extra):
         d = self.home / ".claude" / "projects" / "-work"
         d.mkdir(parents=True, exist_ok=True)
         now = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
@@ -3126,7 +3154,7 @@ class RelayTest(CliBase):
                 rows[-1].update(apiError="usage_limit_reached", apiErrorParams={"rate_limit_info": {
                     "status": "rejected", "resetsAt": int(resets or time.time() + 3600), "rateLimitType": "five_hour"}})
         f = d / f"{sid}.jsonl"
-        f.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+        f.write_text("\n".join(json.dumps(r) for r in rows + list(after)) + "\n")
         return f
 
     def hook(self, prompt, f, sid="s1", script=None, **env):
@@ -3202,12 +3230,66 @@ class RelayTest(CliBase):
         self.limited_session(resets=time.time() - 5)
         ctx = self.hook("back?", f)["hookSpecificOutput"]["additionalContext"]
         self.assertIn("codex is still working on «nap 2.5» (`farmout attach codex-1` shows it)", ctx)
+        self.assertIsNone(self.hook("still?", f), "told once, not again with every prompt while codex works")
         wait_until(lambda: self.json("ls")[0]["state"] not in ("running", "queued"), 30)
-        ctx = self.hook("and?", f)["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("These replies came after Claude Code stopped waiting", ctx)
+        back = self.hook("and?", f)
+        ctx = back["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("These replies from codex came after Claude Code stopped waiting", ctx)
         self.assertIn("## Turn 5 (codex, ok)\n\n### Prompt\n\nnap 2.5\n\n### Reply\n\nnapped", ctx)
         self.assertNotIn("Turn 4", ctx)
+        self.assertNotIn("While you were at your usage limit", ctx, "said already")
+        self.assertIn("codex answered «nap 2.5»:\nnapped", back["systemMessage"], "you see it too")
         self.assertIsNone(self.hook("more", f))
+
+    def test_two_hooks_on_one_prompt_relay_it_once(self):
+        self.fo("relay", "on", "-w", "codex")
+        f = self.limited_session()
+        event = json.dumps({"session_id": "s1", "transcript_path": str(f), "cwd": str(self.work), "prompt": "nap 1"})
+        hooks = [subprocess.Popen([sys.executable, str(SERVER), "relay", "hook"], stdin=subprocess.PIPE,
+                                  stdout=subprocess.PIPE, text=True, env=self.env, cwd=self.work) for _ in range(2)]
+        for h in hooks:  # Claude Code runs a prompt's hooks side by side
+            h.stdin.write(event)
+            h.stdin.close()
+        outs = sorted(h.stdout.read() for h in hooks)
+        for h in hooks:
+            h.wait(timeout=60)
+            h.stdout.close()
+        self.assertEqual(outs[0], "", "the plugin's hook and one added by hand: one of them relays")
+        self.assertIn("so codex answered (farmout session codex-1):\n\nnapped", json.loads(outs[1])["stopReason"])
+        self.assertEqual(len(self.runs()), 1)
+        self.assertEqual([r["name"] for r in self.json("ls")], ["codex-1"])
+
+    def test_the_prompt_is_redacted_and_a_command_waits_for_the_catch_up(self):
+        self.fo("relay", "on", "-w", "codex")
+        f = self.limited_session()
+        key = "sk-ant-api03-" + "A" * 40
+        self.hook(f"say {key}", f)
+        self.assertNotIn("AAAAAAAA", json.dumps(self.runs()), "credentials replaced, like the conversation's")
+        self.limited_session(resets=time.time() - 5)
+        self.assertIsNone(self.hook("/compact", f), "a command doesn't use up the catch-up")
+        self.assertIsNone(self.hook("!git status", f))
+        self.assertIn("additionalContext", self.hook("hi", f)["hookSpecificOutput"])
+
+    def test_relayed_answers_stay_in_the_conversation(self):
+        self.fo("relay", "on", "-w", "codex")
+        stop = {"uuid": "p1", "parentUuid": "e1", "type": "user", "message": {"content": "say one"}}
+        meta = {"uuid": "m1", "parentUuid": "p1", "type": "user", "isMeta": True, "message": {"content":
+                "Operation stopped by hook: Claude is at its usage limit until 03:40, so codex answered (farmout "
+                "session codex-1):\n\none"}}
+        info = {"uuid": "i1", "parentUuid": "m1", "type": "system", "subtype": "informational", "content": "x"}
+        big = [{"uuid": f"b{i}", "parentUuid": "i1" if i == 0 else f"b{i - 1}", "type": "user", "isMeta": True,
+                "message": {"content": "y" * 100_000}} for i in range(7)]
+        f = self.limited_session(after=[stop, meta, info])
+        self.hook("say one", f)
+        f = self.limited_session(after=[stop, meta, info] + big)  # the limit is more than 512 KB back now
+        said = self.hook("say two", f)
+        self.assertTrue(said["stopReason"].endswith("(farmout session codex-1):\n\ntwo"), "still relayed")
+        self.fo("continue", "-w", "codex", "-n", "later", "say go")
+        ctx = Path(re.search(r"^- (.+context-0001\.md)$", self.last("codex")["brief"], re.M).group(1)).read_text()
+        self.assertIn("### Prompt\n\nsay one\n\n### Reply\n\nClaude is at its usage limit until 03:40, so codex "
+                      "answered (farmout session codex-1):\n\none", ctx, "a later hand-over keeps relayed answers")
+        p = self.fo("relay", "on", "--wait", "1800", rc=1)
+        self.assertIn("--wait takes 1 to 840 seconds", p.stderr)
 
     def test_back_early_and_a_new_limit_starts_afresh(self):
         self.fo("relay", "on", "--write", "-w", "codex")
@@ -3246,3 +3328,7 @@ class RelayTest(CliBase):
         (cfg / "settings.json").write_text(json.dumps({"workers": ["claude"]}))
         said = self.hook("say hi", self.limited_session("s10"), sid="s10", FARMOUT_CLAUDE_DIR="", FARMOUT_CLAUDE_MAIN="1")
         self.assertIn("nothing could take over: no worker but claude is ready here", said["stopReason"])
+
+
+if __name__ == "__main__":
+    unittest.main()

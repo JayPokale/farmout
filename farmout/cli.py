@@ -161,14 +161,14 @@ def cmd_continue(a):
         if a.json:
             return emit(a, rows)
         if not rows:
-            print("No Claude Code or Codex session here, or anywhere in this git repository.")
+            print("No Claude Code, Codex or Copilot CLI session here, or anywhere in this git repository.")
             return 1
         for r in rows:
             print(f"{r['from']:<7} {ago(r['updated']):>8}  {r['id'][:8]}  {short(r['cwd'])}  {sessions.gist(r['title'], 70)}")
         return 0
     if not found:
-        raise ValueError((f"no session {a.session!r}" if a.session else "no Claude Code or Codex session in this folder "
-                          "or its git repository") + " (`farmout continue --list` shows what there is)")
+        raise ValueError((f"no session {a.session!r}" if a.session else "no Claude Code, Codex or Copilot CLI session in "
+                          "this folder or its git repository") + " (`farmout continue --list` shows what there is)")
     s = found[0]
     prompt, extra = read_prompt(a.message, required=False, cwd=a.cwd)
     worker, model = relay.pick(s, a.cwd, a.worker)
@@ -185,14 +185,19 @@ def cmd_continue(a):
     return send_and_show(a, meta["name"], prompt or CARRY_ON, a.file + extra)
 
 
-def plugin_on():
-    """Is the farmout plugin enabled in Claude Code (so its relay hook runs)?"""
-    try:
-        data = json.loads((native.claude_home() / "settings.json").read_text())
-    except (OSError, ValueError):
-        return False
-    on = data.get("enabledPlugins") if isinstance(data, dict) else None
-    return isinstance(on, dict) and any(k.split("@")[0] == "farmout" and v for k, v in on.items())
+def plugin_on(cwd):
+    """Is the farmout plugin enabled in Claude Code, for you or this project (so its relay hook runs)?"""
+    root = project_root(cwd)
+    for f in (native.claude_home() / "settings.json", root / ".claude" / "settings.json",
+              root / ".claude" / "settings.local.json"):
+        try:
+            data = json.loads(f.read_text())
+        except (OSError, ValueError):
+            continue
+        on = data.get("enabledPlugins") if isinstance(data, dict) else None
+        if isinstance(on, dict) and any(k.split("@")[0] == "farmout" and v for k, v in on.items()):
+            return True
+    return False
 
 
 def hook_snippet():
@@ -208,6 +213,9 @@ def cmd_relay(a):
         if a.worker:
             check_workers([lane(a.worker)[0]])
         mode = "isolate" if a.isolate else "write" if a.write else "read"
+        most = relay.HOOK_TIMEOUT - 60  # Claude Code stops the hook after HOOK_TIMEOUT
+        if a.wait is not None and not 0 < a.wait <= most:
+            raise ValueError(f"--wait takes 1 to {most} seconds")
         cfg = relay.configure(on=True, worker=a.worker, mode=mode, wait=a.wait or relay.WAIT)
     elif a.action == "off":
         cfg = relay.configure(on=False)
@@ -225,7 +233,7 @@ def cmd_relay(a):
     recs = [{**r, "worker": sessions.load(r["name"])["worker"] if sessions.path(r["name"]).is_dir() else None}
             for r in relay.records() if r.get("name")]
     if a.json:
-        return emit(a, {"relay": cfg, "plugin": plugin_on(), "relayed": recs})
+        return emit(a, {"relay": cfg, "plugin": plugin_on(a.cwd), "relayed": recs})
     who = cfg.get("worker") or "the first ready worker not on Claude's login"
     how = {"write": "it may edit files", "isolate": "it edits in its own git worktree (farmout diff/apply)"}.get(
         cfg.get("mode"), "read-only; `farmout relay on --write` lets it edit")
@@ -236,9 +244,10 @@ def cmd_relay(a):
               f"`farmout attach` it.")
     else:
         print("Relay off: at Claude Code's usage limit you only get a line about `farmout relay on`.")
-    if cfg.get("on") and not plugin_on():
+    if cfg.get("on") and not plugin_on(a.cwd):
         print("\nClaude Code needs the hook: install the farmout plugin, or add this to ~/.claude/settings.json "
-              "(merged with any hooks there):\n" + hook_snippet())
+              "(merged with any hooks there; not both, though two would still relay a prompt only once):\n"
+              + hook_snippet())
     for r in recs:
         print(f"  Claude Code session {r['session'][:8]} → {r['name']} ({r['worker'] or 'removed'}), limit till "
               f"{relay.clock(r.get('until') or 0)}")
@@ -1084,7 +1093,8 @@ def parser():
     f.add_argument("--here", action="store_true", help="the session's folder moved: use the current folder")
     f.add_argument("--bg", action="store_true")
 
-    c = add("continue", "carry on your own Claude Code or Codex session on another subscription, after a usage limit",
+    c = add("continue", "carry on your own Claude Code, Codex or Copilot CLI session on another subscription, after a "
+            "usage limit",
             cmd_continue, (common, files))
     c.add_argument("message", nargs="*", help=f"what to do next; or pipe it in (default: \"{CARRY_ON}\")")
     c.add_argument("-w", "--worker", metavar="WORKER[:MODEL]", help="who carries on (default: the first ready worker "

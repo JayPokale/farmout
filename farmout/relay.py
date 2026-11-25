@@ -3,7 +3,9 @@ whole conversation, and its answer shows in Claude Code; once the limit is over,
 answered meanwhile. It runs as Claude Code's UserPromptSubmit hook (the plugin has it; `farmout relay on` turns it
 on) and reads the limit, with its reset time, from the session file Claude Code keeps. While it's off, a prompt at
 the limit only gets a line saying it exists. `farmout continue` uses carry() to start its sessions the same way."""
+import contextlib
 import datetime
+import fcntl
 import json
 import os
 import re
@@ -16,8 +18,8 @@ from .config import CONFIG, STATE
 RECORDS = STATE / "relay"
 WAIT = 600  # seconds the hook waits for an answer before pointing at `farmout attach`
 HOOK_TIMEOUT = 900  # the plugin's timeout for the hook; Claude Code stops it after this
-CATCH_UP = 24_000  # characters of relayed turns Claude is told inline; past it, shortened with the rest in a file
 TAIL = 512 * 1024  # bytes of the session file read for its newest reply
+SHOW = 4000  # characters of an answer the user hadn't seen, shown when Claude is back (all of it: farmout log)
 GRACE = 300  # a relay record this long past its reset belongs to an earlier limit
 MODES = ("read", "write", "isolate")
 USAGE = re.compile(r"hit your (?:[\w-]+ )?limit|usage limit|limit reached", re.I)
@@ -130,7 +132,8 @@ def stamp(o):
 
 def limit_in(path):
     """If the newest reply in this Claude Code session file is a usage-limit error: {"until", "text", "at", "uuid"},
-    until being when the limit resets (Unix seconds), else None."""
+    until being when the limit resets (Unix seconds). False if it's anything else, None if there's no reply in the
+    end of the file (or no file)."""
     last = None
     try:
         size = os.path.getsize(path)
@@ -149,12 +152,14 @@ def limit_in(path):
                     last = o
     except (OSError, TypeError, ValueError):
         return None
-    if not last or not last.get("isApiErrorMessage") or str(last.get("entrypoint") or "").startswith("sdk"):
-        return None  # `claude -p` runs (farmout's own among them) handle their limits themselves
+    if not last:
+        return None
+    if not last.get("isApiErrorMessage") or str(last.get("entrypoint") or "").startswith("sdk"):
+        return False  # `claude -p` runs (farmout's own among them) handle their limits themselves
     text = " ".join(native.text_of(b.get("text")) for b in native.blocks_of(dig(last, "message", "content"))
                     if b.get("type") == "text").strip()
     if last.get("apiError") != "usage_limit_reached" and not (last.get("error") == "rate_limit" and USAGE.search(text)):
-        return None
+        return False
     at = stamp(last) or os.path.getmtime(path)
     until = next((v for v in (dig(last, "apiErrorParams", "rate_limit_info", "resetsAt"), dig(last, "quotaLimits", "resetsAt"))
                   if isinstance(v, (int, float)) and not isinstance(v, bool)), None)
@@ -169,29 +174,52 @@ def clock(t):
     return time.strftime("%H:%M" if t - time.time() < 86400 else "%a %H:%M", time.localtime(t))
 
 
+@contextlib.contextmanager
+def only_one(sid):
+    """Whether this process may act for the session now: two hooks can run on one prompt (the plugin's and one you
+    added by hand), and only one may relay it or tell Claude."""
+    RECORDS.mkdir(parents=True, exist_ok=True)
+    with open(record_path(sid).with_suffix(".lock"), "a") as f:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
 def hook(event, now=None):
     """What Claude Code's UserPromptSubmit hook answers, as a dict; None lets the prompt go on as usual."""
     now = now or time.time()
     sid, path = event.get("session_id"), event.get("transcript_path")
     if not isinstance(sid, str) or not sid or not isinstance(path, str):
         return None
-    cwd = event.get("cwd") if isinstance(event.get("cwd"), str) and os.path.isdir(event["cwd"]) else os.getcwd()
     prompt = event.get("prompt") if isinstance(event.get("prompt"), str) else ""
+    if not prompt.strip() or prompt.lstrip().startswith(("/", "!")):
+        return None  # Claude Code's own commands: never relayed, and the catch-up waits for a real prompt
     rec, limit = record(sid), limit_in(path)
+    if limit is None and rec and (rec.get("until") or 0) > now and not rec.get("back"):
+        limit = {"until": rec["until"], "text": rec.get("limit") or "", "at": rec.get("since") or now}  # relayed
+        # answers can push Claude's last reply out of the part of the file read
     if limit and rec and rec.get("back", 0) >= limit["at"]:  # `farmout relay back`: Claude is back before the reset
         limit = None
-    if limit and limit["until"] > now:
-        if not prompt.strip() or prompt.lstrip().startswith(("/", "!")):
-            return None  # Claude Code's own commands
-        cfg = config()
-        if not cfg.get("on"):
-            return {"systemMessage": f"farmout: Claude is at its usage limit until {clock(limit['until'])}. `farmout "
-                                     f"relay on` sends what you type next to another subscription, with this "
-                                     f"conversation; or run `!farmout continue --write`."}
-        return relay(event, sid, cwd, prompt, rec, limit, cfg, now)
-    if rec and rec.get("name"):
-        return catch_up(sid, rec)
-    return None
+    if not (limit and limit["until"] > now) and not (rec and rec.get("name")):
+        return None
+    with only_one(sid) as mine:
+        if not mine:
+            return None
+        if limit and limit["until"] > now:
+            cfg = config()
+            if not cfg.get("on"):
+                return {"systemMessage": f"farmout: Claude is at its usage limit until {clock(limit['until'])}. `farmout "
+                                         f"relay on` sends what you type next to another subscription, with this "
+                                         f"conversation; or run `!farmout continue --write`."}
+            cwd = event.get("cwd") if isinstance(event.get("cwd"), str) and os.path.isdir(event["cwd"]) else os.getcwd()
+            return relay(event, sid, cwd, prompt, record(sid), limit, cfg, now)
+        return catch_up(sid, record(sid) or rec)
 
 
 def turn_text(r, base):
@@ -205,7 +233,6 @@ def relay(event, sid, cwd, prompt, rec, limit, cfg, now):
     with its reply. Claude Code shows the prompt as sent and the reply under it, and keeps both in its session file,
     so Claude sees them when it's back."""
     from . import flows, hooks, sessions
-    from .config import settings
     name = (rec or {}).get("name")
     if name and (not sessions.path(name).is_dir() or (rec.get("until") or 0) < now - GRACE):
         name = None  # removed, or carried on from an earlier limit
@@ -224,11 +251,7 @@ def relay(event, sid, cwd, prompt, rec, limit, cfg, now):
     rec = {**rec, "name": name, "until": limit["until"], "limit": limit["text"]}
     base, shown = sessions.load(name).get("base") or 0, set(rec.get("shown") or [])
     late = [r for r in sessions.turns(name) if r.get("id") not in shown and r["status"] != "running"]
-    try:
-        redact = bool(settings(cwd).get("redact"))
-    except Exception:
-        redact = False
-    msg = sessions.deliver(name, hooks.redact(prompt)[0] if redact else prompt, cwd=cwd, wait=False)
+    msg = sessions.deliver(name, hooks.redact(prompt)[0], cwd=cwd, wait=False)  # like the conversation, always
     earlier = "".join(f"(An earlier answer, which came after Claude Code stopped waiting:)\n\n{turn_text(r, base)}\n"
                       for r in late)
     rec["shown"] = sorted(shown | {r["id"] for r in late})
@@ -249,47 +272,55 @@ def relay(event, sid, cwd, prompt, rec, limit, cfg, now):
 
 def catch_up(sid, rec):
     """Claude is back from its limit. Its session file already holds the relayed prompts and replies (as hook
-    messages); tell it once whose replies those were, what may have changed in the files, and any reply that came
-    after Claude Code stopped waiting."""
-    from . import sessions
+    messages); tell it once whose replies those were and what may have changed in the files, and, as they come, any
+    reply that arrived after Claude Code stopped waiting (the user sees those too)."""
+    from . import flows, sessions
     name = rec["name"]
     try:
         meta = sessions.load(name)
     except (KeyError, OSError, ValueError):
         forget(sid)
         return None
+    busy = sessions.busy(name) or bool(sessions.pending(name))  # before the turns: one could end in between
     base, told, shown = meta.get("base") or 0, rec.get("told") or 0, set(rec.get("shown") or [])
     done = [r for r in sessions.turns(name) if r["n"] > told and r["status"] != "running"]
-    busy = sessions.busy(name) or bool(sessions.pending(name))
-    if not done and not busy:
-        forget(sid)
-        return None
-    worker = meta["worker"]
     unseen = [r for r in done if r.get("id") not in shown]
-    body = "\n".join(turn_text(r, base) for r in unseen)
-    if len(body) > CATCH_UP:
-        full = sessions.path(name) / f"relayed-{unseen[-1]['n']:04d}.md"
-        full.write_text(body)
-        body = sessions.shorten(body, full) or body
-    files = {"write": f"{worker} could edit files in {meta['cwd']}: `git status` and `git diff` show what it changed.",
-             "isolate": f"{worker} worked in its own git worktree, so its changes aren't in the user's files yet: "
-                        f"`farmout diff {name}` shows them and `farmout apply {name}` applies them.",
-             "read": f"{worker} had read-only access and changed no files."}
-    mode = "isolate" if meta.get("isolate") else "write" if meta.get("write") else "read"
-    context = (f"While you were at your usage limit (until {clock(rec.get('until') or 0)}), the user's prompts went to "
-               f"{worker} through farmout (farmout session {name}, which had this whole conversation): the replies "
-               f"marked \"Operation stopped by hook\" since then are {worker}'s, not yours. {files[mode]}")
+    worker, parts, notes = meta["worker"], [], []
+    if not rec.get("announced"):
+        files = {"write": f"{worker} could edit files in {meta['cwd']}: `git status` and `git diff` show what it changed.",
+                 "isolate": f"{worker} worked in its own git worktree, so its changes aren't in the user's files yet: "
+                            f"`farmout diff {name}` shows them and `farmout apply {name}` applies them.",
+                 "read": f"{worker} had read-only access and changed no files."}
+        mode = "isolate" if meta.get("isolate") else "write" if meta.get("write") else "read"
+        parts.append(f"While you were at your usage limit (until {clock(rec.get('until') or 0)}), the user's prompts "
+                     f"went to {worker} through farmout (farmout session {name}, which had this whole conversation): the "
+                     f"replies marked \"Operation stopped by hook\" since then are {worker}'s, not yours. {files[mode]}")
+        notes.append(f"farmout: Claude is back and knows {worker} answered meanwhile (farmout session {name}).")
     if unseen:
-        context += (f"\n\nThese replies came after Claude Code stopped waiting, so they aren't above:\n\n{body}")
+        body = "\n".join(turn_text(r, base) for r in unseen)
+        full = sessions.path(name) / f"relayed-{unseen[-1]['n']:04d}.md"
+        short = sessions.shorten(body, full)
+        if short:
+            full.write_text(body)
+        parts.append(f"These replies from {worker} came after Claude Code stopped waiting, so they aren't above:\n\n"
+                     f"{short or body}")
+        for r in unseen:
+            said = flows.text(r).strip()
+            notes.append(f"{worker} answered «{sessions.gist(r['prompt'], 80)}»:\n" + (
+                said if len(said) <= SHOW else f"{said[:SHOW]}\n… (`farmout log {name}` has all of it)"))
     if busy:
         running = next((r["prompt"] for r in sessions.turns(name) if r["status"] == "running"), None)
-        context += (f"\n\n{worker} is still working on " + (f"«{sessions.gist(running, 200)}»" if running else "a message")
-                    + f" (`farmout attach {name}` shows it).")
-        keep(sid, {**rec, "told": done[-1]["n"] if done else told, "shown": sorted(shown | {r["id"] for r in done})})
+        if not rec.get("announced") or unseen:
+            parts.append(f"{worker} is still working on " + (f"«{sessions.gist(running, 200)}»" if running else
+                                                           "a message") + f" (`farmout attach {name}` shows it).")
+        keep(sid, {**rec, "announced": True, "told": done[-1]["n"] if done else told,
+                   "shown": sorted(shown | {r["id"] for r in done})})
     else:
         forget(sid)
-    return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": context},
-            "systemMessage": f"farmout: Claude is back and knows {worker} answered meanwhile (farmout session {name})."}
+    if not parts:
+        return None
+    return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "\n\n".join(parts)},
+            "systemMessage": "\n\n".join(notes)}
 
 
 def main(stdin=None, stdout=None):

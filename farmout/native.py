@@ -1,7 +1,7 @@
-"""Conversations you had yourself in Claude Code or Codex, read from the files those CLIs keep, so `farmout continue`
-can carry one on with another worker after a usage limit: the prompts, the replies and one line per action (Edit
-x, Bash: y). Only interactive sessions count: the `claude -p` and `codex exec` runs farmout itself starts are
-skipped. Nothing here writes to those files."""
+"""Conversations you had yourself in Claude Code, Codex or Copilot CLI, read from the files those CLIs keep, so
+`farmout continue` can carry one on with another worker after a usage limit: the prompts, the replies and one line
+per action (Edit x, Bash: y). Only interactive sessions count: the `claude -p`, `codex exec` and `copilot -p` runs
+farmout itself starts are skipped. Nothing here writes to those files."""
 import itertools
 import json
 import os
@@ -9,7 +9,7 @@ import re
 import subprocess
 from pathlib import Path
 
-LABELS = {"claude": "Claude Code", "codex": "Codex"}
+LABELS = {"claude": "Claude Code", "codex": "Codex", "copilot": "Copilot CLI"}
 REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
 # Claude Code's own messages in the user's place: slash commands and their output, background task notices
 NOT_ASKED = re.compile(r"\s*(<(command-name|command-message|command-args|local-command-stdout|local-command-stderr|"
@@ -17,6 +17,7 @@ NOT_ASKED = re.compile(r"\s*(<(command-name|command-message|command-args|local-c
                        r"|\[Request interrupted)")
 INJECTED = re.compile(r"\s*(<[a-z_ -]+>|# AGENTS\.md instructions)")  # what Codex adds to a user message
 KEYS = ("file_path", "notebook_path", "path", "command", "cmd", "pattern", "url", "query", "description")
+HOOK_STOP = "Operation stopped by hook:"  # how Claude Code keeps a reply `farmout relay` gave in Claude's place
 
 
 def claude_home():
@@ -25,6 +26,10 @@ def claude_home():
 
 def codex_home():
     return Path(os.environ.get("CODEX_HOME") or "~/.codex").expanduser()
+
+
+def copilot_home():
+    return Path(os.environ.get("COPILOT_HOME") or "~/.copilot").expanduser()
 
 
 def lines(path, tail=None):
@@ -91,7 +96,24 @@ def codex_sessions(root=None):
             yield found("codex", f, meta["cwd"], str(meta.get("id") or f.stem))  # not `codex exec`
 
 
-READERS = {"claude": claude_sessions, "codex": codex_sessions}
+def copilot_sessions(root=None):
+    """Copilot CLI keeps a session's events in session-state/<id>/events.jsonl. A `copilot -p` run (farmout's own,
+    scripts) tells its model it runs non-interactively; those are skipped."""
+    base = copilot_home() / "session-state"
+    for f in base.glob("*/events.jsonl") if base.is_dir() else []:
+        try:
+            head = first(f, 60)
+        except OSError:
+            continue
+        start = next((o.get("data") for o in head if o.get("type") == "session.start"), None)
+        cwd = start.get("context", {}).get("cwd") if isinstance(start, dict) and isinstance(start.get("context"), dict) else None
+        told = " ".join(text_of(o["data"].get("content")) for o in head
+                        if o.get("type") == "system.message" and isinstance(o.get("data"), dict))
+        if isinstance(cwd, str) and cwd and "non-interactive mode" not in told:
+            yield found("copilot", f, cwd, str(start.get("sessionId") or f.parent.name))
+
+
+READERS = {"claude": claude_sessions, "codex": codex_sessions, "copilot": copilot_sessions}
 
 
 def find(cwd, source=None, session=None):
@@ -180,6 +202,10 @@ def claude_read(s):
             text = "\n".join(text_of(b.get("text")) if b.get("type") == "text" else "[an image]"
                              for b in blocks if b.get("type") in ("text", "image"))  # not tool results
             e.update(text=REMINDER.sub("", text).strip(), summary=o.get("isCompactSummary"))
+        elif kind == "user" and o.get("isMeta"):
+            text = "\n".join(text_of(b.get("text")) for b in blocks if b.get("type") == "text").strip()
+            if text.startswith(HOOK_STOP):
+                e["hook_reply"] = text[len(HOOK_STOP):].strip()
         elif kind == "assistant":
             e.update(texts=[text_of(b.get("text")).strip() for b in blocks
                             if b.get("type") == "text" and text_of(b.get("text")).strip()],
@@ -199,6 +225,8 @@ def claude_read(s):
             summary = e["text"]
         elif e.get("text") and not NOT_ASKED.match(e["text"]):
             turns.append({"prompt": e["text"], "reply": [], "actions": []})
+        elif e.get("hook_reply") and turns:
+            turns[-1]["reply"].append(e["hook_reply"])
         elif e["type"] == "assistant" and (e["texts"] or e["actions"]):
             if not turns:  # Claude carried on right after compacting
                 turns.append({"prompt": f"(carried on after {s['label']} compacted the conversation)", "reply": [],
@@ -255,8 +283,32 @@ def codex_read(s):
     return summary, turns
 
 
+def copilot_read(s):
+    """(None, turns) of a Copilot CLI session: each prompt, the replies to it, its tool calls, and an error that
+    stopped it."""
+    turns = []
+    for o in lines(s["file"]):
+        kind, d = o.get("type"), o.get("data")
+        if not isinstance(d, dict):
+            continue
+        if kind == "user.message":
+            text = text_of(d.get("content")).strip()
+            if text:
+                turns.append({"prompt": text, "reply": [], "actions": []})
+        elif not turns:
+            continue
+        elif kind == "assistant.message":
+            if text_of(d.get("content")).strip():
+                turns[-1]["reply"].append(d["content"].strip())
+            turns[-1]["actions"] += [action(text_of(r.get("name")) or "tool", r.get("arguments"), s["cwd"])
+                                     for r in d.get("toolRequests") or [] if isinstance(r, dict)]
+        elif kind == "session.error" and text_of(d.get("message")).strip():
+            turns[-1]["stopped"] = " ".join(d["message"].split())[:300]
+    return None, turns
+
+
 def read(s):
-    return (claude_read if s["from"] == "claude" else codex_read)(s)
+    return {"claude": claude_read, "codex": codex_read, "copilot": copilot_read}[s["from"]](s)
 
 
 def transcript(s, summary, turns, actions=30):
