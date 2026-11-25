@@ -1529,16 +1529,17 @@ class MoreTest(CliBase):
         p = self.fo("bench", "-n", "1", "-w", "claude", FARMOUT_CLAUDE_DIR="")
         self.assertIn("your main Claude login takes part", p.stderr)
         self.assertRegex(p.stdout, r"claude\s+1/1")
-        self.assertEqual(self.last("claude")["env"], {}, "the default login: no CLAUDE_CONFIG_DIR")
+        self.assertEqual(self.last("claude")["env"], {"FARMOUT_WORKER": "1"}, "the default login: no CLAUDE_CONFIG_DIR")
         inside = self.fo("bench", "-n", "1", "-w", "claude", rc=1, FARMOUT_CLAUDE_DIR="", CLAUDECODE="1")
         self.assertIn("unavailable worker(s): claude", inside.stderr, "inside Claude Code it's the head's own account")
         self.assertIn("unavailable worker(s): claude", self.fo("run", "claude", "x", rc=1, FARMOUT_CLAUDE_DIR="").stderr,
                       "other commands use it only when asked")
         self.fo("run", "claude", "say hi", "-n", "m", FARMOUT_CLAUDE_DIR="", FARMOUT_CLAUDE_MAIN="1")
-        self.assertEqual(self.last("claude")["env"], {})
+        self.assertEqual(self.last("claude")["env"], {"FARMOUT_WORKER": "1"})
         mine = str(self.tmp / "my-claude")  # a main login kept outside ~/.claude
         self.fo("run", "claude", "say hi", "-n", "m2", FARMOUT_CLAUDE_DIR="", FARMOUT_CLAUDE_MAIN="1", CLAUDE_CONFIG_DIR=mine)
-        self.assertEqual(self.last("claude")["env"], {"CLAUDE_CONFIG_DIR": mine}, "the login `claude` uses in your shell")
+        self.assertEqual(self.last("claude")["env"], {"CLAUDE_CONFIG_DIR": mine, "FARMOUT_WORKER": "1"},
+                         "the login `claude` uses in your shell")
 
     def test_fix_pr_turns_feedback_into_a_race(self):
         self.repo()
@@ -3420,11 +3421,16 @@ class RelayTest(CliBase):
         self.assertEqual(self.stop_failure(self.limited_session("s2", error=False),
                                            said="API Error: Request rejected (429) · retrying", sid="s2"), "")
         self.assertEqual(self.runs(), [], "a passing 429 isn't the limit")
+        event = {"session_id": "s1", "transcript_path": str(f), "cwd": str(self.work), "hook_event_name": "StopFailure",
+                 "error": "rate_limit", "last_assistant_message": "You've hit your 5-hour limit"}
+        self.fo("relay", "hook", input=json.dumps(event), FARMOUT_WORKER="1")
+        self.assertEqual(self.runs(), [], "a Claude Code that farmout itself runs as a worker: farmout moves that task")
         self.stop_failure(f)
         self.stop_failure(f)  # Claude Code firing again for the same limit doesn't start a second one
         wait_until(lambda: self.json("ls") and self.json("ls")[0]["state"] not in ("running", "queued"), 30)
         self.assertEqual(len(self.runs()), 1)
         self.assertTrue(self.runs()[0]["brief"].startswith("Carry on from where this conversation stopped."))
+        self.assertEqual(self.runs()[0]["env"].get("FARMOUT_WORKER"), "1", "so hooks inside a worker's CLI can tell")
         said = self.hook("say next", f)["stopReason"]
         self.assertIn("(An earlier answer, which came after Claude Code stopped waiting:)\n\n## Turn 3 (codex, ok)\n\n"
                       "### Prompt\n\nCarry on from where this conversation stopped.", said)

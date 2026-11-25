@@ -422,8 +422,11 @@ def catch_up(sid, rec):
 
 
 def main(stdin=None, stdout=None):
-    """`farmout relay hook`: Claude Code's UserPromptSubmit hook. Never stops a prompt by failing."""
+    """`farmout relay hook`: Claude Code's UserPromptSubmit and StopFailure hooks. Never stops a prompt by failing.
+    Inside a farmout worker (a `claude -p` farmout started) it does nothing: farmout moves its own tasks at a limit."""
     stdin, stdout = stdin or sys.stdin, stdout or sys.stdout
+    if os.environ.get("FARMOUT_WORKER"):
+        return 0
     try:
         event = json.load(stdin)
     except ValueError:

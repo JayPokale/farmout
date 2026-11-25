@@ -67,7 +67,7 @@ brief = args[args.index("-p") + 1] if name in ("agy", "copilot") else sys.stdin.
 session = sid() or (str(uuid.uuid4()) if name in ("codex", "agy") else f"session-{uuid.uuid4()}" if name == "dsh" else None)
 with open(os.path.join(log, f"{os.getpid()}.json"), "w") as f:
     json.dump({"name": name, "argv": args, "cwd": os.getcwd(), "brief": brief, "session": session,
-               "env": {k: v for k, v in os.environ.items() if k.startswith(("CLAUDE", "ANTHROPIC"))}}, f)
+               "env": {k: v for k, v in os.environ.items() if k.startswith(("CLAUDE", "ANTHROPIC", "FARMOUT_WORKER"))}}, f)
 
 store = os.path.join(log, "store")
 if name == "claude":  # ~/.claude/projects/<folder>/, searched only from that folder (older Claude Code)

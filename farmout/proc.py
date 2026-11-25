@@ -62,6 +62,7 @@ def run(cmd, key, cwd, stdin=None, env=None, timeout=None):
     with lock:
         if key in cancelled:
             raise RuntimeError("cancelled")
+        env = {**(os.environ if env is None else env), "FARMOUT_WORKER": "1"}  # hooks in a worker's CLI can tell
         p = subprocess.Popen(cmd, cwd=cwd, env=env, text=True, start_new_session=True,
                              stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)

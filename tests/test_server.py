@@ -307,7 +307,7 @@ class DelegateTest(Base):
                        FARMOUT_CLAUDE_DIR="~/second-account")
         s.delegate({"worker": "claude", "prompt": "say hi"})
         rec = self.calls()["claude"]
-        self.assertEqual(rec["env"], {"CLAUDE_CONFIG_DIR": str(self.home / "second-account")})
+        self.assertEqual(rec["env"], {"CLAUDE_CONFIG_DIR": str(self.home / "second-account"), "FARMOUT_WORKER": "1"})
         self.assertIn("--no-session-persistence", rec["argv"])
 
     def test_files_are_listed_and_outside_dirs_granted(self):
