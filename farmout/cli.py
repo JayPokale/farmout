@@ -185,11 +185,11 @@ def cmd_continue(a):
     return send_and_show(a, meta["name"], prompt or CARRY_ON, a.file + extra)
 
 
-def claude_hooks():
-    """Claude Code's own UserPromptSubmit hook entries (settings.json), or none."""
+def claude_hooks(event="UserPromptSubmit"):
+    """Claude Code's own hook entries for this event (settings.json), or none."""
     try:
         data = json.loads((native.claude_home() / "settings.json").read_text())
-        entries = data["hooks"]["UserPromptSubmit"]
+        entries = data["hooks"][event]
     except (OSError, ValueError, KeyError, TypeError):
         return []
     return entries if isinstance(entries, list) else []
@@ -259,29 +259,38 @@ def install_hook(remove=False):
             raise ValueError(f"{link} isn't valid JSON ({e}); left as it is") from None
         if not isinstance(data, dict) or not isinstance(data.get("hooks", {}), dict):
             raise ValueError(f"{link}: unexpected shape; left as it is")
-        entries = data.setdefault("hooks", {}).setdefault("UserPromptSubmit", [])
-        if not isinstance(entries, list):
-            raise ValueError(f"{link}: hooks.UserPromptSubmit isn't a list; left as it is")
-        mine = [e for e in entries if ours(e)]
+        wanted = {"UserPromptSubmit": {"hooks": [{"type": "command", "command": hook_command(),
+                                                  "timeout": relay.HOOK_TIMEOUT}]},
+                  "StopFailure": {"matcher": "rate_limit", "hooks": [{"type": "command", "command": hook_command(),
+                                                                      "timeout": 60}]}}
+        hooks = data.setdefault("hooks", {})
+        if any(not isinstance(hooks.get(ev, []), list) for ev in wanted):
+            raise ValueError(f"{link}: hooks.UserPromptSubmit or hooks.StopFailure isn't a list; left as it is")
+        mine = {ev: any(ours(e) for e in hooks.get(ev, [])) for ev in wanted}
         if remove:
-            if not mine:
+            if not any(mine.values()):
                 return f"No relay hook in {link}."
-            kept = []
-            for e in entries:  # only our hook goes; others in the same entry stay
-                if ours(e):
-                    e = {**e, "hooks": [h for h in e["hooks"] if not (isinstance(h, dict) and our_command(h.get("command", "")))]}
-                    if not e["hooks"]:
-                        continue
-                kept.append(e)
-            data["hooks"]["UserPromptSubmit"] = kept
-            if not data["hooks"]["UserPromptSubmit"]:
-                del data["hooks"]["UserPromptSubmit"]
-            if not data["hooks"]:
+            for ev in wanted:
+                kept = []
+                for e in hooks.get(ev, []):  # only our hook goes; others in the same entry stay
+                    if ours(e):
+                        e = {**e, "hooks": [h for h in e["hooks"]
+                                            if not (isinstance(h, dict) and our_command(h.get("command", "")))]}
+                        if not e["hooks"]:
+                            continue
+                    kept.append(e)
+                if kept:
+                    hooks[ev] = kept
+                else:
+                    hooks.pop(ev, None)
+            if not hooks:
                 del data["hooks"]
         else:
-            if mine:
+            if all(mine.values()):
                 return f"The relay hook is already in {link}."
-            entries.append({"hooks": [{"type": "command", "command": hook_command(), "timeout": relay.HOOK_TIMEOUT}]})
+            for ev, entry in wanted.items():
+                if not mine[ev]:
+                    hooks.setdefault(ev, []).append(entry)
         f.parent.mkdir(parents=True, exist_ok=True)
         mode = stat.S_IMODE(f.stat().st_mode) if f.exists() else 0o600
         if raw:  # the file as it was, beside it (written fresh: a link left there is replaced, not followed)
@@ -332,7 +341,7 @@ def cmd_relay(a):
         most = relay.HOOK_TIMEOUT - 60  # Claude Code stops the hook after HOOK_TIMEOUT
         if a.wait is not None and not 0 < a.wait <= most:
             raise ValueError(f"--wait takes 1 to {most} seconds")
-        cfg = relay.configure(on=True, worker=a.worker, mode=mode, wait=a.wait or relay.WAIT)
+        cfg = relay.configure(on=True, worker=a.worker, mode=mode, wait=a.wait or relay.WAIT, auto=a.auto)
     elif a.action == "off":
         cfg = relay.configure(on=False)
     elif a.action == "back":
@@ -360,7 +369,9 @@ def cmd_relay(a):
         print(f"Relay on: when Claude Code hits its usage limit, what you type next goes to {who} ({how}) with the "
               f"whole conversation, and its answer shows in Claude Code. Once the limit is over, Claude is told what "
               f"was asked and answered meanwhile. Up to {cfg.get('wait') or relay.WAIT}s per answer, then "
-              f"`farmout attach` it.")
+              f"`farmout attach` it."
+              + (" With --auto, a turn the limit cuts off is carried on at once, in the background." if cfg.get("auto")
+                 else ""))
     else:
         print("Relay off: at Claude Code's usage limit you only get a line about `farmout relay on`.")
     if cfg.get("on") and not plugin_on(a.cwd) and not any(ours(e) for e in claude_hooks()):
@@ -1275,6 +1286,8 @@ def parser():
                     "Code hit its limit, to try it), install or uninstall (the hook in Claude Code's settings.json, "
                     "without the plugin), hook (what Claude Code runs); none: show the setting")
     rl.add_argument("--minutes", type=int, default=10, help="with test: how long (default 10)")
+    rl.add_argument("--auto", action="store_true", help="with on: also carry on at once, in the background, when the "
+                    "limit cuts a turn off (Claude Code's StopFailure hook), so the work goes on with nobody typing")
     rl.add_argument("-w", "--worker", metavar="WORKER[:MODEL]", help="with on: who answers (default: the first ready "
                     "worker not on Claude's login)")
     rl.add_argument("--write", action="store_true", help="with on: let it edit files")

@@ -3329,13 +3329,15 @@ class RelayTest(CliBase):
         self.assertIn("Added the relay hook to", self.fo("relay", "install").stdout)
         data = json.loads(cfg.read_text())
         self.assertEqual(data["model"], "opus")
+        self.assertEqual(data["hooks"]["StopFailure"][0]["matcher"], "rate_limit", "and the --auto one")
         cmds = [h["command"] for e in data["hooks"]["UserPromptSubmit"] for h in e["hooks"]]
         self.assertEqual(cmds[:2], ["my-own-hook", "my-wrapper relay hook"], "someone else's \"relay hook\" isn't ours")
         self.assertTrue(cmds[2].endswith(" relay hook"))
         self.assertEqual(data["hooks"]["UserPromptSubmit"][1]["hooks"][0]["timeout"], 900)
-        entries = json.loads(cfg.read_text())["hooks"]["UserPromptSubmit"]
+        data = json.loads(cfg.read_text())
+        entries = data["hooks"]["UserPromptSubmit"]
         entries[0]["hooks"].append(entries.pop(1)["hooks"][0])  # ours, in an entry with the user's own hooks
-        cfg.write_text(json.dumps({"model": "opus", "hooks": {"UserPromptSubmit": entries}}))
+        cfg.write_text(json.dumps(data))
         self.assertIn("already in", self.fo("relay", "install").stdout)
         self.assertTrue(self.json("relay")["installed"])
         self.assertNotIn("relay install", self.fo("relay", "on").stdout, "installed: nothing more to do")
@@ -3343,6 +3345,7 @@ class RelayTest(CliBase):
                            "prompt": "hi"}), capture_output=True, text=True, env=self.env, timeout=60)
         self.assertEqual((p.returncode, p.stdout), (0, ""), "the command it installed runs")
         self.assertIn("Took the relay hook out of", self.fo("relay", "uninstall").stdout)
+        self.assertNotIn("StopFailure", json.loads(cfg.read_text())["hooks"])
         self.assertEqual(json.loads(cfg.read_text())["hooks"]["UserPromptSubmit"],
                          [{"hooks": [{"type": "command", "command": "my-own-hook"},
                                      {"type": "command", "command": "my-wrapper relay hook"}]}], "only ours goes")
@@ -3402,6 +3405,34 @@ class RelayTest(CliBase):
         back = self.hook("and now?", f)
         self.assertIn("the user's prompts went to codex through farmout", back["hookSpecificOutput"]["additionalContext"])
         self.assertIsNone(self.hook("again", f), "over")
+
+    def stop_failure(self, f, said="You've hit your 5-hour limit · resets 3:40am (Asia/Kolkata)", sid="s1"):
+        event = {"session_id": sid, "transcript_path": str(f), "cwd": str(self.work), "hook_event_name": "StopFailure",
+                 "error": "rate_limit", "last_assistant_message": said}
+        return self.fo("relay", "hook", input=json.dumps(event)).stdout
+
+    def test_auto_carries_on_the_moment_the_limit_cuts_a_turn_off(self):
+        self.fo("relay", "on", "-w", "codex")
+        f = self.limited_session()
+        self.assertEqual(self.stop_failure(f), "")
+        self.assertEqual(self.runs(), [], "without --auto, nothing starts by itself")
+        self.assertIn("With --auto", self.fo("relay", "on", "-w", "codex", "--auto").stdout)
+        self.assertEqual(self.stop_failure(self.limited_session("s2", error=False),
+                                           said="API Error: Request rejected (429) · retrying", sid="s2"), "")
+        self.assertEqual(self.runs(), [], "a passing 429 isn't the limit")
+        self.stop_failure(f)
+        self.stop_failure(f)  # Claude Code firing again for the same limit doesn't start a second one
+        wait_until(lambda: self.json("ls") and self.json("ls")[0]["state"] not in ("running", "queued"), 30)
+        self.assertEqual(len(self.runs()), 1)
+        self.assertTrue(self.runs()[0]["brief"].startswith("Carry on from where this conversation stopped."))
+        said = self.hook("say next", f)["stopReason"]
+        self.assertIn("(An earlier answer, which came after Claude Code stopped waiting:)\n\n## Turn 3 (codex, ok)\n\n"
+                      "### Prompt\n\nCarry on from where this conversation stopped.", said)
+        self.assertTrue(said.endswith("so codex answered (farmout session codex-1):\n\nnext"))
+        self.assertEqual([r["name"] for r in self.json("ls")], ["codex-1"], "one session for the limit")
+        self.stop_failure(self.limited_session("s3", error=False), sid="s3")  # the file doesn't show it yet
+        wait_until(lambda: len(self.json("ls")) == 2 and self.json("ls")[0]["state"] not in ("running", "queued"), 30)
+        self.assertEqual(self.meta("codex-2")["imported"]["id"], "s3", "Claude Code's own words are enough")
 
     def test_back_early_and_a_new_limit_starts_afresh(self):
         self.fo("relay", "on", "--write", "-w", "codex")

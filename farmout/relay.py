@@ -22,6 +22,7 @@ TAIL = 512 * 1024  # bytes of the session file read for its newest reply
 SHOW = 4000  # characters of an answer the user hadn't seen, shown when Claude is back (all of it: farmout log)
 GRACE = 300  # a relay record this long past its reset belongs to an earlier limit
 MODES = ("read", "write", "isolate")
+CARRY_ON = "Carry on from where this conversation stopped."
 USAGE = re.compile(r"hit your (?:[\w-]+ )?limit|usage limit|limit reached", re.I)
 
 
@@ -280,27 +281,67 @@ def turn_text(r, base):
             f"### Reply\n\n{flows.text(r).strip()}\n")
 
 
+def session_for(path, sid, cwd, rec, limit, cfg, now):
+    """(name, record) of the farmout session carrying this Claude Code conversation on: this limit's, or a new one
+    started from the session file. Raises ValueError, KeyError or OSError when nothing can take over."""
+    from . import sessions
+    name = (rec or {}).get("name")
+    if name and (not sessions.path(name).is_dir() or (rec.get("until") or 0) < now - GRACE):
+        name = None  # removed, or carried on from an earlier limit
+    if not name:
+        s = {"from": "claude", "label": native.LABELS["claude"], "file": path, "cwd": cwd, "id": sid, "updated": now}
+        mode = cfg.get("mode") if cfg.get("mode") in MODES else "read"
+        worker, model = pick(s, cwd, cfg.get("worker"))
+        meta = carry(s, worker, model, cwd, write=mode == "write", isolate=mode == "isolate")[0]
+        name, rec = meta["name"], {"session": sid, "file": path, "cwd": cwd, "since": now, "told": 0, "shown": []}
+    return name, {**rec, "name": name, "until": limit["until"], "limit": limit["text"]}
+
+
+def stopped(event, now=None):
+    """Claude Code's StopFailure hook. With `farmout relay on --auto`, a turn the usage limit cut off is carried on at
+    once by another worker, in the background; the next prompt typed in Claude Code goes to the same farmout session
+    and brings its answer. Claude Code ignores what this hook prints."""
+    from . import sessions
+    now = now or time.time()
+    cfg = config()
+    sid, path = event.get("session_id"), event.get("transcript_path")
+    if not (cfg.get("on") and cfg.get("auto")) or not isinstance(sid, str) or not sid or not isinstance(path, str):
+        return None
+    limit = limit_in(path)
+    said = event.get("last_assistant_message")
+    if not limit and event.get("error") == "rate_limit" and isinstance(said, str) and USAGE.search(said):
+        from .workers import reset_in  # the session file doesn't show it yet: Claude Code's own words
+        secs = reset_in(said)
+        limit = {"until": now + (secs if secs is not None else 900), "text": said, "at": now, "kind": None}
+    if not limit or limit["until"] <= now:
+        return None
+    cwd = event.get("cwd") if isinstance(event.get("cwd"), str) and os.path.isdir(event["cwd"]) else os.getcwd()
+    with only_one(sid) as mine:
+        if not mine:
+            return None
+        rec = record(sid)
+        if (rec and rec.get("name") and sessions.path(rec["name"]).is_dir()
+                and (rec.get("until") or 0) >= now - GRACE and not rec.get("back")):
+            return None  # this limit is being relayed already
+        try:
+            name, rec = session_for(path, sid, cwd, rec, limit, cfg, now)
+        except (ValueError, KeyError, OSError):
+            return None
+        keep(sid, rec)
+        sessions.deliver(name, CARRY_ON, cwd=cwd, wait=False)
+    return None
+
+
 def relay(event, sid, cwd, prompt, rec, limit, cfg, now):
     """Send the prompt to the farmout session carrying this conversation on (started on the first one) and answer
     with its reply. Claude Code shows the prompt as sent and the reply under it, and keeps both in its session file,
     so Claude sees them when it's back."""
     from . import flows, hooks, sessions
-    name = (rec or {}).get("name")
-    if name and (not sessions.path(name).is_dir() or (rec.get("until") or 0) < now - GRACE):
-        name = None  # removed, or carried on from an earlier limit
     head = heading(limit)
-    if not name:
-        s = {"from": "claude", "label": native.LABELS["claude"], "file": event["transcript_path"], "cwd": cwd, "id": sid,
-             "updated": now}
-        mode = cfg.get("mode") if cfg.get("mode") in MODES else "read"
-        try:
-            worker, model = pick(s, cwd, cfg.get("worker"))
-            meta = carry(s, worker, model, cwd, write=mode == "write", isolate=mode == "isolate")[0]
-        except (ValueError, KeyError, OSError) as e:
-            return {"continue": False, "stopReason": f"{head}, and nothing could take over: {e}"}
-        name, rec = meta["name"], {"session": sid, "file": event["transcript_path"], "cwd": cwd, "since": now,
-                                   "told": 0, "shown": []}
-    rec = {**rec, "name": name, "until": limit["until"], "limit": limit["text"]}
+    try:
+        name, rec = session_for(event["transcript_path"], sid, cwd, rec, limit, cfg, now)
+    except (ValueError, KeyError, OSError) as e:
+        return {"continue": False, "stopReason": f"{head}, and nothing could take over: {e}"}
     base, shown = sessions.load(name).get("base") or 0, set(rec.get("shown") or [])
     late = [r for r in sessions.turns(name) if r.get("id") not in shown and r["status"] != "running"]
     msg = sessions.deliver(name, hooks.redact(prompt)[0], cwd=cwd, wait=False)  # like the conversation, always
@@ -388,7 +429,8 @@ def main(stdin=None, stdout=None):
     except ValueError:
         return 0
     try:
-        out = hook(event) if isinstance(event, dict) else None
+        out = ((stopped if event.get("hook_event_name") == "StopFailure" else hook)(event)
+               if isinstance(event, dict) else None)
     except Exception as e:
         out = {"systemMessage": f"farmout relay: {type(e).__name__}: {e}"}
     if out:
