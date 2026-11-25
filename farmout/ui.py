@@ -19,6 +19,19 @@ from .bench import COLOURS
 from .workers import ENABLED, lane
 
 BODY = 1 << 20  # the largest request taken
+IMAGE_BODY = 16 << 20  # a pasted image (base64 in JSON)
+PASTE_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
+
+
+def pastes():
+    from .config import OUT_DIR
+    return os.path.realpath(OUT_DIR / "pastes")
+
+
+def pasted_files(files):
+    """The pasted images a message may carry: files under ~/.cache/farmout/pastes only, never another path."""
+    root = pastes() + os.sep
+    return [f for f in files or [] if isinstance(f, str) and os.path.realpath(f).startswith(root) and os.path.isfile(f)]
 PREVIEW = 600  # characters of each question in the tree; the whole turn comes with /api/turn
 
 
@@ -59,7 +72,7 @@ def send(body, here):
     if worker and worker not in ENABLED:
         raise ValueError(f"{worker} isn't available here (`farmout doctor` says why)")
     mode = body.get("mode")
-    pasted = [f for f in body.get("files") or [] if isinstance(f, str) and os.path.isfile(f)]  # pasted images
+    pasted = pasted_files(body.get("files"))  # images pasted into the composer
     if mode == "carry":  # your own Claude Code, Codex or Copilot CLI session, carried on here (read-only)
         from . import native, relay
         found = [x for x in native.find(here) if not body.get("source") or x["id"] == body["source"]]
@@ -145,14 +158,22 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(403, {"error": "forbidden"})
         try:
             size = int(self.headers.get("Content-Length") or 0)
+            path = urllib.parse.urlsplit(self.path).path
             if size < 0:
                 return self.reply(400, {"error": "bad Content-Length"})
-            if size > BODY:
+            if size > (IMAGE_BODY if path == "/api/paste" else BODY):
                 return self.reply(413, {"error": "too large"})
             body = json.loads(self.rfile.read(size) or b"{}")
             if not isinstance(body, dict):
                 raise ValueError("expected a JSON object")
-            path = urllib.parse.urlsplit(self.path).path
+            if path == "/api/paste":  # an image pasted into a composer: kept like `farmout paste` keeps one
+                import base64
+                from . import clip
+                ext = PASTE_TYPES.get(str(body.get("type")))
+                if not ext:
+                    raise ValueError("paste a PNG, JPEG, GIF or WebP image")
+                data = base64.b64decode(str(body.get("data") or ""), validate=True)
+                return self.reply(200, {"path": str(clip.save(data, ext))})
             if path == "/api/send":
                 return self.reply(200, send(body, self.server.here))
             if path == "/api/stop":
@@ -514,6 +535,8 @@ function renderComposer() {
     edit: "Starts a new conversation that " + keeps(at - 1) + " and asks this question your way instead.",
   }[mode];
   const text = el("textarea", {"aria-label": "Your message", placeholder: mode === "continue" ? "Your next message" : "Your message for the new branch"});
+  const att = {};
+  const chips = pasting(text, att);
   text.value = draft;
   text.addEventListener("input", () => { draft = text.value; });
   const worker = workerPicker(laneOf(t.worker, t.model)), model = el("input", {placeholder: "model (optional)", "aria-label": "Model"});
@@ -524,8 +547,9 @@ function renderComposer() {
     go.disabled = true;
     try {
       const r = await api("/api/send", {mode: mode === "edit" ? "branch" : mode, edit: mode === "edit", session: s.name, n: t.n,
-        prompt, worker: worker.value || null, model: model.value.trim() || null});
+        prompt, worker: worker.value || null, model: model.value.trim() || null, files: att.files});
       draft = text.value = "";
+      att.files.length = 0; chips.textContent = "";
       go.disabled = false;
       wanted = {s: r.session, id: r.message};
       open.add(r.session); remember();
@@ -544,20 +568,45 @@ function renderComposer() {
   box.replaceChildren(el("div", {class: "composer"},
     el("div", {class: "modes"}, modeBtn("continue", "Continue", newest), modeBtn("branch", "Branch from here", true),
       modeBtn("edit", "Ask this differently", true)),
-    el("p", {class: "explain"}, explain), text,
+    el("p", {class: "explain"}, explain), text, chips,
     el("div", {class: "row"}, el("label", null, "Worker", worker), el("label", null, "Model", model), go),
-    el("p", {class: "explain"}, "Ctrl+Enter sends.")));
+    el("p", {class: "explain"}, "Ctrl+Enter sends. Paste an image into the message to send it along.")));
+}
+function pasting(text, holder) {
+  // an image pasted into the message: kept by farmout, sent with the message
+  const files = [];
+  const chips = el("p", {class: "explain"});
+  holder.files = files;
+  holder.chips = chips;
+  text.addEventListener("paste", async e => {
+    const items = [...(e.clipboardData && e.clipboardData.items || [])].filter(i => i.kind === "file" && i.type.startsWith("image/"));
+    if (!items.length) return;
+    e.preventDefault();
+    for (const item of items) {
+      const blob = item.getAsFile();
+      const data = await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.readAsDataURL(blob); });
+      try {
+        const r = await api("/api/paste", {type: blob.type, data});
+        files.push(r.path);
+        chips.textContent = "📎 " + files.length + " image" + (files.length === 1 ? "" : "s") + " attached";
+      } catch (err) { toast(err.message, true); }
+    }
+  });
+  return chips;
 }
 function newForm() {
   const worker = workerPicker(null), model = el("input", {placeholder: "model (optional)", "aria-label": "Model"});
   const text = el("textarea", {"aria-label": "Your first message", placeholder: "What should it do?"});
+  const att = {};
+  const chips = pasting(text, att);
   const go = el("button", {class: "btn primary", type: "button"}, "Start");
   const start = async () => {
     const prompt = text.value.trim();
     if (!prompt) return toast("Write a message first", true);
     go.disabled = true;
     try {
-      const r = await api("/api/send", {mode: "new", prompt, worker: worker.value, model: model.value.trim() || null});
+      const r = await api("/api/send", {mode: "new", prompt, worker: worker.value, model: model.value.trim() || null,
+        files: att.files});
       wanted = {s: r.session, id: r.message};
       open.add(r.session); remember();
       toast("Started " + r.session);
@@ -571,7 +620,7 @@ function newForm() {
     el("h2", null, "New conversation"),
     el("div", {class: "where"}, "in " + state.here),
     state.workers.length ? el("div", null, el("div", {class: "row"}, el("label", null, "Worker", worker), el("label", null, "Model", model)),
-      text, el("div", {class: "row"}, go)) : el("p", {class: "warn"}, "No worker is ready here: run farmout doctor in a terminal."));
+      text, chips, el("div", {class: "row"}, go)) : el("p", {class: "warn"}, "No worker is ready here: run farmout doctor in a terminal."));
 }
 
 async function refresh() {

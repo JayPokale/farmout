@@ -1925,6 +1925,29 @@ class UiTest(CliBase):
         c.close()
         return r.status, r.getheader("Content-Security-Policy"), raw
 
+    def test_a_pasted_image_goes_with_the_message_and_nothing_else_can(self):
+        import base64
+        port, key = self.start_ui()
+        png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 40
+        status, _, raw = self.call(port, "/api/paste", key, {"type": "image/png", "data": base64.b64encode(png).decode()})
+        self.assertEqual(status, 200, raw)
+        path = json.loads(raw)["path"]
+        self.assertEqual(Path(path).read_bytes(), png)
+        self.assertTrue(path.startswith(str(self.home / ".cache" / "farmout" / "pastes")))
+        self.assertEqual(self.call(port, "/api/paste", key, {"type": "text/html", "data": "eA=="})[0], 400)
+        self.assertEqual(self.call(port, "/api/paste", None, {"type": "image/png", "data": "eA=="})[0], 403)
+        secret = self.tmp / "secret.txt"
+        secret.write_text("not for workers")
+        status, _, raw = self.call(port, "/api/send", key, {"mode": "new", "prompt": "say hi", "worker": "codex",
+                                                              "files": [path, str(secret)]})
+        self.assertEqual(status, 200, raw)
+        wait_until(lambda: self.runs(), 20)
+        brief = self.last("codex")["brief"]
+        self.assertIn(path, brief)
+        self.assertNotIn("secret.txt", brief, "only pasted images ride along; any other path is dropped")
+        argv = self.last("codex")["argv"]
+        self.assertEqual(argv[argv.index("-i") + 1], path)
+
     def test_the_page_needs_its_key_and_continues_or_branches(self):
         self.fo("run", "codex", "say one", "-n", "t")
         self.fo("send", "t", "say two")
