@@ -79,7 +79,8 @@ def run(cmd, key, cwd, stdin=None, env=None, timeout=None):
         raise
     finally:
         with lock:
-            running.get(key, set()).discard(p)
+            if p.poll() is not None:  # still running (a stop broke off taking it down): kill_all() can find it
+                running.get(key, set()).discard(p)
     if p.returncode:
         raise RuntimeError(f"{cmd[0]} exited {p.returncode}: {(err or out).strip()[-1500:]}")
     return out

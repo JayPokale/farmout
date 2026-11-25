@@ -126,6 +126,28 @@ class SessionTest(CliBase):
                                    "    except KeyboardInterrupt:\n        print('stopped')")
         self.assertEqual(out.splitlines(), ["stopped", "let go"])
 
+    def test_review11_a_worker_a_stop_broke_off_taking_down_is_still_killed(self):
+        mark = "37.2511"  # this test's own sleep
+        out = in_farmout(self.env, "from farmout import proc\nreal = proc.stop\n"
+                                   "def stop(p, grace=None):\n    raise KeyboardInterrupt  # a SIGTERM came meanwhile\n"
+                                   "proc.stop = stop\ntry:\n"
+                                   f"    proc.run(['sleep', '{mark}'], 'k', {str(self.work)!r}, timeout=0.5)\n"
+                                   "except KeyboardInterrupt:\n    pass\nproc.stop = real\nproc.kill_all()\n"
+                                   "time.sleep(0.5)\nprint('done')")
+        self.assertEqual(out.strip(), "done")
+        left = [d.name for d in Path("/proc").iterdir() if d.name.isdigit()
+                and (lambda c: c == f"sleep\0{mark}\0")(self.cmdline(d))]
+        for pid in left:  # tidy up before failing
+            os.kill(int(pid), 9)
+        self.assertEqual(left, [], "kill_all() found the worker")
+
+    @staticmethod
+    def cmdline(d):
+        try:
+            return (d / "cmdline").read_bytes().decode(errors="replace")
+        except OSError:
+            return ""
+
     def test_review8_cancel_never_stops_another_messages_turn(self):
         self.fo("run", "codex", "say a", "-n", "s")
         in_farmout(self.env, "sessions.write_json(sessions.path('s') / 'turns' / '0002.json', {'n': 2, 'id': 'old', "
@@ -3688,8 +3710,9 @@ class RelayTest(CliBase):
         short = get()["test"]
         in_farmout(self.env, f"relay.keep('s9', {{**json.loads({old!r}), 'shown': ['m1']}})")
         self.assertEqual(get()["test"], short, "the shorter test stands")
-        in_farmout(self.env, f"relay.retire('s9', {{**json.loads({old!r}), 'test': 1.0}})")  # the old test's catch-up
-        self.assertEqual(get()["test"], short, "the test that came meanwhile isn't retired")
+        in_farmout(self.env, f"relay.retire('s9', {{**json.loads({old!r}), 'announced': True, 'shown': ['m9']}})")
+        self.assertEqual(get()["test"], short, "the 60-minute test's catch-up doesn't retire the shorter one after it")
+        self.assertEqual((get().get("announced"), get()["shown"]), (True, ["m9"]), "what the catch-up did is kept")
 
     def test_review8_after_back_a_test_or_a_new_limit_is_a_relay_of_its_own(self):
         self.fo("relay", "on", "-w", "codex")

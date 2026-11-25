@@ -137,7 +137,7 @@ def test(sid, file, cwd, minutes, now=None):
         rec = record(sid)
         if not rec or rec.get("back"):  # after `relay back`, a relay of its own
             rec = {"session": sid, "file": file, "cwd": cwd, "since": now, "told": 0, "shown": []}
-        save_record(sid, {**rec, "test": now + minutes * 60, "back": 0})
+        save_record(sid, {**rec, "test": now + minutes * 60, "test_at": now, "back": 0})
     return now + minutes * 60
 
 
@@ -150,7 +150,7 @@ def keep(sid, rec):
         if now and (now.get("since") or 0) > (rec.get("since") or 0):
             return
         if now and now.get("since") == rec.get("since"):  # only `relay back` and `relay test` change these
-            rec = {**rec, **{k: now[k] for k in ("back", "test") if k in now}}
+            rec = {**rec, **{k: now[k] for k in ("back", "test", "test_at") if k in now}}
         save_record(sid, rec)
 
 
@@ -180,8 +180,12 @@ def retire(sid, rec):
     be relayed again."""
     with writing(sid):
         now = record(sid) or {}
-        if now and (now.get("since") != rec.get("since") or (now.get("test") or 0) > (rec.get("test") or 0)):
-            return  # a newer relay has the record now, or a `relay test` came meanwhile
+        if now and now.get("since") != rec.get("since"):
+            return  # a newer relay has the record now
+        if (now.get("test_at") or 0) > (rec.get("test_at") or 0):
+            # a `relay test` came meanwhile: it goes on, and what this catch-up told and showed is kept
+            save_record(sid, {**now, **{k: rec[k] for k in ("announced", "told", "shown") if k in rec}})
+            return
         back = max(rec.get("back") or 0, now.get("back") or 0)
         if back:
             save_record(sid, {**{k: rec[k] for k in ("session", "said", "said_done", "since") if k in rec},
@@ -552,10 +556,12 @@ def catch_up(sid, rec):
         if not rec.get("announced") or unseen:
             parts.append(f"{worker} is still working on " + (f"«{sessions.gist(running, 200)}»" if running else
                                                            "a message") + f" (`farmout attach {name}` shows it).")
-        keep(sid, {**rec, "announced": True, "told": done[-1]["n"] if done else told,
-                   "shown": sorted(shown | {r["id"] for r in done})})
+    progress = {"announced": True, "told": done[-1]["n"] if done else told,
+                "shown": sorted(shown | {r["id"] for r in done})}
+    if busy:
+        keep(sid, {**rec, **progress})
     else:
-        retire(sid, rec)
+        retire(sid, {**rec, **progress})
     if not parts:
         return None
     return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "\n\n".join(parts)},
