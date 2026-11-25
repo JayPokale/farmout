@@ -1136,6 +1136,76 @@ def cmd_hook(a):
           "2+ models flag a high-severity problem. Skip once: FARMOUT_SKIP=1.")
 
 
+def answers_here(a):
+    """(the newest answers, oldest first, and where they're from): a farmout conversation (-s), else your own
+    newest Claude Code, Codex or Copilot CLI session in this folder, else the newest farmout conversation here."""
+    if a.session:
+        recs = [r for r in sessions.turns(a.session) if r["status"] == "ok"]
+        return [flows.text(r) for r in recs][-5:], f"farmout session {a.session}"
+    found = native.find(a.cwd, a.source)
+    if found:
+        s = found[0]
+        _, turns = native.read(s)
+        return ["\n\n".join(t["reply"]) for t in turns if t["reply"]][-5:], f"your {s['label']} session {s['id'][:8]}"
+    here = [sessions.load(n) for n in sessions.names()]
+    here = sorted((m for m in here if m["cwd"] == a.cwd and not m.get("group")), key=lambda m: -(m.get("created") or 0))
+    if not here:
+        raise ValueError("no conversation here to copy from: no Claude Code, Codex or Copilot CLI session in this "
+                         "folder, and no farmout one")
+    return answers_here(argparse.Namespace(**{**vars(a), "session": here[0]["name"]}))
+
+
+def cmd_copy(a):
+    from . import clip
+    texts, where = answers_here(a)
+    items = next((found for found in map(clip.commands, reversed(texts)) if found), [])
+    if not items:
+        raise ValueError(f"no commands in the newest answers of {where}")
+    if a.json and a.number is None:
+        return emit(a, {"from": where, "commands": items})
+    if a.number is None:
+        width = shutil.get_terminal_size((100, 20)).columns - 8
+        for n, item in enumerate(items, 1):
+            first = item["text"].splitlines()[0]
+            more = f"  (+{item['lines'] - 1} lines)" if item["lines"] > 1 else ""
+            tag = f"[{item['lang']}] " if item["lang"] and item["lang"] not in clip.SHELLS else ""
+            line = f"{tag}{first}"
+            print(f"{n:>3}  {line[:max(20, width - len(more))]}{more}")
+        if a.list or not sys.stdin.isatty():
+            err(f"from {where}. `farmout copy <n>` copies one, whole")
+            return 0
+        try:
+            got = input(f"Copy which? [1-{len(items)}, Enter: 1] ").strip() or "1"
+        except EOFError:
+            return 0
+        a.number = int(got) if got.isdigit() else 0
+    if not 1 <= a.number <= len(items):
+        raise ValueError(f"pick 1 to {len(items)}")
+    item = items[a.number - 1]
+    tool = clip.copy(item["text"])
+    if a.json:
+        return emit(a, {"from": where, "copied": item, "with": tool})
+    err(f"copied {a.number} ({item['lines']} line{'s' * (item['lines'] != 1)}, {len(item['text'])} characters) "
+        f"with {tool}, from {where}")
+    return 0
+
+
+def cmd_paste(a):
+    from . import clip
+    data, ext = clip.image()
+    path = clip.save(data, ext, a.out)
+    dims = clip.size(data)
+    if a.copy:
+        clip.copy(str(path))
+    if a.json:
+        return emit(a, {"path": str(path), "bytes": len(data), "size": dims})
+    print(path)
+    err(f"farmout: the clipboard's image ({f'{dims[0]}×{dims[1]} ' if dims else ''}{ext[1:].upper()}, "
+        f"{max(1, len(data) // 1024)} KB) is in that file" + ("; its path is on the clipboard now" if a.copy else "")
+        + ". In Claude Code, `!farmout paste` puts the path in the conversation: ask about it there.")
+    return 0
+
+
 def cmd_completion(a):
     from . import completion
     sys.stdout.write(completion.script(a.shell, parser(), WORKERS))
@@ -1468,6 +1538,16 @@ def parser():
     d.add_argument("--live", action="store_true")
     add("mcp", "serve the MCP tools on stdio (what `python3 server.py` does)", None, ())
     add("acp", "be an Agent Client Protocol agent on stdio, for editors such as Zed and JetBrains IDEs", None, ())
+    cy = add("copy", "copy a command from the newest answer, whole (a terminal breaks long ones over lines): from "
+             "your own Claude Code, Codex or Copilot CLI session here, or a farmout conversation", cmd_copy)
+    cy.add_argument("number", nargs="?", type=int, help="which one (`farmout copy` lists them)")
+    cy.add_argument("-s", "--session", help="a farmout conversation instead")
+    cy.add_argument("--from", dest="source", choices=sorted(native.LABELS), help="only your sessions of this CLI")
+    cy.add_argument("--list", action="store_true", help="list them, copy nothing")
+    pa = add("paste", "save the image on the clipboard to a file and print its path (in Claude Code: "
+             "`!farmout paste`, then ask about it)", cmd_paste)
+    pa.add_argument("-o", "--out", metavar="PATH", help="where (a file, or a folder; default ~/.cache/farmout/pastes/)")
+    pa.add_argument("--copy", action="store_true", help="put the file's path on the clipboard too")
     cp = add("completion", "tab completion for your shell: eval \"$(farmout completion bash)\" in ~/.bashrc (zsh the "
              "same), or farmout completion fish > ~/.config/fish/completions/farmout.fish", cmd_completion, ())
     cp.add_argument("shell", choices=("bash", "zsh", "fish"))

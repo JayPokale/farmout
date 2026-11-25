@@ -30,6 +30,7 @@ HELP = [("↑↓ j k", "move"), ("← → h l", "fold, unfold; ← also goes up 
         ("c · R", "continue from the newest turn; send a failed one again"), ("b", "branch from this turn"),
         ("e", "ask this turn differently, as a branch"), ("n · x", "new conversation; stop a running turn"),
         ("C", "carry on your own Claude Code, Codex or Copilot session from here"),
+        ("Y", "copy one command from this answer, whole (pick it with ↑↓ ⏎)"),
         ("o O", "the turn, or its whole conversation, in your pager"),
         ("y · d", "copy the answer; an isolated session's patch"),
         ("D", "delete a conversation or branch, with its branches"),
@@ -434,7 +435,8 @@ class App:
         if k == "^C" and not self.box:
             return self.quit()
         if self.box:
-            return {"compose": self.compose_key, "find": self.find_key, "ask": self.ask_key}[self.box["kind"]](k)
+            return {"compose": self.compose_key, "find": self.find_key, "ask": self.ask_key,
+                    "pick": self.pick_key}[self.box["kind"]](k)
         if isinstance(k, tuple):
             return self.mouse(*k[1:]) if k[0] == "mouse" else None
         self.wanted = None  # a key takes over from waiting for a sent message's turn
@@ -451,7 +453,7 @@ class App:
                "enter": self.enter, " ": self.enter, "tab": self.swap, "btab": self.swap,
                "c": lambda: self.compose("continue"), "b": lambda: self.compose("branch"),
                "e": lambda: self.compose("edit"), "R": lambda: self.compose("retry"), "n": lambda: self.compose("new"),
-               "C": lambda: self.compose("carry"),
+               "C": lambda: self.compose("carry"), "Y": self.pick,
                "x": self.stop,
                "/": self.find, "o": self.page, "O": self.whole, "y": self.yank, "d": self.patch, "D": self.delete,
                "a": self.all_runs, "f": self.here_only, "u": self.next_new, "S": self.stats, "r": self.load,
@@ -586,6 +588,31 @@ class App:
         text = clean(self.detail(row["node"]["name"], t["n"], t["status"]).get("text") or "")
         self.external = ("copy", text, f"turn {t['num']}'s answer ({len(text):,} characters)")
 
+    def pick(self):
+        """Y: the commands in this turn's answer, to copy one whole."""
+        from . import clip
+        row = self.row()
+        if row["kind"] != "turn" or row["turn"]["status"] == "running":
+            return self.say("Pick a turn that has answered", "dim")
+        t = row["turn"]
+        items = clip.commands(clean(self.detail(row["node"]["name"], t["n"], t["status"]).get("text") or ""))
+        if not items:
+            return self.say(f"No commands in turn {t['num']}'s answer (y copies all of it)", "dim")
+        self.box = {"kind": "pick", "items": items, "at": 0, "title": f"Copy a command from turn {t['num']}"}
+
+    def pick_key(self, k):
+        b = self.box
+        if k in ("esc", "^C", "q"):
+            self.box = None
+        elif k in ("up", "k"):
+            b["at"] = max(0, b["at"] - 1)
+        elif k in ("down", "j"):
+            b["at"] = min(len(b["items"]) - 1, b["at"] + 1)
+        elif k in ("enter", " "):
+            item, self.box = b["items"][b["at"]], None
+            self.external = ("copy", item["text"], f"the command ({item['lines']} line"
+                             f"{'s' * (item['lines'] != 1)})")
+
     def patch(self):
         node = self.row()["node"]
         name = node["name"]
@@ -718,6 +745,14 @@ class App:
             b["field"] = "lane" if b["field"] == "text" else "text"
         elif k == "^G":
             self.external = ("editor", b["text"].text)
+        elif k == "^P":  # the clipboard's image, attached to this message
+            from . import clip
+            try:
+                data, ext = clip.image()
+            except ValueError as e:
+                return self.say(str(e), "err")
+            b.setdefault("files", []).append(str(clip.save(data, ext)))
+            self.say(f"Attached the clipboard's image ({len(b['files'])} attached)", "ok")
         elif b["field"] == "lane" and k in ("up", "down"):
             ch = b["choices"]
             now = b["lane"].text.strip()
@@ -743,7 +778,7 @@ class App:
             return self.say("Write a message first", "err")
         body = {"mode": {"edit": "branch", "retry": "continue"}.get(b["mode"], b["mode"]), "edit": b["mode"] == "edit",
                 "session": b["session"], "n": b["n"], "prompt": prompt, "worker": b["lane"].text.strip() or None,
-                "source": b.get("source")}
+                "source": b.get("source"), "files": b.get("files") or []}
         try:
             r = ui.send(body, self.here)
         except Exception as e:  # a refusal or a failure is shown, never fatal
@@ -815,9 +850,28 @@ class App:
         else:
             self.draw_graph(c, 0, 0, w, ph, True)
         self.draw_bottom(c, w, h)
+        if self.box and self.box["kind"] == "pick":
+            self.draw_pick(c, w, h)
         if self.help:
             self.draw_help(c, w, h)
         return c
+
+    def draw_pick(self, c, w, h):
+        b = self.box
+        width = min(w - 4, 100)
+        rows = min(len(b["items"]), max(1, h - 6))
+        first = max(0, min(b["at"] - rows + 1, len(b["items"]) - rows))
+        x, y = (w - width) // 2, max(0, (h - rows - 2) // 2)
+        self.border(c, x, y, width, rows + 2, "acc", [(" " + b["title"] + " ", "bold acc")],
+                    foot=[(" ↑↓ pick · ⏎ copy · Esc close ", "dim")])
+        for k in range(rows):
+            item = b["items"][first + k]
+            more = f"  (+{item['lines'] - 1} lines)" if item["lines"] > 1 else ""
+            line = f"{first + k + 1:>2}  {item['text'].splitlines()[0]}"
+            style = "sel bold" if first + k == b["at"] else ""
+            c.clear(y + 1 + k, x + 1, x + width - 1, style)
+            end = c.put(y + 1 + k, x + 2, line, style, x + width - 2 - len(more))
+            c.put(y + 1 + k, end, more, "dim" if not style else style, x + width - 2)
 
     def border(self, c, x, y, w, h, style, title=(), right=(), foot=()):
         c.put(y, x, "╭" + "─" * (w - 2) + "╮", style)
@@ -1051,8 +1105,9 @@ class App:
         on = typed if typed or b["field"] == "lane" or "same" not in b else f"same ({b['same']})"
         out = self.out(typed.strip() or b.get("same") or "")
         keys = " ⏎ send · ^J new line · Tab worker" + (" (↑↓ picks)" if b["field"] == "lane" else "")
-        keys += " · ^G editor · Esc close "
-        start = self.border(c, 0, top, w, shown + 2, "acc", [(" " + b["title"] + " ", "bold acc")],
+        keys += " · ^G editor · ^P paste image · Esc close "
+        clipped = f" · 📎 {len(b['files'])} image{'s' * (len(b['files']) != 1)}" if b.get("files") else ""
+        start = self.border(c, 0, top, w, shown + 2, "acc", [(" " + b["title"] + clipped + " ", "bold acc")],
                             [(" on ", "dim"), (on or " ", "sel bold" if b["field"] == "lane" else "bold"),
                              (f" · {out} ", "err") if out else (" ", "")],
                             [(keys, "dim")])
@@ -1240,18 +1295,8 @@ def escape(scr, curses):
 
 
 def copy(text):
-    """Put text on the clipboard, through the system's clipboard tool or else the terminal (OSC 52, which most
-    terminals and tmux take, over ssh too). Says which."""
-    for cmd in (["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"], ["pbcopy"]):
-        if shutil.which(cmd[0]):
-            try:
-                subprocess.run(cmd, input=text.encode(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                               timeout=5, check=True)
-                return cmd[0]
-            except (OSError, subprocess.SubprocessError):
-                continue
-    os.write(sys.stdout.fileno(), b"\x1b]52;c;" + base64.b64encode(text.encode()) + b"\x07")
-    return "your terminal"
+    from .clip import copy as put
+    return put(text)
 
 
 def outside(scr, app, curses):

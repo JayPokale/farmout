@@ -13,6 +13,7 @@ import shutil
 import signal
 import socket
 import stat
+import struct
 import subprocess
 import sys
 import threading
@@ -2318,6 +2319,26 @@ class TerminalUiTest(CliBase):
         screen, = self.ui(["running"], "d", ["screen"], "x", "y")
         self.assertIn("busy is still working: its patch is ready when it's done", screen)
 
+    def test_Y_copies_one_command_whole_and_ctrl_p_attaches_the_clipboards_image(self):
+        self.fo("run", "codex", "say use `git status` and then `git log -1`", "-n", "t")
+        picker, copied = self.ui("Y", ["screen"], "down", "enter", ["external"])
+        self.assertIn("Copy a command from turn 1", picker)
+        self.assertIn(" 1  git status", picker)
+        self.assertIn(" 2  git log -1", picker)
+        self.assertEqual(json.loads(copied), ["copy", "git log -1", "the command (1 line)"])
+        png = b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR" + struct.pack(">II", 4, 4) + b"\x08\x02\x00\x00\x00"
+        (self.tmp / "shot.png").write_bytes(png)
+        (self.bindir / "wl-paste").write_text("#!/bin/sh\n"
+                                              'if [ "$1" = --list-types ]; then echo image/png; exit 0; fi\n'
+                                              f"cat {self.tmp / 'shot.png'}\n")
+        (self.bindir / "wl-paste").chmod(0o755)
+        self.env["WAYLAND_DISPLAY"] = "wayland-0"
+        composer, = self.ui("c", "^P", ["screen"], ["type", "say look"], "enter", ["idle"])
+        self.assertIn("📎 1 image", composer)
+        argv = self.last("codex")["argv"]
+        pasted = argv[argv.index("-i") + 1]
+        self.assertEqual(Path(pasted).read_bytes(), png, "the image goes to codex attached, not only as a path")
+
     def test_copy_uses_the_clipboard_tool_or_the_terminal(self):
         from farmout import tui
         bin_ = self.tmp / "clip-bin"
@@ -3915,6 +3936,70 @@ class AccountsTest(CliBase):
         self.fo("ask", "-w", "codex,codex-work", "say both")
         homes = [r["env"].get("CODEX_HOME") for r in self.runs()[-2:]]
         self.assertEqual(sorted(h or "" for h in homes), ["", str(self.tmp / "codex-work")], "one lane per login")
+
+
+class ClipTest(CliBase):
+    """`farmout copy` (a command from the newest answer, whole) and `farmout paste` (the clipboard's image)."""
+
+    def clipboard(self, image=None):
+        (self.bindir / "wl-copy").write_text(f"#!/bin/sh\ncat > {self.tmp / 'copied'}\n")
+        types = "image/png\ntext/plain" if image else "text/plain"
+        (self.bindir / "wl-paste").write_text(
+            "#!/bin/sh\n"
+            f'if [ "$1" = --list-types ]; then printf "{types}\\n"; exit 0; fi\n'
+            f'cat {self.tmp / "image.png"}\n')
+        if image:
+            (self.tmp / "image.png").write_bytes(image)
+        for f in ("wl-copy", "wl-paste"):
+            (self.bindir / f).chmod(0o755)
+        return {"WAYLAND_DISPLAY": "wayland-0"}
+
+    def test_commands_come_out_whole(self):
+        sys.path.insert(0, str(SERVER.parent))
+        from farmout import clip
+        text = ("Run these:\n\n```bash\n$ cd site\n$ npm install --no-audit \\\n    --prefer-offline\n```\n\n"
+                "Then `farmout relay on --write`, set `rules = false`, pass `--from codex` and read `cache.py`.\n\n"
+                "```python\nprint('hi')\n```\n")
+        got = [(c["text"], c["lang"]) for c in clip.commands(text)]
+        self.assertEqual(got, [("cd site\nnpm install --no-audit \\\n    --prefer-offline", "bash"),
+                               ("print('hi')", "python"), ("farmout relay on --write", "")])
+
+    def test_copy_from_your_claude_code_session_and_from_farmout(self):
+        env = self.clipboard()
+        d = self.home / ".claude" / "projects" / "-work"
+        d.mkdir(parents=True)
+        reply = "Do this:\n\n```sh\ngit clone https://example.com/a/b.git ~/b && cd ~/b &&\n  make install\n```\nor `git status`."
+        rows = [{"uuid": "u1", "parentUuid": None, "type": "user", "cwd": str(self.work), "entrypoint": "cli",
+                 "message": {"content": "how do I install it?"}},
+                {"uuid": "a1", "parentUuid": "u1", "type": "assistant", "message": {"content": [
+                    {"type": "text", "text": reply}]}}]
+        (d / "s1.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+        listed = self.fo("copy", **env)
+        self.assertIn("  1  git clone https://example.com/a/b.git ~/b && cd ~/b &&  (+1 lines)", listed.stdout)
+        self.assertIn("  2  git status", listed.stdout)
+        self.assertIn("from your Claude Code session s1", listed.stderr)
+        p = self.fo("copy", "1", **env)
+        self.assertEqual((self.tmp / "copied").read_text(), "git clone https://example.com/a/b.git ~/b && cd ~/b &&\n  make install")
+        self.assertIn("copied 1 (2 lines", p.stderr)
+        self.fo("copy", "9", rc=1, **env)
+        self.fo("run", "codex", "say use `git log --oneline -3`", "-n", "talk")
+        self.fo("copy", "1", "-s", "talk", **env)
+        self.assertEqual((self.tmp / "copied").read_text(), "git log --oneline -3")
+
+    def test_paste_saves_the_clipboards_image(self):
+        png = b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR" + struct.pack(">II", 2, 3) + b"\x08\x02\x00\x00\x00"
+        env = self.clipboard(png)
+        out = self.tmp / "shots"
+        out.mkdir()
+        p = self.fo("paste", "-o", str(out), **env)
+        path = Path(p.stdout.strip())
+        self.assertEqual((path.parent, path.read_bytes()), (out, png))
+        self.assertIn("(2×3 PNG", p.stderr)
+        self.assertIn("`!farmout paste`", p.stderr)
+        self.fo("paste", "--copy", **env)
+        self.assertTrue((self.tmp / "copied").read_text().startswith(str(self.home / ".cache" / "farmout" / "pastes")))
+        env = self.clipboard(None)
+        self.assertIn("the clipboard holds no image", self.fo("paste", rc=1, **env).stderr)
 
 
 if __name__ == "__main__":

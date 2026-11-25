@@ -59,6 +59,7 @@ def send(body, here):
     if worker and worker not in ENABLED:
         raise ValueError(f"{worker} isn't available here (`farmout doctor` says why)")
     mode = body.get("mode")
+    pasted = [f for f in body.get("files") or [] if isinstance(f, str) and os.path.isfile(f)]  # pasted images
     if mode == "carry":  # your own Claude Code, Codex or Copilot CLI session, carried on here (read-only)
         from . import native, relay
         found = [x for x in native.find(here) if not body.get("source") or x["id"] == body["source"]]
@@ -66,13 +67,13 @@ def send(body, here):
             raise ValueError("no Claude Code, Codex or Copilot CLI session in this folder or its git repository")
         w, m = (worker, model) if worker else relay.pick(found[0], here)
         meta = relay.carry(found[0], w, m, here)[0]
-        msg = sessions.deliver(meta["name"], prompt, cwd=meta["cwd"], wait=False)
+        msg = sessions.deliver(meta["name"], prompt, pasted, cwd=meta["cwd"], wait=False)
         return {"session": meta["name"], "message": msg["id"]}
     if mode == "new":
         if not worker:
             raise ValueError("pick a worker")
         meta = sessions.create(worker, here, model=model)
-        return {"session": meta["name"], "message": sessions.deliver(meta["name"], prompt, cwd=here, wait=False)["id"]}
+        return {"session": meta["name"], "message": sessions.deliver(meta["name"], prompt, pasted, cwd=here, wait=False)["id"]}
     name = str(body.get("session") or "")
     moved = sessions.rehome(name, here)  # a renamed or moved folder is looked for where `farmout ui` runs
     meta, n = sessions.load(name), int(body.get("n") or 0)
@@ -80,11 +81,11 @@ def send(body, here):
         if n != meta["turns"]:
             raise ValueError(f"turn {n} isn't the newest in {name}: branch from it instead")
         switch = {"worker": worker, "model": model} if worker or model else None
-        msg = sessions.deliver(name, prompt, cwd=meta["cwd"], wait=False, switch=switch)
+        msg = sessions.deliver(name, prompt, pasted, cwd=meta["cwd"], wait=False, switch=switch)
     elif mode == "branch":
         at = (meta.get("base") or 0) + n - (1 if body.get("edit") else 0)
         meta, files, note = sessions.fork(name, worker=worker, at=at, model=model)
-        msg = sessions.deliver(meta["name"], prompt, files, cwd=meta["cwd"], wait=False, note=note)
+        msg = sessions.deliver(meta["name"], prompt, files + pasted, cwd=meta["cwd"], wait=False, note=note)
     else:
         raise ValueError("mode is new, continue or branch")
     return {"session": meta["name"], "message": msg["id"], "moved": moved}

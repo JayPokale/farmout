@@ -137,8 +137,15 @@ def antigravity(t, key):
     return {"text": text, "native_id": res.get("conversation_id") or t.get("resume"), "usage": res.get("usage")}
 
 
+IMAGES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+
+
+def images(files):
+    return [f for f in files if os.path.splitext(f)[1].lower() in IMAGES and os.path.isfile(f)]
+
+
 def codex(t, key):
-    cwd, _, _, brief = prep(t)
+    cwd, files, _, brief = prep(t)
     mode = "workspace-write" if t.get("write") else "read-only"
     with tempfile.TemporaryDirectory() as tmp:
         last = os.path.join(tmp, "last.md")
@@ -150,6 +157,7 @@ def codex(t, key):
         cmd += opt("-m", t.get("model"))
         cmd += ["-c", f'model_reasoning_effort="{t["effort"]}"'] if t.get("effort") else []
         cmd += [] if t.get("web", True) else ["-c", 'web_search="disabled"']  # in case your config turns it on
+        cmd += [x for f in images(files) for x in ("-i", f)]  # its shell can't look at a picture: attached, it can
         cmd += [t["resume"]] if t.get("resume") else []
         out = run(cmd + ["-"], key, cwd, stdin=brief, env=login(t), timeout=t.get("timeout"))
         events = [parse_json(line) for line in out.splitlines() if line.startswith("{")]
@@ -201,7 +209,7 @@ def claude(t, key):
 
 
 def copilot(t, key):
-    cwd, _, dirs, brief = prep(t)
+    cwd, files, dirs, brief = prep(t)
     # --allow-all-tools (required headless) would also auto-approve the user's MCP servers, so the
     # model only gets an allowlist: read/search/fetch, plus file edits under write. Never a shell.
     tools = ["view", "rg", "glob"] + (["web_fetch"] if t.get("web", True) else [])
@@ -209,6 +217,7 @@ def copilot(t, key):
     sid = t.get("resume") or t.get("session_id")
     cmd = ["copilot", "-p", brief, "-s", "--no-color", "--allow-all-tools", "--available-tools", *tools]
     cmd += dirs + opt("--model", t.get("model")) + opt("--reasoning-effort", t.get("effort")) + opt("--session-id", sid)
+    cmd += [x for f in images(files) for x in ("--attachment", f)]  # it sees a picture only when it's attached
     return {"text": run(cmd, key, cwd, env=login(t), timeout=t.get("timeout")), "native_id": sid, "usage": None}
 
 
