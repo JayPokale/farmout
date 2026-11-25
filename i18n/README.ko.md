@@ -21,7 +21,7 @@ cd your-repo && farmout bench --share   # 내 코드의 실제 버그를 가장 
 
 <p align="center"><img src="../assets/limits-demo.gif" width="900" alt="실제 실행 녹화(기다리는 시간만 빠르게): farmout run claude로 대화를 시작하고, Claude가 로그아웃되자 farmout send가 다음 턴을 Codex에 넘기며 Codex는 지금까지의 대화를 바탕으로 답한다. 이어서 farmout bench가 과거 버그 수정 3건으로 Claude Opus와 Sonnet을 비교하고 --apply가 승자를 기본값으로 정한다"></p>
 
-- **한도에 걸려도 멈추지 않음**: 구독이 사용 한도에 도달하거나 로그아웃 상태이면, farmout의 작업·대화·파이프라인 단계는 지금까지의 대화를 그대로 가지고 다음으로 사용 가능한 모델로 넘어갑니다. 직접 전환할 수도 있습니다(`farmout send cache -w codex`, 또는 `--model opus`). 직접 쓰던 Claude Code나 Codex 세션도 마찬가지입니다. 한도에 도달했다는 메시지가 나오면 `farmout continue --write`를 실행하세요. 같은 대화를 다른 구독이 이어받습니다(내 프롬프트, 그 답변, 수행한 작업을 한 줄씩).
+- **한도에 걸려도 멈추지 않음**: 구독이 사용 한도에 도달하거나 로그아웃 상태이면, farmout의 작업·대화·파이프라인 단계는 지금까지의 대화를 그대로 가지고 다음으로 사용 가능한 모델로 넘어갑니다. 직접 전환할 수도 있습니다(`farmout send cache -w codex`, 또는 `--model opus`). 직접 쓰던 Claude Code 세션도 마찬가지입니다. `farmout relay on`을 한 번 켜 두면 Claude가 한도에 걸린 뒤 입력한 내용이 대화 전체와 함께 다른 구독으로 넘어가고, 답변은 Claude Code 안에 그대로 표시되며, 한도가 풀리면 Claude도 그사이의 일을 전달받습니다. `farmout continue --write`는 어느 터미널에서든 같은 일을 하며 Codex 세션에도 쓸 수 있습니다.
 - **구독 하나로도 충분**: 한 요금제의 여러 모델로 레인을 채울 수 있습니다(`farmout review -w claude:opus,claude:sonnet`). `farmout bench --apply`는 여러분의 코드에서 가장 성적이 좋았던 모델을 기본값으로 정합니다.
 - **대화를 그래프로**: `farmout fork cache --at 2 -w codex "..."`로 어느 턴에서든 다른 모델로 분기할 수 있습니다. `farmout ui`는 모든 대화를 터미널 안의 분기 그래프로 그려 주며, 아무 턴이나 읽고, 이어 가고, 거기서 분기할 수 있습니다(`farmout tree`는 같은 그래프를 출력). 폴더 이름을 바꾸거나 옮겨도 대화는 그대로 이어집니다.
 - **`/farmout:review`**: Codex, Gemini(Antigravity 경유), GitHub Copilot, 두 번째 Claude 계정이 동시에 읽기 전용으로 diff를 리뷰합니다. Claude는 각 모델이 발견한 내용을 병합하고, 문제를 지적한 모델 수를 집계하며, 코드와 대조하여 모든 항목을 검증합니다. [자체 벤치마크](../bench/README.md)에서는 32개의 버그(의도적으로 심은 23개, 오픈소스 프로젝트의 실제 회귀 9개) 모두가 4개 모델 중 최소 3개에서 지적되었습니다.

@@ -12,7 +12,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from . import VERSION, bench, engine, flows, graph, live, native, pipeline, proc, review, sessions, skills, store, usage
+from . import VERSION, bench, engine, flows, graph, live, native, pipeline, proc, relay, review, sessions, skills, store, usage
 from . import hooks as farmout_hooks
 from .config import OUT_DIR, STATE, digest, find, project_root, read, repo_root, settings, trust_file
 from .graph import ago, short
@@ -154,11 +154,6 @@ def cmd_run(a):
 CARRY_ON = "Carry on from where this conversation stopped."
 
 
-def same_login(source):
-    """Is farmout's worker for this CLI on the login the session ran out on? A second Claude account isn't."""
-    return source != "claude" or not CLAUDE_DIR or os.path.realpath(CLAUDE_DIR) == os.path.realpath(native.claude_home())
-
-
 def cmd_continue(a):
     found = native.find(a.cwd, a.source, a.session)
     if a.list:
@@ -175,24 +170,12 @@ def cmd_continue(a):
         raise ValueError((f"no session {a.session!r}" if a.session else "no Claude Code or Codex session in this folder "
                           "or its git repository") + " (`farmout continue --list` shows what there is)")
     s = found[0]
-    summary, turns = native.read(s)
-    if not turns and not summary:
-        raise ValueError(f"{s['label']} session {s['id']} has nothing to carry on from yet")
-    text, secrets = farmout_hooks.redact(native.transcript(s, summary, turns))
     prompt, extra = read_prompt(a.message, required=False, cwd=a.cwd)
-    try:
-        worker, model = lane(a.worker) if a.worker else engine.auto_worker(
-            a.cwd, skip={s["from"]} if same_login(s["from"]) else set())
-    except ValueError:
-        raise ValueError(f"no worker but {s['from']} is ready here (`farmout doctor`); name one with -w, "
-                         f"e.g. -w {s['from']}:<another model>") from None
+    worker, model = relay.pick(s, a.cwd, a.worker)
     check_workers([worker])
-    cwd = s["cwd"] if os.path.isdir(s["cwd"]) else a.cwd
-    meta = sessions.create(worker, cwd, name=a.name, write=a.write, isolate=a.isolate, model=a.model or model,
-                           effort=a.effort, fallback=None if a.fallback is None else split(a.fallback), base=len(turns))
-    meta["imported"] = {"from": s["from"], "label": s["label"], "id": s["id"], "file": s["file"], "turns": len(turns)}
-    sessions.save(meta)
-    (sessions.path(meta["name"]) / "context.md").write_text(text)
+    meta, summary, turns, secrets = relay.carry(s, worker, a.model or model, a.cwd, name=a.name, write=a.write,
+                                                isolate=a.isolate, effort=a.effort,
+                                                fallback=None if a.fallback is None else split(a.fallback))
     if not a.json:
         mode = " · isolated" if a.isolate else " · writes" if a.write else " · read-only (--write lets it edit)"
         err(f"[{meta['name']} · {worker} · carries on {s['label']} session {s['id'][:8]}, {len(turns)} turn"
@@ -200,6 +183,66 @@ def cmd_continue(a):
         if secrets:
             err(f"farmout: redacted {secrets} secret{'s' * (secrets != 1)} from the conversation")
     return send_and_show(a, meta["name"], prompt or CARRY_ON, a.file + extra)
+
+
+def plugin_on():
+    """Is the farmout plugin enabled in Claude Code (so its relay hook runs)?"""
+    try:
+        data = json.loads((native.claude_home() / "settings.json").read_text())
+    except (OSError, ValueError):
+        return False
+    on = data.get("enabledPlugins") if isinstance(data, dict) else None
+    return isinstance(on, dict) and any(k.split("@")[0] == "farmout" and v for k, v in on.items())
+
+
+def hook_snippet():
+    command = "farmout relay hook" if shutil.which("farmout") else f"{shlex.quote(sys.executable)} -m farmout relay hook"
+    return json.dumps({"hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": command,
+                                                                   "timeout": relay.HOOK_TIMEOUT}]}]}}, indent=2)
+
+
+def cmd_relay(a):
+    if a.action == "hook":
+        return relay.main()
+    if a.action == "on":
+        if a.worker:
+            check_workers([lane(a.worker)[0]])
+        mode = "isolate" if a.isolate else "write" if a.write else "read"
+        cfg = relay.configure(on=True, worker=a.worker, mode=mode, wait=a.wait or relay.WAIT)
+    elif a.action == "off":
+        cfg = relay.configure(on=False)
+    elif a.action == "back":
+        now, recs = time.time(), relay.records()
+        for rec in recs:
+            relay.keep(rec["session"], {**rec, "back": now})
+        cfg = relay.config()
+        if not a.json:
+            print(f"Claude is back: {len(recs)} relayed conversation{'s' * (len(recs) != 1)} go to Claude again, which "
+                  f"is told what happened meanwhile with your next prompt there." if recs else "Nothing is being relayed.")
+            return 0
+    else:
+        cfg = relay.config()
+    recs = [{**r, "worker": sessions.load(r["name"])["worker"] if sessions.path(r["name"]).is_dir() else None}
+            for r in relay.records() if r.get("name")]
+    if a.json:
+        return emit(a, {"relay": cfg, "plugin": plugin_on(), "relayed": recs})
+    who = cfg.get("worker") or "the first ready worker not on Claude's login"
+    how = {"write": "it may edit files", "isolate": "it edits in its own git worktree (farmout diff/apply)"}.get(
+        cfg.get("mode"), "read-only; `farmout relay on --write` lets it edit")
+    if cfg.get("on"):
+        print(f"Relay on: when Claude Code hits its usage limit, what you type next goes to {who} ({how}) with the "
+              f"whole conversation, and its answer shows in Claude Code. Once the limit is over, Claude is told what "
+              f"was asked and answered meanwhile. Up to {cfg.get('wait') or relay.WAIT}s per answer, then "
+              f"`farmout attach` it.")
+    else:
+        print("Relay off: at Claude Code's usage limit you only get a line about `farmout relay on`.")
+    if cfg.get("on") and not plugin_on():
+        print("\nClaude Code needs the hook: install the farmout plugin, or add this to ~/.claude/settings.json "
+              "(merged with any hooks there):\n" + hook_snippet())
+    for r in recs:
+        print(f"  Claude Code session {r['session'][:8]} → {r['name']} ({r['worker'] or 'removed'}), limit till "
+              f"{relay.clock(r.get('until') or 0)}")
+    return 0
 
 
 def follow(a, name):
@@ -1057,6 +1100,17 @@ def parser():
     c.add_argument("--effort", help="reasoning effort, e.g. low, medium, high")
     c.add_argument("--fallback", metavar="W1,W2", help="workers to try if this one hits a limit too; \"\" for none")
     c.add_argument("--bg", action="store_true", help="return at once; `farmout attach` to watch")
+
+    rl = add("relay", "at Claude Code's usage limit, what you type there goes to another subscription; Claude "
+             "catches up after", cmd_relay)
+    rl.add_argument("action", nargs="?", choices=("on", "off", "back", "hook"), help="on, off, back (Claude is back "
+                    "before the reset: stop relaying), hook (what Claude Code runs); none: show the setting")
+    rl.add_argument("-w", "--worker", metavar="WORKER[:MODEL]", help="with on: who answers (default: the first ready "
+                    "worker not on Claude's login)")
+    rl.add_argument("--write", action="store_true", help="with on: let it edit files")
+    rl.add_argument("--isolate", action="store_true", help="with on: edit in a private git worktree; makes a patch")
+    rl.add_argument("--wait", type=int, metavar="SECS", help=f"with on: how long Claude Code waits for an answer "
+                    f"(default {relay.WAIT}; then `farmout attach`)")
 
     tr = add("tree", "every conversation as a tree: its turns, and the branches off each one", cmd_tree)
     tr.add_argument("session", nargs="?", help="only the tree this session belongs to")

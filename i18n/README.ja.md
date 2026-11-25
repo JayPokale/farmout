@@ -21,7 +21,7 @@ cd your-repo && farmout bench --share   # あなたのコードの実際のバ�
 
 <p align="center"><img src="../assets/limits-demo.gif" width="900" alt="実際の実行の録画（待ち時間だけ早送り）: farmout run claude で会話を始め、Claude をログアウトさせると farmout send が次のターンを Codex に渡し、Codex はそれまでの会話をもとに答える。続いて farmout bench が過去の 3 件のバグ修正で Claude Opus と Sonnet を比べ、--apply で勝者をデフォルトにする"></p>
 
-- **上限でも止まらない**: サブスクリプションが利用上限に達したりログアウトしていたりすると、farmout のタスク・会話・パイプラインのステージは、それまでの会話を持ったまま次に使えるモデルへ移ります。意図的に切り替えることもできます（`farmout send cache -w codex`、または `--model opus`）。自分で使っている Claude Code や Codex のセッションも同じです。利用上限に達したと表示されたら `farmout continue --write` を実行すれば、同じ会話を別のサブスクリプションが引き継ぎます（あなたのプロンプト、その返答、実行した操作を 1 行ずつ）。
+- **上限でも止まらない**: サブスクリプションが利用上限に達したりログアウトしていたりすると、farmout のタスク・会話・パイプラインのステージは、それまでの会話を持ったまま次に使えるモデルへ移ります。意図的に切り替えることもできます（`farmout send cache -w codex`、または `--model opus`）。自分で使っている Claude Code のセッションも同じです。`farmout relay on` を一度実行しておけば、Claude が上限に達したあとに入力した内容は会話ごと別のサブスクリプションに渡り、その返答がそのまま Claude Code に表示され、上限がリセットされると Claude もその間の経緯を把握します。`farmout continue --write` なら任意のターミナルから同じことができ、Codex のセッションにも使えます。
 - **サブスクリプション 1 つでも十分**: 1 つのプランの複数モデルでレーンを埋められます（`farmout review -w claude:opus,claude:sonnet`）。`farmout bench --apply` は、あなたのコードで最も成績の良かったモデルをデフォルトにします。
 - **会話をグラフで**: `farmout fork cache --at 2 -w codex "..."` でどのターンからでも別のモデルに分岐できます。`farmout ui` はすべての会話をターミナル上の分岐グラフとして描き、任意のターンを読む・続ける・そこから分岐することができます（`farmout tree` は同じグラフを出力）。フォルダの名前を変えたり移動したりしても、会話はそのまま続けられます。
 - **`/farmout:review`**: Codex、Gemini (Antigravity 経由)、GitHub Copilot、2 つ目の Claude アカウントが、あなたの diff を読み取り専用で同時にレビューします。Claude が結果を統合し、各問題を指摘したモデル数を集計して、すべての指摘をコードと照合します。[ベンチマーク](../bench/README.md)では、32 件のバグ (仕込んだ 23 件と、オープンソースプロジェクトの実際のリグレッション 9 件) のすべてが、4 モデル中 3 モデル以上に指摘されました。

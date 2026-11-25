@@ -3103,3 +3103,146 @@ class ContinueTest(CliBase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RelayTest(CliBase):
+    """`farmout relay`: at Claude Code's usage limit, the prompt goes to another worker; Claude catches up after."""
+
+    def limited_session(self, sid="s1", resets=None, error=None, **extra):
+        d = self.home / ".claude" / "projects" / "-work"
+        d.mkdir(parents=True, exist_ok=True)
+        now = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
+        rows = [{"uuid": "u1", "parentUuid": None, "type": "user", "cwd": str(self.work), "entrypoint": "cli",
+                 "message": {"role": "user", "content": "fix the cache bug"}},
+                {"uuid": "a1", "parentUuid": "u1", "type": "assistant", "message": {"content": [
+                    {"type": "text", "text": "Fixed the TTL check."}]}},
+                {"uuid": "u2", "parentUuid": "a1", "type": "user", "message": {"content": "now add tests"}}]
+        if error is not False:
+            rows.append({"uuid": "e1", "parentUuid": "u2", "type": "assistant", "isApiErrorMessage": True,
+                         "error": "rate_limit", "timestamp": now, "apiErrorStatus": 429, **extra,
+                         "message": {"content": [{"type": "text", "text": error or
+                                                  "You've hit your 5-hour limit · resets 3:40am (Asia/Kolkata)"}]}})
+            if error is None:
+                rows[-1].update(apiError="usage_limit_reached", apiErrorParams={"rate_limit_info": {
+                    "status": "rejected", "resetsAt": int(resets or time.time() + 3600), "rateLimitType": "five_hour"}})
+        f = d / f"{sid}.jsonl"
+        f.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+        return f
+
+    def hook(self, prompt, f, sid="s1", script=None, **env):
+        event = {"session_id": sid, "transcript_path": str(f), "cwd": str(self.work), "prompt": prompt,
+                 "hook_event_name": "UserPromptSubmit", "permission_mode": "default"}
+        if script:
+            p = subprocess.run([sys.executable, script], input=json.dumps(event), capture_output=True, text=True,
+                               env={**self.env}, timeout=60, cwd=self.work)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            out = p.stdout
+        else:
+            out = self.fo("relay", "hook", input=json.dumps(event), **env).stdout
+        return json.loads(out) if out.strip() else None
+
+    def test_off_it_only_says_it_exists(self):
+        f = self.limited_session()
+        said = self.hook("say hi", f)
+        self.assertEqual(list(said), ["systemMessage"], "nothing blocked, nothing sent")
+        self.assertIn("Claude is at its usage limit until", said["systemMessage"])
+        self.assertIn("farmout relay on", said["systemMessage"])
+        self.assertEqual(self.runs(), [])
+        self.assertIsNone(self.hook("say hi", self.limited_session("s2", error=False)), "no limit: silent")
+        self.assertIsNone(self.hook("say hi", self.limited_session("s3", resets=time.time() - 60)), "reset passed")
+        self.assertIsNone(self.hook("say hi", self.limited_session(
+            "s4", error="API Error: Request rejected (429) · overloaded, retrying")), "a passing 429 isn't the limit")
+        self.assertIsNone(self.hook("say hi", self.limited_session("s6", entrypoint="sdk-cli")),
+                          "`claude -p` runs, farmout's own among them, handle their limits themselves")
+
+    def test_on_the_prompt_goes_to_codex_and_claude_catches_up(self):
+        p = self.fo("relay", "on", "-w", "codex")
+        self.assertIn("Relay on", p.stdout)
+        self.assertIn('"UserPromptSubmit"', p.stdout, "no plugin here: how to add the hook")
+        f = self.limited_session()
+        said = self.hook("say relayed", f)
+        self.assertIs(said["continue"], False, "Claude Code shows the prompt as sent and this under it")
+        self.assertRegex(said["stopReason"], r"^Claude is at its usage limit until \d\d:\d\d, so codex answered "
+                                             r"\(farmout session codex-1\):\n\nrelayed$")
+        brief = self.last("codex")["brief"]
+        self.assertIn("continues an earlier conversation (in Claude Code)", brief)
+        ctx = Path(re.search(r"^- (.+context-0001\.md)$", brief, re.M).group(1)).read_text()
+        self.assertIn("fix the cache bug", ctx)
+        self.assertIn("Fixed the TTL check.", ctx)
+        self.assertIn("[Claude Code stopped here: You've hit your 5-hour limit", ctx)
+        self.assertTrue(self.hook("say again", f)["stopReason"].endswith("\n\nagain"))
+        self.assertEqual(len(self.runs()), 2, "the same farmout session")
+        self.assertEqual(self.meta("codex-1")["imported"]["id"], "s1")
+        self.assertIsNone(self.hook("/compact", f), "Claude Code's own commands pass")
+        self.assertEqual(self.json("relay")["relayed"][0]["name"], "codex-1")
+
+        self.limited_session(resets=time.time() - 5)  # the limit is over
+        back = self.hook("what happened?", f)
+        self.assertNotIn("continue", back, "the prompt goes to Claude")
+        ctx = back["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("the user's prompts went to codex through farmout (farmout session codex-1", ctx)
+        self.assertIn('marked "Operation stopped by hook" since then are codex\'s, not yours', ctx)
+        self.assertIn("read-only access and changed no files", ctx)
+        self.assertNotIn("### Reply", ctx, "Claude Code's session file already has the replies it showed")
+        self.assertIn("knows codex answered meanwhile", back["systemMessage"])
+        self.assertIsNone(self.hook("and now?", f), "told once")
+        self.assertEqual(self.json("relay")["relayed"], [])
+
+    def test_an_answer_that_comes_after_claude_code_stopped_waiting(self):
+        self.fo("relay", "on", "-w", "codex", "--wait", "1")
+        f = self.limited_session()
+        said = self.hook("nap 2.5", f)
+        self.assertIn("codex is still on it (farmout session codex-1). `!farmout attach codex-1`", said["stopReason"])
+        wait_until(lambda: self.json("ls")[0]["state"] not in ("running", "queued"), 30)
+        said = self.hook("say next", f)["stopReason"]
+        self.assertIn("(An earlier answer, which came after Claude Code stopped waiting:)\n\n## Turn 3 (codex, ok)", said)
+        self.assertIn("### Prompt\n\nnap 2.5\n\n### Reply\n\nnapped", said)
+        self.assertTrue(said.endswith("so codex answered (farmout session codex-1):\n\nnext"))
+        self.hook("nap 2.5", f)  # still running when Claude is back
+        self.limited_session(resets=time.time() - 5)
+        ctx = self.hook("back?", f)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("codex is still working on «nap 2.5» (`farmout attach codex-1` shows it)", ctx)
+        wait_until(lambda: self.json("ls")[0]["state"] not in ("running", "queued"), 30)
+        ctx = self.hook("and?", f)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("These replies came after Claude Code stopped waiting", ctx)
+        self.assertIn("## Turn 5 (codex, ok)\n\n### Prompt\n\nnap 2.5\n\n### Reply\n\nnapped", ctx)
+        self.assertNotIn("Turn 4", ctx)
+        self.assertIsNone(self.hook("more", f))
+
+    def test_back_early_and_a_new_limit_starts_afresh(self):
+        self.fo("relay", "on", "--write", "-w", "codex")
+        f = self.limited_session()
+        self.hook("say one", f)
+        self.assertTrue(self.meta("codex-1")["write"])
+        self.assertIn("1 relayed conversation go", self.fo("relay", "back").stdout)
+        back = self.hook("hello again", f)
+        self.assertIn("`git status` and `git diff` show what it changed", back["hookSpecificOutput"]["additionalContext"])
+        self.limited_session(resets=time.time() + 7200)  # Claude ran out again later: a new limit, a new session
+        self.assertIn("farmout session codex-2", self.hook("say two", f)["stopReason"])
+        self.fo("relay", "off")
+        self.assertIn("farmout relay on", self.hook("say three", f)["systemMessage"])
+
+    def test_an_older_wording_and_the_plugin_script(self):
+        self.fo("relay", "on", "--isolate", "-w", "codex")
+        self.repo()
+        until = int(time.time()) + 600
+        f = self.limited_session(error=f"Claude AI usage limit reached|{until}")
+        said = self.hook("say from the plugin", f, script=str(SERVER.parent / "hooks" / "relay.py"))
+        self.assertIn(time.strftime("until %H:%M", time.localtime(until)), said["stopReason"])
+        self.assertTrue(self.meta("codex-1")["isolate"])
+        bad = subprocess.run([sys.executable, str(SERVER.parent / "hooks" / "relay.py")], input="not json",
+                             capture_output=True, text=True, env=self.env, timeout=30)
+        self.assertEqual((bad.returncode, bad.stdout), (0, ""), "a hook that fails never stops the prompt")
+        self.assertIsNone(self.hook("say x", self.tmp / "nope.jsonl", sid="s5"), "no session file: nothing to do")
+
+    def test_the_default_worker_is_not_on_the_login_that_ran_out(self):
+        self.fo("relay", "on")
+        cfg = self.home / ".config" / "farmout"
+        (cfg / "settings.json").write_text(json.dumps({"fallback": ["claude", "codex"]}))
+        said = self.hook("say hi", self.limited_session())
+        self.assertIn("so claude answered", said["stopReason"], "a second Claude account is another login")
+        said = self.hook("say hi", self.limited_session("s9"), sid="s9", FARMOUT_CLAUDE_DIR="", FARMOUT_CLAUDE_MAIN="1")
+        self.assertIn("so codex answered", said["stopReason"], "farmout's claude is on the login that ran out")
+        (cfg / "settings.json").write_text(json.dumps({"workers": ["claude"]}))
+        said = self.hook("say hi", self.limited_session("s10"), sid="s10", FARMOUT_CLAUDE_DIR="", FARMOUT_CLAUDE_MAIN="1")
+        self.assertIn("nothing could take over: no worker but claude is ready here", said["stopReason"])
