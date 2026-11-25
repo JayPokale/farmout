@@ -35,7 +35,7 @@ def check(t):
         raise PermissionError("this repo's farmout settings forbid write access")
     if s.get("web") is False and not ENABLED[w].web_off:
         raise PermissionError(f"this repo's farmout settings forbid web access, and {w} can't turn its web search off")
-    return {**t, "web": s.get("web", True), "timeout": t.get("timeout") or s.get("timeout"),
+    return {**t, "web": s.get("web", True), "rules": s.get("rules", True), "timeout": t.get("timeout") or s.get("timeout"),
             "model": t.get("model") or (s.get("models") or {}).get(w)}, s
 
 

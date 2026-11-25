@@ -56,6 +56,8 @@ farmout doctor --live                    # which workers are ready; --live sends
 
 完全不安装也行：`python3 ~/.local/share/farmout/server.py <command>` 就是同一个 CLI。
 
+Tab 补全：在 `~/.bashrc` 里加 `eval "$(farmout completion bash)"`（zsh 则用 `zsh`，加进 `~/.zshrc`），fish 用 `farmout completion fish > ~/.config/fish/completions/farmout.fish`。可以补全命令、选项、worker 和你的会话名。
+
 作为 Claude Code 插件安装（会加入斜杠命令、MCP 工具、读取守卫和撞限转交的钩子；用 `claude plugin update farmout` 保持最新）：
 
 ```bash
@@ -154,7 +156,7 @@ farmout hook install          # review every commit; block it when 2+ models fla
 | `pipe run\|ls\|status\|resume\|approve\|stop` | 流水线及其运行记录 |
 | `stats` | 每个订阅的运行次数、失败次数、用量上限、耗时和 token 数 |
 | `hook install\|uninstall [--pre-push]` | 安装（或卸载）一个审查每次提交或推送的 git 钩子 |
-| `doctor [--live]`, `mcp` | 检查各个 worker；通过 stdio 提供 MCP 工具 |
+| `doctor [--live]`, `mcp`, `completion <shell>` | 检查各个 worker；通过 stdio 提供 MCP 工具；输出 bash、zsh 或 fish 的 tab 补全脚本 |
 
 所有命令都支持 `--json`（方便脚本使用）和 `-C <dir>`。prompt 也可以从 stdin 传入；如果命令里已经给了 prompt，通过管道传入的 stdin 会作为文件一起附上。退出码：0 表示成功，1 表示失败（或触发了审查门禁），130 表示被停止。
 
@@ -312,10 +314,13 @@ fallback = ["codex", "claude:sonnet"]   # 触及上限或登录失效时由谁�
 models = { claude = "sonnet", codex = "gpt-5.6-terra" }   # 每个 worker 的默认模型（`bench --apply` 会写入）
 timeout = 900                   # seconds per task
 redact = true                   # strip credentials from briefs and piped input
+rules = false                   # don't hand workers the project's CLAUDE.md, AGENTS.md or GEMINI.md (see below)
 # [[hooks]] tables (see Hooks); in your own settings only: store = "<index URL or path>"
 ```
 
-两个文件都不能放宽对方的限制：worker 列表取交集，`write` 和 `web` 只要任一方关闭就是关闭，超时以较短的为准。设置总是从主工作区读取，所以 worker 修改它 worktree 里的那份副本不会改变任何东西。
+两个文件都不能放宽对方的限制：worker 列表取交集，`write`、`web` 和 `rules` 只要任一方关闭就是关闭，超时以较短的为准。设置总是从主工作区读取，所以 worker 修改它 worktree 里的那份副本不会改变任何东西。
+
+**一套项目规则。** 每个 CLI 只读自己的说明文件：Claude Code 读 `CLAUDE.md`（没有时读 `AGENTS.md`），Codex 读 `AGENTS.md`，Antigravity 读 `GEMINI.md` 或 `AGENTS.md`，Copilot 全都读。如果某个 worker 的 CLI 一个也读不到你项目里的说明文件（比如只有 `CLAUDE.md` 的仓库交给 Codex），farmout 会把这些文件列进它的任务说明并请它遵守，这样无论任务、审查，还是从 Claude Code 接过来的对话，换到哪个 worker 都守着你的规则。`rules = false` 可以关闭。
 
 仓库根目录下的 **`.farmoutinclude`** 列出隔离 worktree 需要、但被 git 忽略的文件（glob 模式，每行一个，比如 `.env` 或 `config/*.local`）。这些文件会被复制进去，而且绝不会出现在补丁里。
 

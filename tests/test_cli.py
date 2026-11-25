@@ -3296,7 +3296,7 @@ class RelayTest(CliBase):
         f = self.limited_session()
         self.hook("say one", f)
         self.assertTrue(self.meta("codex-1")["write"])
-        self.assertIn("1 relayed conversation go", self.fo("relay", "back").stdout)
+        self.assertIn("Claude is back: the relayed conversation goes to Claude again", self.fo("relay", "back").stdout)
         back = self.hook("hello again", f)
         self.assertIn("`git status` and `git diff` show what it changed", back["hookSpecificOutput"]["additionalContext"])
         self.limited_session(resets=time.time() + 7200)  # Claude ran out again later: a new limit, a new session
@@ -3328,6 +3328,67 @@ class RelayTest(CliBase):
         (cfg / "settings.json").write_text(json.dumps({"workers": ["claude"]}))
         said = self.hook("say hi", self.limited_session("s10"), sid="s10", FARMOUT_CLAUDE_DIR="", FARMOUT_CLAUDE_MAIN="1")
         self.assertIn("nothing could take over: no worker but claude is ready here", said["stopReason"])
+
+
+class CompletionTest(CliBase):
+    """`farmout completion bash|zsh|fish`, made from the parser."""
+
+    def test_bash_completes_commands_options_workers_and_sessions(self):
+        (self.bindir / "farmout").write_text(f"#!/bin/sh\nexec {sys.executable} {SERVER} \"$@\"\n")
+        (self.bindir / "farmout").chmod(0o755)
+        self.fo("run", "codex", "say hi", "-n", "alpha")
+        script = self.tmp / "c.bash"
+        script.write_text(self.fo("completion", "bash").stdout)
+        probe = self.tmp / "probe.sh"
+        probe.write_text('source "$1"; shift\nCOMP_WORDS=("$@"); COMP_CWORD=$((${#COMP_WORDS[@]}-1)); _farmout\n'
+                         'echo "${COMPREPLY[*]}"\n')
+
+        def complete(*words):
+            p = subprocess.run(["bash", str(probe), str(script), "farmout", *words], capture_output=True, text=True,
+                               env=self.env, timeout=60)
+            self.assertEqual(p.stderr, "")
+            return p.stdout.split()
+        self.assertEqual(complete("rel"), ["relay"])
+        self.assertIn("alpha", complete("send", ""), "session names, as you type")
+        self.assertEqual(complete("send", "alpha", "--b"), ["--bg"])
+        self.assertIn("codex", complete("send", "alpha", "-w", ""))
+        self.assertIn("auto", complete("run", ""))
+        self.assertEqual(complete("pipe", "run", "--s"), ["--set"])
+        self.assertEqual(complete("relay", ""), ["on", "off", "back", "hook"])
+        if shutil.which("zsh"):
+            zsh = self.tmp / "c.zsh"
+            zsh.write_text(self.fo("completion", "zsh").stdout)
+            self.assertEqual(subprocess.run(["zsh", "-n", str(zsh)], capture_output=True).returncode, 0)
+        fish = self.fo("completion", "fish").stdout
+        self.assertIn("complete -c farmout -n __fish_use_subcommand -a 'relay'", fish)
+        self.assertIn("complete -c farmout -n '__fish_seen_subcommand_from send' -a '(farmout _names 2>/dev/null)'", fish)
+        self.assertIn("-l worker -r -a 'antigravity codex", fish)
+        self.assertEqual(self.fo("_names").stdout, "alpha\n")
+
+
+class RulesTest(CliBase):
+    """A project's instructions for AI agents reach the workers whose CLI wouldn't read them."""
+
+    def test_claude_md_reaches_codex_but_not_claude_or_copilot(self):
+        self.repo()
+        (self.work / "CLAUDE.md").write_text("Always use tabs.\n")
+        (self.work / "sub").mkdir()
+        self.fo("run", "codex", "say hi", cwd=self.work / "sub")
+        brief = self.last("codex")["brief"]
+        self.assertIn("This project's instructions for AI coding agents are in ../CLAUDE.md (listed below), written "
+                      "for another agent: read them and follow them too.", brief)
+        self.assertIn(f"- {self.work / 'CLAUDE.md'}", brief)
+        for w in ("claude", "copilot"):
+            self.fo("run", w, "say hi", cwd=self.work / "sub")
+            self.assertNotIn("CLAUDE.md", self.last(w)["brief"], f"{w} reads it by itself")
+        (self.work / "AGENTS.md").write_text("Use tabs.\n")
+        self.fo("run", "codex", "say hi")
+        self.assertNotIn("instructions for AI coding agents", self.last("codex")["brief"], "codex reads AGENTS.md")
+        (self.work / "AGENTS.md").unlink()
+        (self.work / ".farmout").mkdir(exist_ok=True)
+        (self.work / ".farmout" / "settings.json").write_text(json.dumps({"rules": False}))
+        self.fo("run", "codex", "say hi")
+        self.assertNotIn("CLAUDE.md", self.last("codex")["brief"], "rules = false turns it off")
 
 
 if __name__ == "__main__":

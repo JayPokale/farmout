@@ -58,6 +58,8 @@ farmout doctor --live                    # which workers are ready; --live sends
 
 No install at all also works: `python3 ~/.local/share/farmout/server.py <command>` is the same CLI.
 
+Tab completion: `eval "$(farmout completion bash)"` in `~/.bashrc` (or `zsh` in `~/.zshrc`), or `farmout completion fish > ~/.config/fish/completions/farmout.fish`. It completes commands, options, workers and your session names.
+
 As a Claude Code plugin (adds the slash commands, the MCP tools, the read guard and the limit relay's hook; `claude plugin update farmout` keeps it current):
 
 ```bash
@@ -156,7 +158,7 @@ A real `farmout review`, replayed: one change, four subscriptions, one merged ta
 | `pipe run\|ls\|status\|resume\|approve\|stop` | pipelines and their runs |
 | `stats` | runs, failures, usage limits, time and tokens per subscription |
 | `hook install\|uninstall [--pre-push]` | a git hook that reviews each commit or push |
-| `doctor [--live]`, `mcp` | check the workers; serve the MCP tools on stdio |
+| `doctor [--live]`, `mcp`, `completion <shell>` | check the workers; serve the MCP tools on stdio; print tab completion for bash, zsh or fish |
 
 Every command but `mcp` takes `--json` for scripts and `-C <dir>`. Prompts can come from stdin; with a prompt given, piped stdin goes along as a file. Exit codes: 0 ok, 1 failed (or a review gate tripped), 130 stopped.
 
@@ -314,10 +316,13 @@ fallback = ["codex", "claude:sonnet"]   # who takes over at a usage limit or a l
 models = { claude = "sonnet", codex = "gpt-5.6-terra" }   # each worker's default model (`bench --apply` writes it)
 timeout = 900                   # seconds per task
 redact = true                   # strip credentials from briefs and piped input
+rules = false                   # don't hand workers the project's CLAUDE.md, AGENTS.md or GEMINI.md (see below)
 # [[hooks]] tables (see Hooks); in your own settings only: store = "<index URL or path>"
 ```
 
-Neither file can loosen the other: worker lists intersect, `write` and `web` are off if either says so, and the shorter timeout wins. The project's `fallback` replaces yours and its `models` override yours (an explicit `--model` or `worker:model` always wins). Settings are always read from the main working tree, so a worker editing its worktree's copy changes nothing.
+Neither file can loosen the other: worker lists intersect, `write`, `web` and `rules` are off if either says so, and the shorter timeout wins. The project's `fallback` replaces yours and its `models` override yours (an explicit `--model` or `worker:model` always wins). Settings are always read from the main working tree, so a worker editing its worktree's copy changes nothing.
+
+**One set of project rules.** Each CLI reads its own instruction file: Claude Code `CLAUDE.md` (or `AGENTS.md` when there's none), Codex `AGENTS.md`, Antigravity `GEMINI.md` or `AGENTS.md`, Copilot all of them. When a worker's CLI would read none of the files your project has (a `CLAUDE.md`-only repository and Codex, say), farmout lists them in its brief and asks it to follow them, so a task, a review or a conversation carried on from Claude Code keeps your rules on any worker. `rules = false` turns that off.
 
 **`.farmoutinclude`** at the repo root lists ignored files that isolated worktrees need (glob patterns, one per line, e.g. `.env` or `config/*.local`). They are copied in, and never end up in a patch.
 

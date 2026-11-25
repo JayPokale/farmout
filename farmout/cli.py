@@ -225,8 +225,10 @@ def cmd_relay(a):
             relay.keep(rec["session"], {**rec, "back": now})
         cfg = relay.config()
         if not a.json:
-            print(f"Claude is back: {len(recs)} relayed conversation{'s' * (len(recs) != 1)} go to Claude again, which "
-                  f"is told what happened meanwhile with your next prompt there." if recs else "Nothing is being relayed.")
+            n = len(recs)
+            print(f"Claude is back: {'the relayed conversation goes' if n == 1 else f'{n} relayed conversations go'} to "
+                  f"Claude again, which is told what happened meanwhile with your next prompt there." if recs
+                  else "Nothing is being relayed.")
             return 0
     else:
         cfg = relay.config()
@@ -980,6 +982,12 @@ def cmd_hook(a):
           "2+ models flag a high-severity problem. Skip once: FARMOUT_SKIP=1.")
 
 
+def cmd_completion(a):
+    from . import completion
+    sys.stdout.write(completion.script(a.shell, parser(), WORKERS))
+    return 0
+
+
 def cmd_doctor(a):
     from .mcp import run_all
     print(f"farmout {VERSION} on Python {sys.version.split()[0]}; sessions and runs in {STATE}, results in {OUT_DIR}")
@@ -1281,8 +1289,12 @@ def parser():
     d = add("doctor", "check which workers are installed (and, with --live, logged in)", cmd_doctor)
     d.add_argument("--live", action="store_true")
     add("mcp", "serve the MCP tools on stdio (what `python3 server.py` does)", None, ())
+    cp = add("completion", "tab completion for your shell: eval \"$(farmout completion bash)\" in ~/.bashrc (zsh the "
+             "same), or farmout completion fish > ~/.config/fish/completions/farmout.fish", cmd_completion, ())
+    cp.add_argument("shell", choices=("bash", "zsh", "fish"))
     for hidden in ("_runner", "_pipe"):
         sub.add_parser(hidden).add_argument("target")
+    sub.add_parser("_names")
     return p
 
 
@@ -1312,6 +1324,9 @@ def main(argv=None):
         return sessions.runner_main(a.target)
     if a.cmd == "_pipe":
         return pipeline.runner_main(a.target)
+    if a.cmd == "_names":  # for tab completion
+        print("\n".join(sessions.names()))
+        return 0
     action = {"pipe": "pcmd", "hook": "hcmd", "skill": "scmd", "store": "tcmd", "tool": "tcmd"}.get(a.cmd)
     if action and not getattr(a, action, None):
         p.parse_args([a.cmd, "--help"])

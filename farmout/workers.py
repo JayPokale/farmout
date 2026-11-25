@@ -37,6 +37,27 @@ def opt(flag, value):
     return [flag, value] if value else []
 
 
+# Where projects keep instructions for AI agents, and which of those each CLI reads by itself.
+RULES = ("AGENTS.md", "CLAUDE.md", ".claude/CLAUDE.md", "GEMINI.md", ".github/copilot-instructions.md")
+READS = {"claude": {"CLAUDE.md", ".claude/CLAUDE.md", "AGENTS.md"}, "codex": {"AGENTS.md"},
+         "antigravity": {"GEMINI.md", "AGENTS.md"},
+         "copilot": {"AGENTS.md", "CLAUDE.md", "GEMINI.md", ".github/copilot-instructions.md"}, "deepseek": {"AGENTS.md"}}
+
+
+def rules(worker, cwd):
+    """The project's instructions for AI agents when this worker's CLI reads none of them by itself (a CLAUDE.md
+    for codex or antigravity, a GEMINI.md for claude): from cwd, else the repository's main folder."""
+    if worker not in READS:
+        return []
+    from .config import project_root
+    found = {}
+    for root in (cwd, str(project_root(cwd))):
+        for name in RULES:
+            if name not in found and os.path.isfile(os.path.join(root, name)):
+                found[name] = os.path.join(root, name)
+    return [] if READS[worker] & set(found) else list(found.values())
+
+
 def prep(t):
     """Resolve cwd and files; directories outside cwd must be granted to the worker explicitly."""
     cwd = os.path.abspath(os.path.expanduser(t.get("cwd") or os.getcwd()))
@@ -44,8 +65,13 @@ def prep(t):
     missing = [f for f in files if not os.path.exists(f)]
     if missing:
         raise FileNotFoundError(", ".join(missing))
+    own = [f for f in rules(t.get("worker"), cwd) if f not in files] if t.get("rules", True) else []
+    files += own
     extra = sorted({f if os.path.isdir(f) else os.path.dirname(f) for f in files} - {cwd})
-    brief = t["prompt"] + ("\n\nFiles:\n" + "\n".join(f"- {f}" for f in files) if files else "")
+    brief = t["prompt"] + ("\n\nThis project's instructions for AI coding agents are in "
+                           + ", ".join(os.path.relpath(f, cwd) for f in own) + " (listed below), written for "
+                           "another agent: read them and follow them too." if own else "")
+    brief += "\n\nFiles:\n" + "\n".join(f"- {f}" for f in files) if files else ""
     return cwd, files, [x for d in extra for x in ("--add-dir", d)], brief
 
 
