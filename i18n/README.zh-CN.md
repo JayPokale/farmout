@@ -385,7 +385,7 @@ farmout 同时也是一个 MCP 服务器（`farmout mcp`，或 `python3 server.p
 "agent_servers": { "farmout": { "type": "custom", "command": "farmout", "args": ["acp"] } }
 ```
 
-每个对话线程就是一个 farmout 会话（`farmout ls`、`log`、`send` 和 `ui` 都能看到），所以某个 worker 撞上用量上限时，线程会连同对话交给下一个。线程有两个选项：**Worker**（`auto` 即第一个就绪的，或者你指定一个）和 **Files**（默认只读；可以改文件；或者在私有 git worktree 里改，用 `farmout apply` 应用补丁）。你在提问里链接的文件会作为文件交给 worker。回答在 worker 完成后一次性出现（不是逐字流式输出），期间有一行进度；取消会停止这一轮。
+每个对话线程就是一个 farmout 会话（`farmout ls`、`log`、`send` 和 `ui` 都能看到），所以某个 worker 撞上用量上限时，线程会连同对话交给下一个。线程有两个选项：**Worker**（`auto` 即第一个就绪的，或者你指定一个）和 **Files**（默认只读；可以改文件；或者在私有 git worktree 里改，用 `farmout apply` 应用补丁）。你在提问里链接的文件会作为文件交给 worker。能列出 agent 历史会话的编辑器（比如 Zed 的线程历史）会看到你的 farmout 对话，包括来自命令行、`ui`、`continue` 和转交的那些；打开一个就会重放它，并在里面接着聊。回答在 worker 完成后一次性出现（不是逐字流式输出），期间有一行进度；取消会停止这一轮。
 
 ## 安全
 

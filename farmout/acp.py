@@ -3,6 +3,8 @@ Neovim and Emacs) start `farmout acp` and talk to your subscriptions through it.
 session, so it gets the same fallback at a usage limit, and `farmout ui`, `log` and `send` see it too. The worker,
 and whether it may edit files, are session settings the editor shows as pickers. JSON-RPC 2.0 over stdio, one
 message per line (ACP protocol version 1)."""
+import base64
+import datetime
 import json
 import os
 import sys
@@ -15,6 +17,8 @@ from .workers import ENABLED, lane
 
 PROTOCOL = 1
 ACCESS = {"read": "Read only", "write": "Edit files", "isolate": "Own git worktree"}
+PAGE = 50  # sessions per session/list page
+REPLAY_CONTEXT = 20_000  # characters of a conversation's earlier part (a branch's, or an imported one) replayed
 
 
 class Missing(KeyError):
@@ -65,6 +69,7 @@ class Agent:
                 self.reply(mid, error={"code": -32600, "message": "initialize first"})
             return
         fn = {"initialize": self.initialize, "authenticate": self.authenticate, "session/new": self.new,
+              "session/list": self.list, "session/load": self.load,
               "session/set_config_option": self.set_option, "session/set_mode": self.set_mode,
               "session/prompt": self.prompt, "session/cancel": self.cancel}.get(method)
         if fn is None:
@@ -107,7 +112,7 @@ class Agent:
     def initialize(self, params):
         self.ready = True
         return {"protocolVersion": PROTOCOL,
-                "agentCapabilities": {"loadSession": False,
+                "agentCapabilities": {"loadSession": True, "sessionCapabilities": {"list": {}},
                                       "promptCapabilities": {"image": False, "audio": False, "embeddedContext": True}},
                 "authMethods": [], "agentInfo": {"name": "farmout", "title": "farmout", "version": VERSION}}
 
@@ -138,6 +143,58 @@ class Agent:
         return {"sessionId": sid, "configOptions": self.options(chat),
                 "modes": {"currentModeId": chat["access"],
                           "availableModes": [{"id": k, "name": v} for k, v in ACCESS.items()]}}
+
+    def list(self, params):
+        """farmout's conversations (not review, ask or race runs), newest first; with cwd, that folder's only."""
+        cwd = params.get("cwd")
+        if cwd is not None and not isinstance(cwd, str):
+            raise KeyError("cwd must be a string")
+        try:
+            start = int(base64.b64decode(params["cursor"]).decode()) if params.get("cursor") else 0
+        except (ValueError, TypeError):
+            raise KeyError("cursor") from None
+        rows = []
+        for name in sessions.names():
+            try:
+                meta = sessions.load(name)
+            except (KeyError, OSError, ValueError):
+                continue
+            if meta.get("group") or (cwd and os.path.realpath(meta["cwd"]) != os.path.realpath(cwd)):
+                continue
+            rows.append(sessions.summary(meta) | {"title": title(name, meta)})
+        rows.sort(key=lambda r: -(r["updated"] or 0))
+        page = rows[start:start + PAGE]
+        out = {"sessions": [{"sessionId": r["name"], "cwd": r["cwd"], "title": r["title"],
+                             "updatedAt": iso(r["updated"])} for r in page]}
+        if start + PAGE < len(rows):
+            out["nextCursor"] = base64.b64encode(str(start + PAGE).encode()).decode()
+        return out
+
+    def load(self, params):
+        """Open a farmout conversation in this editor: its turns replayed, then prompts go on in it."""
+        name = params["sessionId"]
+        if not isinstance(name, str):
+            raise KeyError("sessionId must be a string")
+        try:
+            meta = sessions.load(name)
+        except (KeyError, OSError, ValueError):
+            raise Missing(name) from None
+        self.chats[name] = chat = {"cwd": meta["cwd"], "worker": "auto",  # auto: the session keeps its own worker
+                                   "access": "isolate" if meta.get("isolate") else "write" if meta.get("write") else "read",
+                                   "name": name, "gen": 0, "lock": threading.Lock()}
+        ctx = sessions.path(name) / "context.md"
+        if ctx.exists():
+            text = ctx.read_text()
+            if len(text) > REPLAY_CONTEXT:
+                text = f"{text[:REPLAY_CONTEXT]}\n\n[… the rest is in {ctx}]"
+            self.update(name, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text":
+                               "(The conversation before this session's own turns:)\n\n" + text}})
+        for r in sessions.turns(name):
+            self.update(name, {"sessionUpdate": "user_message_chunk", "content": {"type": "text", "text": r["prompt"]}})
+            if r["status"] != "running":
+                self.update(name, {"sessionUpdate": "agent_message_chunk",
+                                   "content": {"type": "text", "text": flows.text(r).strip()}})
+        return {"configOptions": self.options(chat)}
 
     def chat(self, params):
         sid = params["sessionId"]
@@ -223,6 +280,17 @@ class Agent:
             said += f"\n\n_{notes}_"
         self.update(sid, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": said}})
         return {"stopReason": "end_turn"}
+
+
+def title(name, meta):
+    first = next(iter(sessions.turns(name)), None)
+    said = sessions.gist(first["prompt"], 80) if first else ""
+    origin = (meta.get("imported") or {}).get("label")
+    return f"{said} (from {origin})" if origin and said else said or name
+
+
+def iso(t):
+    return datetime.datetime.fromtimestamp(t or 0, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def words(blocks):

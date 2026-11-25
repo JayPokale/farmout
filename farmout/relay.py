@@ -211,6 +211,7 @@ def hook(event, now=None):
     with only_one(sid) as mine:
         if not mine:
             return None
+        rec = record(sid)  # again: another hook on this prompt may have finished just before
         if limit and limit["until"] > now:
             cfg = config()
             if not cfg.get("on"):
@@ -218,8 +219,10 @@ def hook(event, now=None):
                                          f"relay on` sends what you type next to another subscription, with this "
                                          f"conversation; or run `!farmout continue --write`."}
             cwd = event.get("cwd") if isinstance(event.get("cwd"), str) and os.path.isdir(event["cwd"]) else os.getcwd()
-            return relay(event, sid, cwd, prompt, record(sid), limit, cfg, now)
-        return catch_up(sid, record(sid) or rec)
+            return relay(event, sid, cwd, prompt, rec, limit, cfg, now)
+        if not (rec and rec.get("name")):
+            return None  # told already, by the other hook
+        return catch_up(sid, rec)
 
 
 def turn_text(r, base):

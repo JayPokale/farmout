@@ -387,7 +387,7 @@ Other heads: `codex mcp add farmout -- farmout mcp`, `copilot mcp add farmout --
 "agent_servers": { "farmout": { "type": "custom", "command": "farmout", "args": ["acp"] } }
 ```
 
-Each thread is a farmout session (`farmout ls`, `log`, `send` and `ui` see it), so a worker at its usage limit hands the thread to the next one, conversation included. Two pickers set a thread up: **Worker** (`auto`, the first ready one, or one you name) and **Files** (read only, the default; edit files; or a private git worktree whose patch you `farmout apply`). Files you link in the prompt go to the worker as files. An answer arrives when the worker finishes (no word-by-word streaming), with a progress row meanwhile; cancel stops the turn.
+Each thread is a farmout session (`farmout ls`, `log`, `send` and `ui` see it), so a worker at its usage limit hands the thread to the next one, conversation included. Two pickers set a thread up: **Worker** (`auto`, the first ready one, or one you name) and **Files** (read only, the default; edit files; or a private git worktree whose patch you `farmout apply`). Files you link in the prompt go to the worker as files. Editors that list an agent's past sessions (Zed's thread history) see your farmout conversations, those from the CLI, `ui`, `continue` and the relay included, and opening one replays it and goes on in it. An answer arrives when the worker finishes (no word-by-word streaming), with a progress row meanwhile; cancel stops the turn.
 
 ## Safety
 

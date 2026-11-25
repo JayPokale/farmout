@@ -12,6 +12,7 @@ import select
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import threading
@@ -3142,7 +3143,8 @@ class ContinueTest(CliBase):
                said("session.error", message="You've hit your rate limit. Try again later."), {"type": "x", "data": "odd"})
         events("cp2", "You are running in non-interactive mode and have no way to communicate with the user.",
                said("user.message", content="a farmout brief"))
-        self.assertEqual([(r["from"], r["id"]) for r in self.json("continue", "--list")], [("copilot", "cp1")])
+        self.assertEqual([(r["from"], r["id"], r["title"]) for r in self.json("continue", "--list")],
+                         [("copilot", "cp1", "rename the flag")])
         self.fo("continue", "--from", "copilot", "-w", "codex", "say carried on", "-n", "cp")
         ctx = Path(re.search(r"^- (.+context-0001\.md)$", self.last("codex")["brief"], re.M).group(1)).read_text()
         for want in ("# A conversation from Copilot CLI (session cp1", "rename the flag", "Renaming.", "- bash: rg old_flag",
@@ -3317,29 +3319,59 @@ class RelayTest(CliBase):
         cfg = self.home / ".claude" / "settings.json"
         cfg.parent.mkdir(parents=True, exist_ok=True)
         cfg.write_text(json.dumps({"model": "opus", "hooks": {"UserPromptSubmit": [
-            {"hooks": [{"type": "command", "command": "my-own-hook"}]}]}}))
+            {"hooks": [{"type": "command", "command": "my-own-hook"}, {"type": "command", "command": "my-wrapper relay hook"}]}]}}))
         self.assertIn("Added the relay hook to", self.fo("relay", "install").stdout)
         data = json.loads(cfg.read_text())
         self.assertEqual(data["model"], "opus")
         cmds = [h["command"] for e in data["hooks"]["UserPromptSubmit"] for h in e["hooks"]]
-        self.assertEqual(cmds[0], "my-own-hook")
-        self.assertTrue(cmds[1].endswith(" relay hook"))
+        self.assertEqual(cmds[:2], ["my-own-hook", "my-wrapper relay hook"], "someone else's \"relay hook\" isn't ours")
+        self.assertTrue(cmds[2].endswith(" relay hook"))
         self.assertEqual(data["hooks"]["UserPromptSubmit"][1]["hooks"][0]["timeout"], 900)
+        entries = json.loads(cfg.read_text())["hooks"]["UserPromptSubmit"]
+        entries[0]["hooks"].append(entries.pop(1)["hooks"][0])  # ours, in an entry with the user's own hooks
+        cfg.write_text(json.dumps({"model": "opus", "hooks": {"UserPromptSubmit": entries}}))
         self.assertIn("already in", self.fo("relay", "install").stdout)
         self.assertTrue(self.json("relay")["installed"])
         self.assertNotIn("relay install", self.fo("relay", "on").stdout, "installed: nothing more to do")
-        p = subprocess.run(cmds[1], shell=True, input=json.dumps({"session_id": "x", "transcript_path": "/nope",
+        p = subprocess.run(cmds[2], shell=True, input=json.dumps({"session_id": "x", "transcript_path": "/nope",
                            "prompt": "hi"}), capture_output=True, text=True, env=self.env, timeout=60)
         self.assertEqual((p.returncode, p.stdout), (0, ""), "the command it installed runs")
         self.assertIn("Took the relay hook out of", self.fo("relay", "uninstall").stdout)
         self.assertEqual(json.loads(cfg.read_text())["hooks"]["UserPromptSubmit"],
-                         [{"hooks": [{"type": "command", "command": "my-own-hook"}]}])
+                         [{"hooks": [{"type": "command", "command": "my-own-hook"},
+                                     {"type": "command", "command": "my-wrapper relay hook"}]}], "only ours goes")
         self.assertTrue((cfg.parent / "settings.json.farmout-backup").exists())
         cfg.write_text("{not json")
         self.assertIn("isn't valid JSON", self.fo("relay", "install", rc=1).stderr)
         self.assertEqual(cfg.read_text(), "{not json", "left as it is")
+        dots = self.tmp / "dotfiles"
+        dots.mkdir()
+        (dots / "claude-settings.json").write_text(json.dumps({"model": "opus"}))
+        os.chmod(dots / "claude-settings.json", 0o600)
+        cfg.unlink()
+        cfg.symlink_to(dots / "claude-settings.json")
+        victim = self.tmp / "victim.txt"
+        victim.write_text("keep me")
+        (cfg.parent / "settings.json.farmout-backup").unlink()
+        (cfg.parent / "settings.json.farmout-backup").symlink_to(victim)
+        self.fo("relay", "install")
+        self.assertTrue(cfg.is_symlink(), "a dotfiles link stays a link")
+        self.assertIn("relay hook", (dots / "claude-settings.json").read_text())
+        self.assertEqual(stat.S_IMODE((dots / "claude-settings.json").stat().st_mode), 0o600, "permissions kept")
+        self.assertEqual(victim.read_text(), "keep me", "a link where the backup goes is replaced, not followed")
+        self.assertFalse((cfg.parent / "settings.json.farmout-backup").is_symlink())
+        cfg.unlink()
         cfg.write_text(json.dumps({"enabledPlugins": {"farmout@farmout": True}}))
         self.assertIn("has the hook already", self.fo("relay", "install").stdout)
+        local = self.work / ".claude"
+        local.mkdir()
+        (local / "settings.local.json").write_text(json.dumps({"enabledPlugins": {"farmout@farmout": False}}))
+        self.assertFalse(self.json("relay")["plugin"], "this project turned it off: the most specific file wins")
+        cfg.write_text("{}")
+        (local / "settings.local.json").write_text(json.dumps({"enabledPlugins": {"farmout@farmout": True}}))
+        self.assertTrue(self.json("relay")["plugin"])
+        self.assertIn("Added the relay hook", self.fo("relay", "install").stdout,
+                      "on in one project only: other projects still need the hook in your own settings")
 
     def test_doctor_says_where_the_relay_stands(self):
         self.assertIn("`farmout relay on --write` sends what you type next", self.fo("doctor").stdout)
@@ -3534,7 +3566,8 @@ class AcpTest(CliBase):
         self.start()
         init = self.answer(self.say("initialize", {"protocolVersion": 1, "clientCapabilities": {}}))["result"]
         self.assertEqual(init["protocolVersion"], 1)
-        self.assertFalse(init["agentCapabilities"]["loadSession"])
+        self.assertTrue(init["agentCapabilities"]["loadSession"])
+        self.assertEqual(init["agentCapabilities"]["sessionCapabilities"], {"list": {}})
         new = self.answer(self.say("session/new", {"cwd": str(self.work), "mcpServers": []}))["result"]
         sid = new["sessionId"]
         self.assertEqual([o["id"] for o in new["configOptions"]], ["worker", "access"])
@@ -3609,6 +3642,36 @@ class AcpTest(CliBase):
         self.assertEqual(r["result"], {"stopReason": "end_turn"}, "not stuck on the removed session")
         [row] = self.json("ls")
         self.assertEqual(row["turns"], 1, "a fresh session")
+
+    def test_list_and_load_farmout_conversations(self):
+        self.fo("run", "codex", "say alpha one", "-n", "alpha")
+        self.fo("send", "alpha", "say alpha two")
+        (self.tmp / "other").mkdir()
+        self.fo("run", "copilot", "say elsewhere", "-n", "beta", cwd=self.tmp / "other")
+        self.fo("review", rc=None)  # a review run's sessions aren't conversations
+        self.start()
+        self.answer(self.say("initialize", {"protocolVersion": 1}))
+        listed = self.answer(self.say("session/list", {}))["result"]
+        self.assertEqual([x["sessionId"] for x in listed["sessions"]], ["beta", "alpha"], "newest first")
+        self.assertEqual(listed["sessions"][1]["title"], "say alpha one")
+        self.assertRegex(listed["sessions"][1]["updatedAt"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        self.assertNotIn("nextCursor", listed)
+        here = self.answer(self.say("session/list", {"cwd": str(self.work)}))["result"]["sessions"]
+        self.assertEqual([x["sessionId"] for x in here], ["alpha"])
+        self.assertEqual(self.answer(self.say("session/list", {"cursor": "%%%"}))["error"]["code"], -32602)
+        self.seen.clear()
+        loaded = self.answer(self.say("session/load", {"sessionId": "alpha", "cwd": str(self.work), "mcpServers": []}))
+        self.assertIn("configOptions", loaded["result"])
+        replay = [(m["params"]["update"]["sessionUpdate"], m["params"]["update"]["content"]["text"]) for m in self.seen]
+        self.assertEqual(replay, [("user_message_chunk", "say alpha one"), ("agent_message_chunk", "alpha one"),
+                                  ("user_message_chunk", "say alpha two"), ("agent_message_chunk", "alpha two")])
+        done = self.answer(self.say("session/prompt", {"sessionId": "alpha", "prompt": [{"type": "text",
+                                                                                          "text": "say three"}]}))
+        self.assertEqual(done["result"], {"stopReason": "end_turn"})
+        self.assertEqual(self.meta("alpha")["turns"], 3, "the loaded conversation goes on")
+        self.assertEqual(self.last("codex")["name"], "codex", "on its own worker")
+        self.assertEqual(self.answer(self.say("session/load", {"sessionId": "nope", "cwd": str(self.work),
+                                                               "mcpServers": []}))["error"]["code"], -32002)
 
     def test_cancel_stops_the_turn(self):
         self.start()

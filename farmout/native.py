@@ -207,6 +207,9 @@ def title(s):
                 elif o.get("type") == "last-prompt" and text_of(o.get("lastPrompt")):
                     got["prompt"] = o["lastPrompt"]
             return got.get("title") or got.get("prompt") or ""
+        if s["from"] == "copilot":
+            return next((d["content"] for d in (o.get("data") for o in first(s["file"], 200) if o.get("type") ==
+                         "user.message") if isinstance(d, dict) and text_of(d.get("content")).strip()), "")
         for o in lines(s["file"]):
             p = o.get("payload")
             if (o.get("type") == "response_item" and isinstance(p, dict) and p.get("type") == "message"

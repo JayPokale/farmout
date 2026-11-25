@@ -195,18 +195,23 @@ def claude_hooks():
     return entries if isinstance(entries, list) else []
 
 
-def plugin_on(cwd):
-    """Is the farmout plugin enabled in Claude Code, for you or this project (so its relay hook runs)?"""
-    root = project_root(cwd)
-    for f in (native.claude_home() / "settings.json", root / ".claude" / "settings.json",
-              root / ".claude" / "settings.local.json"):
+def plugin_on(cwd=None):
+    """Is the farmout plugin enabled in Claude Code here (so its relay hook runs)? The most specific settings file
+    that says wins: this project's settings.local.json, then its settings.json, then yours. Without cwd, yours only
+    (what `farmout relay install`, which writes your own settings, has to go by)."""
+    files = [native.claude_home() / "settings.json"]
+    if cwd:
+        root = project_root(cwd)
+        files = [root / ".claude" / "settings.local.json", root / ".claude" / "settings.json"] + files
+    for f in files:
         try:
             data = json.loads(f.read_text())
         except (OSError, ValueError):
             continue
         on = data.get("enabledPlugins") if isinstance(data, dict) else None
-        if isinstance(on, dict) and any(k.split("@")[0] == "farmout" and v for k, v in on.items()):
-            return True
+        said = [bool(v) for k, v in on.items() if k.split("@")[0] == "farmout"] if isinstance(on, dict) else []
+        if said:
+            return any(said)
     return False
 
 
@@ -218,53 +223,90 @@ def hook_command():
     return f"{shlex.quote(sys.executable)} -m farmout relay hook"
 
 
+def our_command(command):
+    """Is this a command `farmout relay install` writes: `farmout relay hook`, `<python> -m farmout relay hook`, or
+    `<python> <a farmout clone>/server.py relay hook`?"""
+    try:
+        parts = shlex.split(str(command))
+    except ValueError:
+        return False
+    if parts[-2:] != ["relay", "hook"]:
+        return False
+    rest = parts[:-2]
+    if rest == ["farmout"] or (len(rest) == 3 and rest[1:] == ["-m", "farmout"]):
+        return True
+    return (len(rest) == 2 and os.path.basename(rest[1]) == "server.py"
+            and os.path.isfile(os.path.join(os.path.dirname(rest[1]), "farmout", "relay.py")))
+
+
 def ours(entry):
-    """Is this UserPromptSubmit entry the relay hook `farmout relay install` adds?"""
-    return isinstance(entry, dict) and any(isinstance(h, dict) and str(h.get("command", "")).endswith(" relay hook")
+    """Does this UserPromptSubmit entry hold the relay hook `farmout relay install` adds?"""
+    return isinstance(entry, dict) and any(isinstance(h, dict) and our_command(h.get("command", ""))
                                            for h in entry.get("hooks") or [])
 
 
 def install_hook(remove=False):
     """Add the relay hook to (or take it out of) Claude Code's own settings.json; a copy of the file as it was is
-    kept beside it. Returns what was done, as a sentence."""
-    f = native.claude_home() / "settings.json"
-    try:
-        data = json.loads(f.read_text()) if f.exists() else {}
-    except ValueError as e:
-        raise ValueError(f"{f} isn't valid JSON ({e}); left as it is") from None
-    if not isinstance(data, dict) or not isinstance(data.get("hooks", {}), dict):
-        raise ValueError(f"{f}: unexpected shape; left as it is")
-    entries = data.setdefault("hooks", {}).setdefault("UserPromptSubmit", [])
-    if not isinstance(entries, list):
-        raise ValueError(f"{f}: hooks.UserPromptSubmit isn't a list; left as it is")
-    mine = [e for e in entries if ours(e)]
-    if remove:
-        if not mine:
-            return f"No relay hook in {f}."
-        data["hooks"]["UserPromptSubmit"] = [e for e in entries if not ours(e)]
-        if not data["hooks"]["UserPromptSubmit"]:
-            del data["hooks"]["UserPromptSubmit"]
-        if not data["hooks"]:
-            del data["hooks"]
-    else:
-        if mine:
-            return f"The relay hook is already in {f}."
-        entries.append({"hooks": [{"type": "command", "command": hook_command(), "timeout": relay.HOOK_TIMEOUT}]})
-    if f.exists():
-        shutil.copy2(f, f.with_name("settings.json.farmout-backup"))
-    f.parent.mkdir(parents=True, exist_ok=True)
-    tmp = f.with_name(f"settings.json.farmout-{os.getpid()}")
-    tmp.write_text(json.dumps(data, indent=2) + "\n")
-    tmp.replace(f)
-    return f"{'Took the relay hook out of' if remove else 'Added the relay hook to'} {f} (the file as it was: " \
-           f"settings.json.farmout-backup beside it)."
+    kept beside it. A symlinked settings.json is edited where it points; its permissions are kept; a change saved
+    meanwhile by someone else is read again rather than overwritten. Returns what was done, as a sentence."""
+    link = native.claude_home() / "settings.json"
+    f = Path(os.path.realpath(link))
+    for _ in range(3):
+        try:
+            raw = f.read_bytes() if f.exists() else b""
+            data = json.loads(raw) if raw.strip() else {}
+        except ValueError as e:
+            raise ValueError(f"{link} isn't valid JSON ({e}); left as it is") from None
+        if not isinstance(data, dict) or not isinstance(data.get("hooks", {}), dict):
+            raise ValueError(f"{link}: unexpected shape; left as it is")
+        entries = data.setdefault("hooks", {}).setdefault("UserPromptSubmit", [])
+        if not isinstance(entries, list):
+            raise ValueError(f"{link}: hooks.UserPromptSubmit isn't a list; left as it is")
+        mine = [e for e in entries if ours(e)]
+        if remove:
+            if not mine:
+                return f"No relay hook in {link}."
+            kept = []
+            for e in entries:  # only our hook goes; others in the same entry stay
+                if ours(e):
+                    e = {**e, "hooks": [h for h in e["hooks"] if not (isinstance(h, dict) and our_command(h.get("command", "")))]}
+                    if not e["hooks"]:
+                        continue
+                kept.append(e)
+            data["hooks"]["UserPromptSubmit"] = kept
+            if not data["hooks"]["UserPromptSubmit"]:
+                del data["hooks"]["UserPromptSubmit"]
+            if not data["hooks"]:
+                del data["hooks"]
+        else:
+            if mine:
+                return f"The relay hook is already in {link}."
+            entries.append({"hooks": [{"type": "command", "command": hook_command(), "timeout": relay.HOOK_TIMEOUT}]})
+        f.parent.mkdir(parents=True, exist_ok=True)
+        mode = stat.S_IMODE(f.stat().st_mode) if f.exists() else 0o600
+        if raw:  # the file as it was, beside it (written fresh: a link left there is replaced, not followed)
+            backup = link.with_name(f"settings.json.farmout-backup.{os.getpid()}")
+            backup.write_bytes(raw)
+            os.chmod(backup, mode)
+            backup.replace(link.with_name("settings.json.farmout-backup"))
+        tmp = f.with_name(f"settings.json.farmout-{os.getpid()}")
+        tmp.write_text(json.dumps(data, indent=2) + "\n")
+        os.chmod(tmp, mode)
+        now = f.read_bytes() if f.exists() else b""
+        if now != raw:  # changed while we worked: start again from what's there now
+            tmp.unlink()
+            continue
+        tmp.replace(f)
+        return f"{'Took the relay hook out of' if remove else 'Added the relay hook to'} {link} (the file as it " \
+               f"was: settings.json.farmout-backup beside it)."
+    raise ValueError(f"{link} kept changing while farmout edited it; left as it is, try again")
 
 
 def cmd_relay(a):
     if a.action == "hook":
         return relay.main()
     if a.action in ("install", "uninstall"):
-        if a.action == "install" and plugin_on(a.cwd):
+        if a.action == "install" and plugin_on():
             print("The farmout plugin is on in Claude Code and has the hook already; nothing added.")
             return 0
         print(install_hook(remove=a.action == "uninstall"))
