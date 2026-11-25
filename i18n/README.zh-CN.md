@@ -104,6 +104,8 @@ farmout send dates --model opus                      # the same conversation on 
 farmout send dates -w codex                          # or on another worker, which gets the conversation so far
 farmout continue --write                             # Claude Code 撞上限了？同一段对话换个订阅接着做
 farmout relay on --write                             # 或者在撞上限的 Claude Code 里继续输入：Codex 在那里回答
+farmout copy                                         # 把最新回答里的一条命令完整复制出来
+farmout paste                                        # 把剪贴板里的图片存成文件（在 Claude Code 里：!farmout paste）
 
 # Sessions talk to each other
 farmout send dates --attach review-1-claude "Fix what this review found"

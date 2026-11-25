@@ -1141,12 +1141,13 @@ def answers_here(a):
     newest Claude Code, Codex or Copilot CLI session in this folder, else the newest farmout conversation here."""
     if a.session:
         recs = [r for r in sessions.turns(a.session) if r["status"] == "ok"]
-        return [flows.text(r) for r in recs][-10:], f"farmout session {a.session}"
+        return [graph.clean(flows.text(r)) for r in recs][-10:], f"farmout session {a.session}"  # no escapes
     found = native.find(a.cwd, a.source)
     if found:
         s = found[0]
         _, turns = native.read(s)
-        return ["\n\n".join(t["reply"]) for t in turns if t["reply"]][-10:], f"your {s['label']} session {s['id'][:8]}"
+        return ([graph.clean("\n\n".join(t["reply"])) for t in turns if t["reply"]][-10:],  # a terminal escape in
+                f"your {s['label']} session {s['id'][:8]}")  # an answer can't act on your terminal or hide what's copied
     here = [sessions.load(n) for n in sessions.names()]
     here = sorted((m for m in here if m["cwd"] == a.cwd and not m.get("group")), key=lambda m: -(m.get("created") or 0))
     if not here:

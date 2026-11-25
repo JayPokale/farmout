@@ -369,10 +369,18 @@ def deliver(name, prompt, files=(), attach=(), cwd=None, wait=True, timeout=None
 def wait_msg(name, msg_id, timeout=None, poll=0.15):
     deadline, kicked, gone = time.time() + timeout if timeout else None, time.time(), 0
     while True:
-        rec = find(name, msg_id)
+        queued = any(f.name.endswith(f"-{msg_id}.json") for f in pending(name))
+        rec = find(name, msg_id)  # read after the inbox: a runner records a message before taking it out
         if rec and rec["status"] != "running":
             return rec
-        if not busy(name):
+        if not rec and not queued:
+            # neither queued nor run: taken back (`farmout stop`, or an editor's cancel), even while another
+            # message's turn runs. Checked a few times, to be sure
+            gone += 1
+            if gone > 3:
+                return {"id": msg_id, "n": None, "status": "cancelled", "worker": None,
+                        "error": "the message was dropped before it ran (farmout stop, or a cancel)"}
+        elif not busy(name):
             # the runner may have finished the turn and exited between the two checks: it writes the final record
             # before it exits, so read it once more before calling the turn interrupted
             rec = find(name, msg_id) or rec
@@ -380,12 +388,7 @@ def wait_msg(name, msg_id, timeout=None, poll=0.15):
                 return rec
             if rec:  # its runner died mid-turn
                 return {**rec, "status": "interrupted", "error": f"the runner stopped mid-turn; see {path(name) / 'runner.log'}"}
-            if not any(f.name.endswith(f"-{msg_id}.json") for f in pending(name)):
-                gone += 1  # neither queued nor run: `farmout stop` dropped it (checked a few times, to be sure)
-                if gone > 3:
-                    return {"id": msg_id, "n": None, "status": "cancelled", "worker": None,
-                            "error": "the message was dropped before it ran (farmout stop)"}
-            elif time.time() - kicked > 3:  # a runner that died before taking the message: start another
+            if time.time() - kicked > 3:  # a runner that died before taking the message: start another
                 kick(name)
                 kicked = time.time()
         if deadline and time.time() > deadline:
@@ -613,6 +616,20 @@ def stop(name):
     for f in pending(name):
         f.unlink(missing_ok=True)
     pid = runner_pid(name)
+    if pid:
+        os.kill(pid, signal.SIGTERM)
+    return pid is not None
+
+
+def cancel(name, msg_id):
+    """Take back one message: out of the queue if it waits, its turn stopped if it runs. The messages queued behind
+    it stay (another front end's, say), and a new runner takes them. True if there was anything to take back."""
+    for f in pending(name):
+        if f.name.endswith(f"-{msg_id}.json"):
+            f.unlink(missing_ok=True)
+            return True
+    rec = find(name, msg_id)
+    pid = runner_pid(name) if rec and rec.get("status") == "running" else None
     if pid:
         os.kill(pid, signal.SIGTERM)
     return pid is not None

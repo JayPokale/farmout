@@ -72,6 +72,10 @@ def carry(s, worker, model=None, cwd=None, name=None, write=False, isolate=False
         raise ValueError(f"{s['label']} session {s['id']} has nothing to carry on from yet")
     text, secrets = hooks.redact(native.transcript(s, summary, turns)) if turns or summary else ("", 0)
     cwd = s["cwd"] if os.path.isdir(s["cwd"]) else cwd
+    if fallback is None:  # the usual order, without the login that ran out: farmout never saw that limit itself
+        from . import engine
+        fallback = [f"{w}:{m}" if m else w for w, m in engine.fallbacks({"worker": worker, "cwd": cwd})
+                    if not same_login(s["from"], w)]
     meta = sessions.create(worker, cwd, name=name, write=write, isolate=isolate, model=model, effort=effort,
                            fallback=fallback, base=len(turns))
     meta["imported"] = {"from": s["from"], "label": s["label"], "id": s["id"], "file": s["file"], "turns": len(turns)}
@@ -143,6 +147,15 @@ def keep(sid, rec):
     tmp = record_path(sid).with_suffix(f".{os.getpid()}")
     tmp.write_text(json.dumps(rec))
     tmp.replace(record_path(sid))
+
+
+def retire(sid, rec):
+    """Done with this limit's relay. After `farmout relay back`, a stub remembers it: the session file still ends in
+    that limit until Claude answers, and the next prompt mustn't be relayed again."""
+    if rec.get("back"):
+        keep(sid, {k: rec[k] for k in ("session", "back", "said", "said_done", "since") if k in rec})
+    else:
+        forget(sid)
 
 
 def forget(sid):
@@ -495,7 +508,7 @@ def catch_up(sid, rec):
         keep(sid, {**rec, "announced": True, "told": done[-1]["n"] if done else told,
                    "shown": sorted(shown | {r["id"] for r in done})})
     else:
-        forget(sid)
+        retire(sid, rec)
     if not parts:
         return None
     return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "\n\n".join(parts)},

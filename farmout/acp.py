@@ -223,8 +223,8 @@ class Agent:
     def cancel(self, params):
         sid, chat = self.chat(params)
         chat["gen"] += 1  # every prompt sent before this one is cancelled, running or waiting its turn
-        if chat["name"]:
-            sessions.stop(chat["name"])
+        if chat["name"] and chat.get("msg"):  # only this thread's message: another front end's stay queued
+            sessions.cancel(chat["name"], chat["msg"])
         return None
 
     def prompt(self, params):
@@ -265,8 +265,9 @@ class Agent:
         self.update(sid, {"sessionUpdate": "tool_call", "toolCallId": call, "title": f"{worker} is working (farmout "
                           f"session {name})", "kind": "think", "status": "in_progress"})
         msg = sessions.deliver(name, text, files, cwd=chat["cwd"], wait=False, switch=switch)
+        chat["msg"] = msg["id"]
         if cancelled():  # the cancel came while the message was being queued
-            sessions.stop(name)
+            sessions.cancel(name, msg["id"])
         rec = sessions.wait_msg(name, msg["id"])
         who = rec.get("worker") or worker
         self.update(sid, {"sessionUpdate": "tool_call_update", "toolCallId": call,

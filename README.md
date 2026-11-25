@@ -106,6 +106,8 @@ farmout send dates --model opus                      # the same conversation on 
 farmout send dates -w codex                          # or on another worker, which gets the conversation so far
 farmout continue --write                             # Claude Code hit its limit? the same conversation carries on elsewhere
 farmout relay on --write                             # or keep typing in Claude Code at its limit: Codex answers there
+farmout copy                                         # copy a command from the newest answer, whole
+farmout paste                                        # the clipboard's image as a file (in Claude Code: !farmout paste)
 
 # Sessions talk to each other
 farmout send dates --attach review-1-claude "Fix what this review found"
