@@ -149,8 +149,8 @@ def keep(sid, rec):
         now = record(sid)
         if now and (now.get("since") or 0) > (rec.get("since") or 0):
             return
-        if now and now.get("since") == rec.get("since"):
-            rec = {**rec, **{k: now[k] for k in ("back", "test") if (now.get(k) or 0) > (rec.get(k) or 0)}}
+        if now and now.get("since") == rec.get("since"):  # only `relay back` and `relay test` change these
+            rec = {**rec, **{k: now[k] for k in ("back", "test") if k in now}}
         save_record(sid, rec)
 
 
@@ -180,8 +180,8 @@ def retire(sid, rec):
     be relayed again."""
     with writing(sid):
         now = record(sid) or {}
-        if now and now.get("since") != rec.get("since"):
-            return  # a newer relay has the record now
+        if now and (now.get("since") != rec.get("since") or (now.get("test") or 0) > (rec.get("test") or 0)):
+            return  # a newer relay has the record now, or a `relay test` came meanwhile
         back = max(rec.get("back") or 0, now.get("back") or 0)
         if back:
             save_record(sid, {**{k: rec[k] for k in ("session", "said", "said_done", "since") if k in rec},

@@ -476,7 +476,9 @@ def turn(name, msg, key, inbox_file=None):
         if STOP["asked"]:  # stopped while the turn was set up
             raise KeyboardInterrupt
         res = engine.execute(t, key, where, on_iso=keep_iso)
+        STOP["working"] = False  # wrapping up from here: a stop now is let go
     except Exception as e:  # a bug or an I/O error: record it, and the runner goes on to the next message
+        STOP["working"] = False
         res = {"ok": False, "worker": worker, "text": f"{type(e).__name__}: {e}", "notes": [], "iso": None,
                "secs": round(time.time() - rec["started"], 1)}
     except BaseException:  # stopped
@@ -615,6 +617,7 @@ def stopping(signum, frame):
     set up stops it as the worker would start; one while a turn is wrapped up comes too late and is let go, so the
     answer and the worker's conversation id are kept."""
     if STOP["working"]:
+        STOP["working"] = False  # a second one mustn't break off taking the worker down
         raise KeyboardInterrupt
     STOP["asked"] = True
 

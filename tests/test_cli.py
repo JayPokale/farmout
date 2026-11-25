@@ -118,6 +118,14 @@ class SessionTest(CliBase):
                           "sessions.load = load\n" + run.format(id="c"))
         self.assertEqual(late.split(), ["ok", "nid-9"])
 
+    def test_review10_a_second_stop_doesnt_break_off_taking_the_worker_down(self):
+        out = in_farmout(self.env, "import os, signal\nsignal.signal(signal.SIGTERM, sessions.stopping)\n"
+                                   "sessions.STOP['working'] = True  # the worker runs\n"
+                                   "for _ in range(2):\n    try:\n        os.kill(os.getpid(), signal.SIGTERM)\n"
+                                   "        time.sleep(0.1)\n        print('let go')\n"
+                                   "    except KeyboardInterrupt:\n        print('stopped')")
+        self.assertEqual(out.splitlines(), ["stopped", "let go"])
+
     def test_review8_cancel_never_stops_another_messages_turn(self):
         self.fo("run", "codex", "say a", "-n", "s")
         in_farmout(self.env, "sessions.write_json(sessions.path('s') / 'turns' / '0002.json', {'n': 2, 'id': 'old', "
@@ -3670,6 +3678,18 @@ class RelayTest(CliBase):
         self.assertEqual(get(), new, "the older relay's copy doesn't overwrite the newer relay")
         in_farmout(self.env, f"relay.retire('s9', json.loads({old!r}))")
         self.assertEqual(get(), new, "nor does its catch-up retire it")
+
+    def test_review10_a_relay_test_written_meanwhile_is_neither_undone_nor_retired(self):
+        get = lambda: json.loads(in_farmout(self.env, "print(json.dumps(relay.record('s9')))"))
+        in_farmout(self.env, "relay.keep('s9', {'session': 's9', 'since': time.time(), 'name': 'codex-1'})")
+        self.fo("relay", "test", "--minutes", "60", CLAUDE_CODE_SESSION_ID="s9")
+        old = json.dumps(get())  # a hook's copy, then a shorter test
+        self.fo("relay", "test", "--minutes", "1", CLAUDE_CODE_SESSION_ID="s9")
+        short = get()["test"]
+        in_farmout(self.env, f"relay.keep('s9', {{**json.loads({old!r}), 'shown': ['m1']}})")
+        self.assertEqual(get()["test"], short, "the shorter test stands")
+        in_farmout(self.env, f"relay.retire('s9', {{**json.loads({old!r}), 'test': 1.0}})")  # the old test's catch-up
+        self.assertEqual(get()["test"], short, "the test that came meanwhile isn't retired")
 
     def test_review8_after_back_a_test_or_a_new_limit_is_a_relay_of_its_own(self):
         self.fo("relay", "on", "-w", "codex")
