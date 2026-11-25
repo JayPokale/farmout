@@ -749,9 +749,9 @@ class App:
             from . import clip
             try:
                 data, ext = clip.image()
-            except ValueError as e:
+                b.setdefault("files", []).append(str(clip.save(data, ext)))
+            except (ValueError, OSError) as e:
                 return self.say(str(e), "err")
-            b.setdefault("files", []).append(str(clip.save(data, ext)))
             self.say(f"Attached the clipboard's image ({len(b['files'])} attached)", "ok")
         elif b["field"] == "lane" and k in ("up", "down"):
             ch = b["choices"]

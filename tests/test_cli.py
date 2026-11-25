@@ -1938,13 +1938,18 @@ class UiTest(CliBase):
         self.assertEqual(self.call(port, "/api/paste", None, {"type": "image/png", "data": "eA=="})[0], 403)
         secret = self.tmp / "secret.txt"
         secret.write_text("not for workers")
+        link = Path(path).parent / "link.png"
+        link.symlink_to(secret)  # a link in the pastes folder to a file outside it
         status, _, raw = self.call(port, "/api/send", key, {"mode": "new", "prompt": "say hi", "worker": "codex",
-                                                              "files": [path, str(secret)]})
+                                                              "files": [path, str(secret), str(link),
+                                                                        ".cache/farmout/pastes/" + Path(path).name]})
         self.assertEqual(status, 200, raw)
         wait_until(lambda: self.runs(), 20)
         brief = self.last("codex")["brief"]
         self.assertIn(path, brief)
         self.assertNotIn("secret.txt", brief, "only pasted images ride along; any other path is dropped")
+        self.assertNotIn("link.png", brief, "a link out of the pastes folder too")
+        self.assertEqual(brief.count(".cache/farmout/pastes/"), 1, "a relative path isn't taken")
         argv = self.last("codex")["argv"]
         self.assertEqual(argv[argv.index("-i") + 1], path)
 
@@ -3928,13 +3933,18 @@ class AccountsTest(CliBase):
             "copilot-2": {"worker": "copilot", "home": str(self.tmp / "copilot-2")},
             "claude-3": {"worker": "claude", "home": str(self.tmp / "nope")},
             "Bad Name": {"worker": "codex", "home": "x"}, "codex": {"worker": "codex", "home": "x"},
-            "odd": {"worker": "api", "home": "x"}}}))
+            "odd": {"worker": "api", "home": "x"}, "rel": {"worker": "codex", "home": "logins/codex2"}}}))
         doc = self.fo("doctor").stdout
         self.assertRegex(doc, r"ready    codex-work +codex on the login in .*codex-work")
         self.assertIn(f"missing  claude-3     no folder {self.tmp / 'nope'} yet: log in once with "
                       f"`CLAUDE_CONFIG_DIR={self.tmp / 'nope'} claude`", doc)
         for bad in ("Bad Name", "codex ", "odd "):
             self.assertIn(f"ignored  {bad}", doc)
+        self.assertIn("ignored  rel          accounts.rel in your settings: home must be the full path", doc)
+        (self.work / "CLAUDE.md").write_text("Use tabs.\n")
+        self.fo("run", "codex-work", "say ruled")
+        self.assertIn("Use tabs.", self.last("codex")["brief"], "an account of codex gets the rules codex would")
+        (self.work / "CLAUDE.md").unlink()
         self.fo("run", "codex-work", "say hi", "-n", "w")
         self.assertEqual(self.last("codex")["env"].get("CODEX_HOME"), str(self.tmp / "codex-work"))
         self.fo("run", "agy-2", "say hi")
@@ -3987,6 +3997,22 @@ class ClipTest(CliBase):
         self.assertEqual(got, [("cd site\nnpm install --no-audit \\\n    --prefer-offline", "bash"),
                                ("print('hi')", "python"), ("farmout relay on --write", "")])
 
+    def test_review6_odd_markdown_an_empty_read_and_two_pastes_in_a_second(self):
+        sys.path.insert(0, str(SERVER.parent))
+        from farmout import clip
+        text = ("1. Run:\n   ```bash\n   $ npm install\n   $ for f in *.py; do\n   >   echo $f\n   > done\n   ok\n   ```\n\n"
+                "Then `git add .` and `cd ..` and set `ttl = 5`.\r\n```sh\r\ngit status\r\n````\r\n")
+        self.assertEqual([c["text"] for c in clip.commands(text)],
+                         ["npm install\nfor f in *.py; do\n  echo $f\ndone", "git status", "git add .", "cd .."])
+        env = self.clipboard(b"\x89PNG")
+        (self.bindir / "wl-paste").write_text('#!/bin/sh\nif [ "$1" = --list-types ]; then echo image/png; exit 0; fi\nexit 1\n')
+        self.assertIn("the clipboard holds no image", self.fo("paste", rc=1, **env).stderr, "a failed read isn't an image")
+        shots = self.tmp / "shots"
+        shots.mkdir()
+        one, two = clip.save(b"a", ".png", str(shots)), clip.save(b"b", ".png", str(shots))
+        self.assertNotEqual(one, two)
+        self.assertEqual((one.read_bytes(), two.read_bytes()), (b"a", b"b"))
+
     def test_copy_from_your_claude_code_session_and_from_farmout(self):
         env = self.clipboard()
         d = self.home / ".claude" / "projects" / "-work"
@@ -4008,6 +4034,14 @@ class ClipTest(CliBase):
         self.fo("run", "codex", "say use `git log --oneline -3`", "-n", "talk")
         self.fo("copy", "1", "-s", "talk", **env)
         self.assertEqual((self.tmp / "copied").read_text(), "git log --oneline -3")
+
+    def test_doctor_says_when_no_clipboard_tool_is_there(self):
+        bare = self.fo("doctor", PATH=str(self.bindir)).stdout
+        self.assertIn("Clipboard: no copy tool, so `farmout copy` and `y` in the ui go through your terminal (OSC 52); "
+                      "nothing to read an image with, so `farmout paste` and Ctrl+P can't work. Install wl-clipboard "
+                      "(Wayland) or xclip (X11).", bare)
+        self.clipboard()
+        self.assertNotIn("Clipboard:", self.fo("doctor", PATH=str(self.bindir)).stdout)
 
     def test_paste_saves_the_clipboards_image(self):
         png = b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR" + struct.pack(">II", 2, 3) + b"\x08\x02\x00\x00\x00"

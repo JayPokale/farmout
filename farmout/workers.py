@@ -79,7 +79,7 @@ def prep(t):
     if missing:
         raise FileNotFoundError(", ".join(missing))
     extra = sorted({f if os.path.isdir(f) else os.path.dirname(f) for f in files} - {cwd})
-    brief = t["prompt"] + (rules_note(rules(t.get("worker"), cwd), cwd) if t.get("rules", True) else "")
+    brief = t["prompt"] + (rules_note(rules(base_of(t.get("worker")), cwd), cwd) if t.get("rules", True) else "")
     brief += "\n\nFiles:\n" + "\n".join(f"- {f}" for f in files) if files else ""
     return cwd, files, [x for d in extra for x in ("--add-dir", d)], brief
 
@@ -313,8 +313,8 @@ def accounts():
                    f"the name must be new, lowercase letters, digits and dashes")
         if not problem and base not in HOMES:
             problem = f"worker must be one of {', '.join(HOMES)}"
-        elif not problem and not isinstance(home, str):
-            problem = "home must be the folder its CLI keeps this login in"
+        elif not problem and not (isinstance(home, str) and os.path.isabs(os.path.expanduser(home))):
+            problem = "home must be the full path of the folder its CLI keeps this login in"
         out[str(name)] = ({"worker": base, "home": os.path.expanduser(home) if isinstance(home, str) else None,
                            "var": HOMES.get(base)}, problem)
     return out

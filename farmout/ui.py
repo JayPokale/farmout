@@ -31,7 +31,8 @@ def pastes():
 def pasted_files(files):
     """The pasted images a message may carry: files under ~/.cache/farmout/pastes only, never another path."""
     root = pastes() + os.sep
-    return [f for f in files or [] if isinstance(f, str) and os.path.realpath(f).startswith(root) and os.path.isfile(f)]
+    real = [os.path.realpath(f) for f in files or [] if isinstance(f, str) and os.path.isabs(f)]
+    return [f for f in real if f.startswith(root) and os.path.isfile(f)]  # the real file: no link to swap later
 PREVIEW = 600  # characters of each question in the tree; the whole turn comes with /api/turn
 
 
@@ -545,6 +546,7 @@ function renderComposer() {
     const prompt = text.value.trim();
     if (!prompt) return toast("Write a message first", true);
     go.disabled = true;
+    await att.ready();
     try {
       const r = await api("/api/send", {mode: mode === "edit" ? "branch" : mode, edit: mode === "edit", session: s.name, n: t.n,
         prompt, worker: worker.value || null, model: model.value.trim() || null, files: att.files});
@@ -574,22 +576,25 @@ function renderComposer() {
 }
 function pasting(text, holder) {
   // an image pasted into the message: kept by farmout, sent with the message
-  const files = [];
+  const files = [], pending = [];
   const chips = el("p", {class: "explain"});
   holder.files = files;
   holder.chips = chips;
+  holder.ready = () => Promise.all(pending);  // a paste still uploading goes with the message
   text.addEventListener("paste", async e => {
     const items = [...(e.clipboardData && e.clipboardData.items || [])].filter(i => i.kind === "file" && i.type.startsWith("image/"));
     if (!items.length) return;
     e.preventDefault();
     for (const item of items) {
       const blob = item.getAsFile();
-      const data = await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.readAsDataURL(blob); });
-      try {
-        const r = await api("/api/paste", {type: blob.type, data});
-        files.push(r.path);
-        chips.textContent = "📎 " + files.length + " image" + (files.length === 1 ? "" : "s") + " attached";
-      } catch (err) { toast(err.message, true); }
+      pending.push((async () => {
+        const data = await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.readAsDataURL(blob); });
+        try {
+          const r = await api("/api/paste", {type: blob.type, data});
+          files.push(r.path);
+          chips.textContent = "📎 " + files.length + " image" + (files.length === 1 ? "" : "s") + " attached";
+        } catch (err) { toast(err.message, true); }
+      })());
     }
   });
   return chips;
@@ -604,6 +609,7 @@ function newForm() {
     const prompt = text.value.trim();
     if (!prompt) return toast("Write a message first", true);
     go.disabled = true;
+    await att.ready();
     try {
       const r = await api("/api/send", {mode: "new", prompt, worker: worker.value, model: model.value.trim() || null,
         files: att.files});
