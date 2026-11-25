@@ -160,8 +160,8 @@ export default function Hero() {
             <p className="max-w-2xl text-base leading-relaxed text-fg/80 sm:text-lg">
               Hand long reads and reviews to the other AI subscriptions you pay for (Codex, Gemini, GitHub
               Copilot, DeepSeek, a second Claude, local models) so your main model&apos;s quota lasts. When one
-              hits its limit, the task moves to the next and the conversation goes with it. From your
-              terminal, or from inside Claude Code.
+              hits its limit, the task moves to the next and the conversation goes with it. In Claude Code,
+              keep typing at the limit: another subscription answers there, and Claude catches up after.
             </p>
           </motion.div>
 

@@ -11,9 +11,10 @@ const MAIN = [
   {
     icon: "limit",
     what: "Keep working at the limit",
-    name: "fallback · send -w",
-    body: "When a subscription hits its usage limit or its login lapses, the task or conversation moves to the next ready model with the turns so far, instead of failing. Switch on purpose too. With one subscription, its models fill the lanes, and bench tells you which one earns your quota.",
+    name: "fallback · relay · send -w",
+    body: "When a subscription hits its usage limit or its login lapses, the task or conversation moves to the next ready model with the turns so far, instead of failing. In Claude Code itself, keep typing at the limit: another subscription answers there with the whole conversation, and Claude catches up when it's back. With one subscription, its models fill the lanes, and bench tells you which one earns your quota.",
     demo: [
+      ["Claude Code out? keep typing", "farmout relay on --write"],
       ["out of Claude? it goes on", 'farmout run claude "Plan the cache layer" -n cache'],
       ["switch on purpose", 'farmout send cache -w codex "What did we decide?"'],
       ["one subscription", "farmout review -w claude:opus,claude:sonnet"],
