@@ -6,6 +6,7 @@ the limit only gets a line saying it exists. `farmout continue` uses carry() to 
 import contextlib
 import datetime
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -46,21 +47,29 @@ def pick(s, cwd, asked=None):
                          f"e.g. -w {s['from']}:<another model>") from None
 
 
-def carry(s, worker, model=None, cwd=None, name=None, write=False, isolate=False, effort=None, fallback=None):
+def carry(s, worker, model=None, cwd=None, name=None, write=False, isolate=False, effort=None, fallback=None,
+          empty_ok=False):
     """A new farmout session that carries on native session s: its prompts, replies and actions (credentials
     replaced) become the session's context.md, and its turns are numbered on from them. (meta, summary, turns,
-    secrets replaced)."""
+    secrets replaced). empty_ok: a session with nothing in it yet (the relay, right after `relay test`) starts
+    a session without context instead of failing."""
     from . import hooks, sessions
-    summary, turns = native.read(s)
-    if not turns and not summary:
+    try:
+        summary, turns = native.read(s)
+    except OSError:  # Claude Code writes the file with the first prompt
+        if not empty_ok:
+            raise
+        summary, turns = None, []
+    if not turns and not summary and not empty_ok:
         raise ValueError(f"{s['label']} session {s['id']} has nothing to carry on from yet")
-    text, secrets = hooks.redact(native.transcript(s, summary, turns))
+    text, secrets = hooks.redact(native.transcript(s, summary, turns)) if turns or summary else ("", 0)
     cwd = s["cwd"] if os.path.isdir(s["cwd"]) else cwd
     meta = sessions.create(worker, cwd, name=name, write=write, isolate=isolate, model=model, effort=effort,
                            fallback=fallback, base=len(turns))
     meta["imported"] = {"from": s["from"], "label": s["label"], "id": s["id"], "file": s["file"], "turns": len(turns)}
     sessions.save(meta)
-    (sessions.path(meta["name"]) / "context.md").write_text(text)
+    if text:
+        (sessions.path(meta["name"]) / "context.md").write_text(text)
     return meta, summary, turns, secrets
 
 
@@ -200,16 +209,21 @@ def clock(t):
 
 
 @contextlib.contextmanager
-def only_one(sid):
-    """Whether this process may act for the session now: two hooks can run on one prompt (the plugin's and one you
-    added by hand), and only one may relay it or tell Claude."""
+def only_one(sid, wait=0.0):
+    """The session's lock, waiting up to `wait` seconds for it; yields whether this process got it. A prompt waits
+    (the StopFailure hook may be starting the carry-on); the StopFailure hook doesn't (a relay is under way)."""
     RECORDS.mkdir(parents=True, exist_ok=True)
+    deadline = time.time() + wait
     with open(record_path(sid).with_suffix(".lock"), "a") as f:
-        try:
-            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            yield False
-            return
+        while True:
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.time() >= deadline:
+                    yield False
+                    return
+                time.sleep(0.05)
         try:
             yield True
         finally:
@@ -235,10 +249,13 @@ def hook(event, now=None):
         limit = None
     if not (limit and limit["until"] > now) and not (rec and rec.get("name")):
         return None
-    with only_one(sid) as mine:
+    said = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+    with only_one(sid, wait=HOOK_TIMEOUT - 60) as mine:
         if not mine:
             return None
-        rec = record(sid)  # again: another hook on this prompt may have finished just before
+        rec = record(sid)  # again: another hook may have changed it meanwhile
+        if rec and rec.get("said") == said and (rec.get("said_at") or 0) >= now - 5:
+            return None  # the other hook on this same prompt (the plugin's and one added by hand) has it
         if limit and limit["until"] > now:
             cfg = config()
             if not cfg.get("on"):
@@ -246,32 +263,50 @@ def hook(event, now=None):
                                          f"another subscription, with this conversation; or run `!farmout continue "
                                          f"--write`."}
             cwd = event.get("cwd") if isinstance(event.get("cwd"), str) and os.path.isdir(event["cwd"]) else os.getcwd()
-            return relay(event, sid, cwd, prompt, rec, limit, cfg, now)
+            return relay(event, sid, cwd, prompt, rec, limit, cfg, now, said)
         if not (rec and rec.get("name")):
             return None  # told already, by the other hook
         return catch_up(sid, rec)
 
 
-def changed_since(cwd, since):
-    """Files git sees as changed or new in cwd's checkout, touched since `since` (Unix seconds); [] outside git."""
+def git_changes(cwd):
+    """{path: status} of what git sees changed or new in cwd's checkout (paths from its top), and the top; or
+    ({}, None) outside git."""
     import subprocess
     try:
-        out = subprocess.run(["git", "-C", cwd, "status", "--porcelain", "-uall", "-z"], capture_output=True,
-                             text=True, timeout=10)
         top = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"], capture_output=True, text=True,
-                             timeout=10).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return []
+                             errors="surrogateescape", timeout=10).stdout.strip()
+        out = subprocess.run(["git", "-C", cwd, "status", "--porcelain", "-uall", "-z"], capture_output=True,
+                             text=True, errors="surrogateescape", timeout=10)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return {}
     if out.returncode or not top:
+        return {}
+    fields, found = out.stdout.split("\0"), {}
+    i = 0
+    while i < len(fields):
+        f = fields[i]
+        if len(f) > 3 and f[2] == " ":
+            found[f[3:]] = f[:2]
+            if f[0] in "RC":  # a rename or copy: the next field is the path it came from
+                i += 1
+        i += 1
+    return {"top": top, "paths": found}
+
+
+def changed_since(cwd, since, before=None):
+    """Paths git sees changed or new now that weren't before the relay began, or that were touched since `since`."""
+    now = git_changes(cwd)
+    if not now:
         return []
-    paths = [x[3:] for x in out.stdout.split("\0") if len(x) > 3 and x[2] == " "]
-    keep = []
-    for p in paths:
+    old, keep = (before or {}).get("paths") or {}, []
+    for p, st in now["paths"].items():
         try:
-            if os.path.getmtime(os.path.join(top, p)) >= since - 1:
-                keep.append(p)
-        except OSError:
-            keep.append(p)  # deleted since
+            touched = os.path.getmtime(os.path.join(now["top"], p)) >= since - 1
+        except OSError:  # gone: deleted since, unless it was deleted before
+            touched = p not in old
+        if touched or p not in old or old[p] != st:
+            keep.append(p)
     return keep
 
 
@@ -292,8 +327,13 @@ def session_for(path, sid, cwd, rec, limit, cfg, now):
         s = {"from": "claude", "label": native.LABELS["claude"], "file": path, "cwd": cwd, "id": sid, "updated": now}
         mode = cfg.get("mode") if cfg.get("mode") in MODES else "read"
         worker, model = pick(s, cwd, cfg.get("worker"))
-        meta = carry(s, worker, model, cwd, write=mode == "write", isolate=mode == "isolate")[0]
-        name, rec = meta["name"], {"session": sid, "file": path, "cwd": cwd, "since": now, "told": 0, "shown": []}
+        meta = carry(s, worker, model, cwd, write=mode == "write", isolate=mode == "isolate", empty_ok=True)[0]
+        old = rec or {}
+        rec = {"session": sid, "file": path, "cwd": cwd, "since": now, "told": 0, "shown": [],
+               "before": git_changes(cwd)}  # what was changed already, so the catch-up names only the new
+        if (old.get("test") or 0) > now and not old.get("back"):
+            rec["test"] = old["test"]  # `relay test` goes on for its minutes
+        name = meta["name"]
     return name, {**rec, "name": name, "until": limit["until"], "limit": limit["text"]}
 
 
@@ -309,17 +349,20 @@ def stopped(event, now=None):
         return None
     limit = limit_in(path)
     said = event.get("last_assistant_message")
-    if not limit and event.get("error") == "rate_limit" and isinstance(said, str) and USAGE.search(said):
+    if (not limit or limit["until"] <= now) and event.get("error") == "rate_limit" and isinstance(said, str) \
+            and USAGE.search(said):
         from .workers import reset_in  # the session file doesn't show it yet: Claude Code's own words
         secs = reset_in(said)
         limit = {"until": now + (secs if secs is not None else 900), "text": said, "at": now, "kind": None}
     if not limit or limit["until"] <= now:
         return None
     cwd = event.get("cwd") if isinstance(event.get("cwd"), str) and os.path.isdir(event["cwd"]) else os.getcwd()
-    with only_one(sid) as mine:
+    with only_one(sid) as mine:  # held: a relay is under way already
         if not mine:
             return None
         rec = record(sid)
+        if rec and (rec.get("back") or 0) >= limit["at"]:
+            return None  # `farmout relay back` came after this limit
         if (rec and rec.get("name") and sessions.path(rec["name"]).is_dir()
                 and (rec.get("until") or 0) >= now - GRACE and not rec.get("back")):
             return None  # this limit is being relayed already
@@ -332,7 +375,7 @@ def stopped(event, now=None):
     return None
 
 
-def relay(event, sid, cwd, prompt, rec, limit, cfg, now):
+def relay(event, sid, cwd, prompt, rec, limit, cfg, now, said=None):
     """Send the prompt to the farmout session carrying this conversation on (started on the first one) and answer
     with its reply. Claude Code shows the prompt as sent and the reply under it, and keeps both in its session file,
     so Claude sees them when it's back."""
@@ -342,6 +385,7 @@ def relay(event, sid, cwd, prompt, rec, limit, cfg, now):
         name, rec = session_for(event["transcript_path"], sid, cwd, rec, limit, cfg, now)
     except (ValueError, KeyError, OSError) as e:
         return {"continue": False, "stopReason": f"{head}, and nothing could take over: {e}"}
+    rec = {**rec, "said": said, "said_at": now}
     base, shown = sessions.load(name).get("base") or 0, set(rec.get("shown") or [])
     late = [r for r in sessions.turns(name) if r.get("id") not in shown and r["status"] != "running"]
     msg = sessions.deliver(name, hooks.redact(prompt)[0], cwd=cwd, wait=False)  # like the conversation, always
@@ -386,7 +430,7 @@ def catch_up(sid, rec):
                  "read": f"{worker} had read-only access and changed no files."}
         mode = "isolate" if meta.get("isolate") else "write" if meta.get("write") else "read"
         if mode == "write":
-            changed = changed_since(meta["cwd"], rec.get("since") or 0)
+            changed = changed_since(meta["cwd"], rec.get("since") or 0, rec.get("before"))
             if changed:
                 files["write"] += (" Changed since then: " + ", ".join(changed[:30]) + (" …" if len(changed) > 30 else "")
                                    + ".")

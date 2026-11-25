@@ -3377,6 +3377,8 @@ class RelayTest(CliBase):
         local.mkdir()
         (local / "settings.local.json").write_text(json.dumps({"enabledPlugins": {"farmout@farmout": False}}))
         self.assertFalse(self.json("relay")["plugin"], "this project turned it off: the most specific file wins")
+        self.assertIn("Added the relay hook", self.fo("relay", "install").stdout, "off here: the hook is needed")
+        self.fo("relay", "uninstall")
         cfg.write_text("{}")
         (local / "settings.local.json").write_text(json.dumps({"enabledPlugins": {"farmout@farmout": True}}))
         self.assertTrue(self.json("relay")["plugin"])
@@ -3439,6 +3441,72 @@ class RelayTest(CliBase):
         self.stop_failure(self.limited_session("s3", error=False), sid="s3")  # the file doesn't show it yet
         wait_until(lambda: len(self.json("ls")) == 2 and self.json("ls")[0]["state"] not in ("running", "queued"), 30)
         self.assertEqual(self.meta("codex-2")["imported"]["id"], "s3", "Claude Code's own words are enough")
+
+    def test_review4_the_test_lasts_auto_sees_a_new_limit_and_back_holds(self):
+        self.fo("relay", "on", "-w", "codex", "--auto")
+        new = self.home / ".claude" / "projects" / "-work" / "fresh.jsonl"  # Claude Code hasn't written it yet
+        self.fo("relay", "test", CLAUDE_CODE_SESSION_ID="fresh")
+        self.assertTrue(self.hook("say one", new, sid="fresh")["stopReason"].endswith("one"))
+        self.assertTrue(self.hook("say two", new, sid="fresh")["stopReason"].endswith("two"), "the test goes on")
+        self.fo("relay", "back")
+        # an older limit, its reset passed, is still the newest entry when StopFailure fires for a new one
+        f = self.limited_session("s4", resets=time.time() - 60)
+        self.stop_failure(f, sid="s4")
+        wait_until(lambda: any(r["name"] != "codex-1" for r in self.json("ls")), 30)
+        [carried] = [r for r in self.json("ls") if r["name"] != "codex-1"]
+        self.assertEqual(self.meta(carried["name"])["imported"]["id"], "s4", "Claude Code's own words name the new one")
+        wait_until(lambda: all(r["state"] not in ("running", "queued") for r in self.json("ls")), 30)
+        runs = len(self.runs())
+        self.fo("relay", "back")
+        self.limited_session("s4")  # the file now shows the limit; StopFailure comes again after `relay back`
+        self.stop_failure(f, sid="s4")
+        time.sleep(1)
+        self.assertEqual(len(self.runs()), runs, "after `relay back`, that limit isn't carried on again")
+
+    def test_review4_a_prompt_waits_while_the_carry_on_starts(self):
+        import fcntl
+        self.fo("relay", "on", "-w", "codex")
+        f = self.limited_session()
+        lockdir = self.state / "relay"
+        lockdir.mkdir(parents=True, exist_ok=True)
+        with open(lockdir / "s1.lock", "a") as held:
+            fcntl.flock(held, fcntl.LOCK_EX)  # what the StopFailure hook holds while it sets up
+            event = json.dumps({"session_id": "s1", "transcript_path": str(f), "cwd": str(self.work),
+                                "prompt": "say waited"})
+            p = subprocess.Popen([sys.executable, str(SERVER), "relay", "hook"], stdin=subprocess.PIPE,
+                                 stdout=subprocess.PIPE, text=True, env=self.env, cwd=self.work)
+            p.stdin.write(event)
+            p.stdin.close()
+            time.sleep(1.5)
+            fcntl.flock(held, fcntl.LOCK_UN)
+        out = p.stdout.read()
+        p.wait(timeout=60)
+        p.stdout.close()
+        self.assertTrue(json.loads(out)["stopReason"].endswith("waited"), "relayed, not let through to Claude")
+
+    def test_review4_the_catch_up_names_only_what_changed_meanwhile(self):
+        self.fo("relay", "on", "--write", "-w", "codex")
+        self.repo()
+        (self.work / "sub").mkdir()
+        for name in ("old.py", "gone.py", "ab c.txt"):
+            (self.work / "sub" / name).write_text("x\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "more")
+        (self.work / "sub" / "gone.py").unlink()  # deleted before the relay began
+        (self.work / "sub" / bytes([99, 97, 102, 0xe9]).decode("latin-1")).write_text("odd name")
+        f = self.limited_session()
+        event = {"session_id": "s1", "transcript_path": str(f), "cwd": str(self.work / "sub"), "prompt": "write new.py 1"}
+        self.fo("relay", "hook", input=json.dumps(event), cwd=self.work / "sub")
+        self.git("mv", "sub/ab c.txt", "sub/d.txt")
+        self.fo("relay", "back")
+        event["prompt"] = "back?"
+        ctx = json.loads(self.fo("relay", "hook", input=json.dumps(event), cwd=self.work / "sub").stdout)
+        ctx = ctx["hookSpecificOutput"]["additionalContext"]
+        changed = re.search(r"Changed since then: (.*)\.", ctx).group(1).split(", ")
+        self.assertIn("sub/new.py", changed)
+        self.assertIn("sub/d.txt", changed)
+        self.assertNotIn("sub/gone.py", changed, "deleted before the relay began")
+        self.assertNotIn("c.txt", " ".join(changed).replace("sub/d.txt", ""), "a rename's old path isn't a file")
 
     def test_back_early_and_a_new_limit_starts_afresh(self):
         self.fo("relay", "on", "--write", "-w", "codex")

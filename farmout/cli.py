@@ -197,8 +197,8 @@ def claude_hooks(event="UserPromptSubmit"):
 
 def plugin_on(cwd=None):
     """Is the farmout plugin enabled in Claude Code here (so its relay hook runs)? The most specific settings file
-    that says wins: this project's settings.local.json, then its settings.json, then yours. Without cwd, yours only
-    (what `farmout relay install`, which writes your own settings, has to go by)."""
+    that says wins: this project's settings.local.json, then its settings.json, then yours. Without cwd, yours only.
+    (With both the plugin's hook and an installed one, a prompt is still relayed once.)"""
     files = [native.claude_home() / "settings.json"]
     if cwd:
         root = project_root(cwd)
@@ -316,10 +316,15 @@ def cmd_relay(a):
         return relay.main()
     if a.action == "test":
         sid = os.environ.get("CLAUDE_CODE_SESSION_ID")  # set for commands run from Claude Code (`!farmout relay test`)
-        found = [x for x in native.find(a.cwd, "claude", sid)] if sid else native.find(a.cwd, "claude")
-        if not found:
-            raise ValueError("no Claude Code session here to test with: run it as `!farmout relay test` in Claude Code")
-        s, cfg = found[0], relay.config()
+        if sid:  # that very session, even before its file holds a prompt
+            s = {"id": sid, "file": "", "cwd": a.cwd}
+        else:
+            found = native.find(a.cwd, "claude")
+            if not found:
+                raise ValueError("no Claude Code session here to test with: run it as `!farmout relay test` in "
+                                 "Claude Code")
+            s = found[0]
+        cfg = relay.config()
         until = relay.test(s["id"], s["file"], s["cwd"], a.minutes)
         if a.json:
             return emit(a, {"session": s["id"], "until": until, "relay": cfg})
@@ -329,7 +334,7 @@ def cmd_relay(a):
               + ("" if cfg.get("on") else "\nThe relay is off: `farmout relay on` first, or you only get a line about it."))
         return 0
     if a.action in ("install", "uninstall"):
-        if a.action == "install" and plugin_on():
+        if a.action == "install" and plugin_on() and plugin_on(a.cwd):  # on for you, and not turned off here
             print("The farmout plugin is on in Claude Code and has the hook already; nothing added.")
             return 0
         print(install_hook(remove=a.action == "uninstall"))
