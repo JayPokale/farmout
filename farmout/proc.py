@@ -8,6 +8,7 @@ import time
 
 TIMEOUT = int(os.environ.get("FARMOUT_TIMEOUT", 1200))
 GRACE = 10  # seconds a stopped worker gets after TERM before what's left of its process group is killed
+SETTLE = 1  # seconds what the worker started gets once the worker itself is gone
 running, cancelled = {}, set()  # key (an MCP request id, a session name) -> live processes; cancelled keys
 lock = threading.Lock()
 
@@ -28,17 +29,20 @@ def group_alive(p):
 
 
 def stop(p, grace=None):
-    """TERM the worker's process group, give it `grace` seconds, then KILL what's left of the group: a CLI that
-    ignores TERM, and children that ignore it or outlive the CLI (they'd otherwise run on, unowned)."""
+    """TERM the worker's process group, give the CLI `grace` seconds and, once it's gone, what it started a moment
+    more, then KILL what's left of the group: a CLI that ignores TERM, and children that ignore it or outlive the CLI
+    (they'd otherwise run on, unowned). The group isn't waited for to the end: a zombie left in it (macOS keeps them
+    a while) answers killpg as if alive, and would hold every stop for the whole grace."""
     grace = GRACE if grace is None else grace
     signal_group(p)
-    deadline = time.time() + grace
     try:
         p.wait(grace)
     except subprocess.TimeoutExpired:
         pass
-    while group_alive(p) and time.time() < deadline:
-        time.sleep(0.1)
+    else:
+        deadline = time.time() + min(SETTLE, grace)
+        while group_alive(p) and time.time() < deadline:
+            time.sleep(0.05)
     signal_group(p, signal.SIGKILL)
     try:
         p.wait(5)

@@ -138,6 +138,9 @@ def replay(top, c, workers=None, group=None, models=None, lanes=None, title="", 
         shutil.rmtree(tmp, ignore_errors=True)
         for name in sessions.names():  # their worktree is gone, so in `farmout ls` they'd only be clutter
             if name.startswith(f"{group}-"):
+                deadline = time.time() + 10  # a runner may hold its lock a moment after its answer is recorded
+                while sessions.busy(name) and time.time() < deadline:
+                    time.sleep(0.05)
                 with contextlib.suppress(RuntimeError, OSError):
                     sessions.remove(name)
 

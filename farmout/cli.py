@@ -1329,11 +1329,12 @@ def cmd_doctor(a):
                   f"{cfg.get('worker') or 'the first ready worker not on its login'}.")
     from . import clip
     have = clip.tools()
-    if not have["copy"] or not have["image"]:
-        print("Clipboard: " + ("no copy tool, so `farmout copy` and `y` in the ui go through your terminal (OSC 52); "
-                               if not have["copy"] else "")
-              + ("nothing to read an image with, so `farmout paste` and Ctrl+P can't work" if not have["image"] else "")
-              + ". Install wl-clipboard (Wayland) or xclip (X11).")
+    gaps = ([] if have["copy"] else ["no copy tool, so `farmout copy` and `y` in the ui go through your terminal (OSC 52)"]) \
+        + ([] if have["image"] else ["nothing to read an image with, so `farmout paste` and Ctrl+P can't work"])
+    if gaps:  # macOS always has osascript to read an image with, and pbcopy unless PATH hides it
+        print("Clipboard: " + "; ".join(gaps) + ". " + ("pbcopy comes with macOS: is /usr/bin on your PATH?"
+                                                       if sys.platform == "darwin" else
+                                                       "Install wl-clipboard (Wayland) or xclip (X11)."))
     if not a.live:
         print("Logins are not checked. `farmout doctor --live` sends each ready worker one tiny prompt.")
         return 0

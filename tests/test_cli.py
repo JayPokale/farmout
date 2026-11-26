@@ -135,10 +135,9 @@ class SessionTest(CliBase):
                                    "except KeyboardInterrupt:\n    pass\nproc.stop = real\nproc.kill_all()\n"
                                    "time.sleep(0.5)\nprint('done')")
         self.assertEqual(out.strip(), "done")
-        left = [d.name for d in Path("/proc").iterdir() if d.name.isdigit()
-                and (lambda c: c == f"sleep\0{mark}\0")(self.cmdline(d))]
+        left = self.procs(f"sleep {mark}")
         for pid in left:  # tidy up before failing
-            os.kill(int(pid), 9)
+            os.kill(pid, 9)
         self.assertEqual(left, [], "kill_all() found the worker")
 
     def test_review12_a_child_left_when_a_stop_broke_off_is_still_killed(self):
@@ -152,10 +151,24 @@ class SessionTest(CliBase):
                                    "except KeyboardInterrupt:\n    pass\nproc.stop = real\nproc.kill_all(grace=1)\n"
                                    "time.sleep(0.5)\nprint('done')")
         self.assertEqual(out.strip(), "done")
-        left = [d.name for d in Path("/proc").iterdir() if d.name.isdigit() and self.cmdline(d) == f"sleep\0{mark}\0"]
+        left = self.procs(f"sleep {mark}")
         for pid in left:  # tidy up before failing
-            os.kill(int(pid), 9)
+            os.kill(pid, 9)
         self.assertEqual(left, [], "kill_all() killed what was left of its process group")
+
+    def test_once_the_cli_is_gone_its_group_doesnt_hold_a_stop_for_the_whole_grace(self):
+        # a zombie left in the group (macOS keeps them a while) answers killpg like a live process; so does a child
+        # that ignores TERM: either way the stop goes on a second after the CLI exits, and KILLs what's left
+        mark = "37.2514"
+        out = in_farmout(self.env, "import subprocess\nfrom farmout import proc\n"
+                                   f"p = subprocess.Popen(['sh', '-c', \"(trap '' TERM; exec sleep {mark}) & sleep 30\"], "
+                                   "start_new_session=True)\ntime.sleep(0.5)\nt = time.time()\nproc.stop(p, grace=10)\n"
+                                   "print(round(time.time() - t))")
+        left = self.procs(f"sleep {mark}")
+        for pid in left:  # tidy up before failing
+            os.kill(pid, 9)
+        self.assertLessEqual(int(out.strip()), 2, "the stop waited on the group, not the CLI")
+        self.assertEqual(left, [], "what the CLI left behind was killed")
 
     def test_review13_a_worker_taken_down_is_forgotten_even_if_reading_its_output_broke_off(self):
         out = in_farmout(self.env, "from farmout import proc\n"
@@ -166,11 +179,20 @@ class SessionTest(CliBase):
         self.assertEqual(out.strip(), "0", "its process group id may be reused: kill_all() mustn't signal it")
 
     @staticmethod
-    def cmdline(d):
-        try:
-            return (d / "cmdline").read_bytes().decode(errors="replace")
-        except OSError:
-            return ""
+    def procs(cmd):
+        """pids of the live processes running exactly `cmd` (its words joined by spaces): /proc on Linux, ps on macOS,
+        which has no /proc. A zombie's command line is empty or bracketed, so it never matches."""
+        if Path("/proc/self").exists():
+            found = []
+            for d in Path("/proc").iterdir():
+                try:
+                    if d.name.isdigit() and (d / "cmdline").read_bytes() == cmd.replace(" ", "\0").encode() + b"\0":
+                        found.append(int(d.name))
+                except OSError:  # gone meanwhile
+                    pass
+            return found
+        rows = subprocess.run(["ps", "-A", "-o", "pid=,command="], capture_output=True, text=True).stdout.splitlines()
+        return [int(r.split(None, 1)[0]) for r in map(str.strip, rows) if r.split(None, 1)[1:] == [cmd]]
 
     def test_review8_cancel_never_stops_another_messages_turn(self):
         self.fo("run", "codex", "say a", "-n", "s")
@@ -4244,9 +4266,13 @@ class ClipTest(CliBase):
 
     def test_doctor_says_when_no_clipboard_tool_is_there(self):
         bare = self.fo("doctor", PATH=str(self.bindir)).stdout
-        self.assertIn("Clipboard: no copy tool, so `farmout copy` and `y` in the ui go through your terminal (OSC 52); "
-                      "nothing to read an image with, so `farmout paste` and Ctrl+P can't work. Install wl-clipboard "
-                      "(Wayland) or xclip (X11).", bare)
+        if sys.platform == "darwin":  # osascript reads an image there, and it's always at hand
+            self.assertIn("Clipboard: no copy tool, so `farmout copy` and `y` in the ui go through your terminal "
+                          "(OSC 52). pbcopy comes with macOS: is /usr/bin on your PATH?", bare)
+        else:
+            self.assertIn("Clipboard: no copy tool, so `farmout copy` and `y` in the ui go through your terminal "
+                          "(OSC 52); nothing to read an image with, so `farmout paste` and Ctrl+P can't work. Install "
+                          "wl-clipboard (Wayland) or xclip (X11).", bare)
         self.clipboard()
         self.assertNotIn("Clipboard:", self.fo("doctor", PATH=str(self.bindir)).stdout)
 

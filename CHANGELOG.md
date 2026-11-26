@@ -79,6 +79,9 @@ All notable changes to farmout are recorded here. The format follows [Keep a Cha
 
 ### Fixed
 
+- `farmout stop` took 10 seconds on macOS with Python 3.14: it waited for the worker's whole process group, and a zombie left in it answers like a live process. The worker's CLI still gets the full grace; once it's gone, what it started gets a second more and is then killed.
+- `farmout doctor` on macOS, with no copy tool on the PATH, printed "(OSC 52); ." and suggested Linux packages; it now names only what's missing, and points at pbcopy.
+- `farmout bench` could leave its review sessions in `farmout ls`: a session's runner can hold its lock a moment after the answer is recorded, and the cleanup gave up on those. It now waits for them.
 - `farmout rm` (and `rm --idle`) stopped at the first session it couldn't remove; it now says why for that one, removes the rest, and exits with 1.
 - A removal that failed partway (a file that wouldn't delete) left half a session that `farmout rm` could no longer see or retry. A session's folder now moves to the state folder's trash in one step before it's deleted, under the session's runner lock, and a session with messages waiting, or branches working in its worktree, isn't removed at all.
 - `farmout doctor` said fallback was off when the repository's settings file couldn't be read; it says the settings can't be read, and why.
