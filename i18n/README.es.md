@@ -1,16 +1,36 @@
-# farmout
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/es/banner-dark.svg">
+    <img src="../assets/readme/es/banner-light.svg" width="100%" alt="farmout: Llega menos al límite. Sigue trabajando cuando llegues.">
+  </picture>
+</h1>
 
-[English](../README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · **Español**
+<p align="center">
+  <a href="https://github.com/JayPokale/farmout/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/JayPokale/farmout/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
+  <a href="https://github.com/JayPokale/farmout/stargazers"><img src="https://img.shields.io/github/stars/JayPokale/farmout?style=flat-square&color=f2a65a&label=stars" alt="GitHub stars"></a>
+  <img src="https://img.shields.io/badge/python-3.9%2B-5ec4b6?style=flat-square" alt="Python 3.9+">
+  <img src="https://img.shields.io/badge/dependencies-0-a78bfa?style=flat-square" alt="Zero dependencies">
+  <img src="https://img.shields.io/badge/MCP%20%C2%B7%20ACP-stdio-f47c7c?style=flat-square" alt="MCP server and ACP agent">
+  <a href="../LICENSE"><img src="https://img.shields.io/badge/license-MIT-6f8bff?style=flat-square" alt="MIT license"></a>
+  <a href="https://github.com/JayPokale"><img src="https://img.shields.io/github/followers/JayPokale?style=flat-square&logo=github&color=ece8df&label=follow%20%40JayPokale" alt="Follow @JayPokale on GitHub"></a>
+  <a href="https://github.com/sponsors/JayPokale"><img src="https://img.shields.io/badge/Sponsor-EA4AAA?style=flat-square&logo=githubsponsors&logoColor=white" alt="Sponsor on GitHub"></a>
+  <a href="https://buymeacoffee.com/jaypokale3b"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=flat-square&logo=buymeacoffee&logoColor=black" alt="Buy me a coffee"></a>
+</p>
 
-**Llega menos al límite. Sigue trabajando cuando llegues.**
+<p align="center">
+  <sub><a href="../README.md">English</a> &middot; <a href="README.zh-CN.md">简体中文</a> &middot; <a href="README.ja.md">日本語</a> &middot; <a href="README.ko.md">한국어</a> &middot; <b>Español</b></sub>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/es/stats-dark.svg">
+    <img src="../assets/readme/es/stats-light.svg" width="880" alt="Medido en los benchmarks de farmout · resultados en bruto publicados">
+  </picture>
+</p>
+
+<p align="center"><b>Llega menos al límite. Sigue trabajando cuando llegues.</b></p>
 
 farmout reparte el trabajo entre las suscripciones de IA que ya pagas: Claude, Codex, Gemini, GitHub Copilot, DeepSeek, una segunda cuenta de Claude y modelos locales. Dales las lecturas largas y las revisiones y la cuota de tu modelo principal durará más; cuando una llega a su límite de uso o su sesión caduca, la tarea pasa a la siguiente y la conversación va con ella. Conversaciones que puedes ramificar desde cualquier turno, revisión en paralelo, carreras que deciden tus pruebas y pipelines, desde tu terminal o dentro de Claude Code. De solo lectura por defecto y sin dependencias.
-
-[![CI](https://github.com/JayPokale/farmout/actions/workflows/ci.yml/badge.svg)](https://github.com/JayPokale/farmout/actions/workflows/ci.yml)
-![python](https://img.shields.io/badge/python-3.9%2B-3776ab)
-![dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)
-![MCP](https://img.shields.io/badge/MCP-stdio-6e56cf)
-![license](https://img.shields.io/badge/license-MIT-blue)
 
 > **Nota:** esta traducción es un resumen. Para todas las funciones (el worker de DeepSeek, skills, hooks, la tienda, los ajustes), consulta el [README en inglés](../README.md).
 
@@ -18,6 +38,15 @@ farmout reparte el trabajo entre las suscripciones de IA que ya pagas: Claude, C
 pipx install git+https://github.com/JayPokale/farmout
 cd your-repo && farmout bench --share   # ¿qué IA encuentra mejor los bugs reales de tu propio código?
 ```
+
+<p align="center">
+  <a href="https://buymeacoffee.com/jaypokale3b">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/es/strip-dark.svg">
+      <img src="../assets/readme/es/strip-light.svg" width="880" alt="farmout es gratis. Probarlo en cada suscripción, no.">
+    </picture>
+  </a>
+</p>
 
 <p align="center"><img src="../assets/limits-demo.gif" width="900" alt="Una ejecución real, acelerada solo mientras espera: farmout run claude inicia una conversación; con Claude sin sesión, farmout send pasa el siguiente turno a Codex, que responde con la conversación hasta ahí; luego farmout bench compara Claude Opus y Sonnet en tres correcciones pasadas y --apply deja al ganador como predeterminado"></p>
 
@@ -39,6 +68,63 @@ farmout convierte Claude Code en la **cabeza**. Planifica, divide un trabajo en 
 - clasificar 2.000 líneas va a **cualquier modelo compatible con OpenAI** (Ollama, vLLM, OpenRouter, Qwen, ...)
 
 Todo se ejecuta a la vez desde una única llamada a herramienta. Cada worker es la CLI oficial del proveedor, autenticada con tu propia suscripción, por lo que los workers de CLI no necesitan claves de API.
+
+<p align="center"><img src="../assets/readme/line.svg" width="100%" height="4" alt=""></p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/es/relay-dark.svg">
+    <img src="../assets/readme/es/relay-light.svg" width="880" alt="En el límite de Claude Code, sigue escribiendo.">
+  </picture>
+</p>
+
+<p align="center"><img src="../assets/readme/line.svg" width="100%" height="4" alt=""></p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/es/review-dark.svg">
+    <img src="../assets/readme/es/review-light.svg" width="880" alt="Cuatro suscripciones revisan un cambio.">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/es/race-dark.svg">
+    <img src="../assets/readme/es/race-light.svg" width="880" alt="Misma tarea, todos los modelos. Tus pruebas eligen al ganador.">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/es/bench-dark.svg">
+    <img src="../assets/readme/es/bench-light.svg" width="880" alt="¿Qué suscripción encuentra los bugs?">
+  </picture>
+</p>
+
+<p align="center"><img src="../assets/readme/line.svg" width="100%" height="4" alt=""></p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/es/tree-dark.svg">
+    <img src="../assets/readme/es/tree-light.svg" width="880" alt="Cada conversación es un árbol.">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/es/pipe-dark.svg">
+    <img src="../assets/readme/es/pipe-light.svg" width="880" alt="Pipelines: cada etapa empieza cuando acaba la anterior.">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/es/hub-dark.svg">
+    <img src="../assets/readme/es/hub-light.svg" width="880" alt="Úsalo desde donde ya trabajas.">
+  </picture>
+</p>
+
+<p align="center"><img src="../assets/readme/line.svg" width="100%" height="4" alt=""></p>
 
 ## La línea de comandos
 
@@ -127,3 +213,18 @@ Reinicia Claude Code. Los workers se detectan al iniciar. Para ver cuáles está
 ---
 
 Esta es una traducción abreviada. El [README](../README.md) en inglés es la referencia para la configuración, la herramienta `delegate`, notas de campo, las preguntas frecuentes y los benchmarks.
+
+<p align="center"><img src="../assets/readme/line.svg" width="100%" height="4" alt=""></p>
+
+<p align="center">
+  <a href="https://buymeacoffee.com/jaypokale3b">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/es/support-dark.svg">
+      <img src="../assets/readme/es/support-light.svg" width="880" alt="farmout es gratis. Probarlo en cada suscripción, no.">
+    </picture>
+  </a>
+</p>
+
+<p align="center"><a href="https://github.com/sponsors/JayPokale">💖 Patrocina en GitHub</a> (mensual o una vez) · <a href="https://buymeacoffee.com/jaypokale3b">☕ Invítame a un café</a></p>
+
+<p align="center"><a href="https://github.com/JayPokale/farmout/stargazers">⭐ Dale una estrella al repo</a>: no cuesta cuota. · <a href="https://github.com/JayPokale">Sigue a @JayPokale</a>para más herramientas.</p>

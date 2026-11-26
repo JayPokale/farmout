@@ -1,16 +1,36 @@
-# farmout
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/ko/banner-dark.svg">
+    <img src="../assets/readme/ko/banner-light.svg" width="100%" alt="farmout: 한도에 덜 걸리고, 걸려도 작업은 계속됩니다.">
+  </picture>
+</h1>
 
-[English](../README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · **한국어** · [Español](README.es.md)
+<p align="center">
+  <a href="https://github.com/JayPokale/farmout/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/JayPokale/farmout/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
+  <a href="https://github.com/JayPokale/farmout/stargazers"><img src="https://img.shields.io/github/stars/JayPokale/farmout?style=flat-square&color=f2a65a&label=stars" alt="GitHub stars"></a>
+  <img src="https://img.shields.io/badge/python-3.9%2B-5ec4b6?style=flat-square" alt="Python 3.9+">
+  <img src="https://img.shields.io/badge/dependencies-0-a78bfa?style=flat-square" alt="Zero dependencies">
+  <img src="https://img.shields.io/badge/MCP%20%C2%B7%20ACP-stdio-f47c7c?style=flat-square" alt="MCP server and ACP agent">
+  <a href="../LICENSE"><img src="https://img.shields.io/badge/license-MIT-6f8bff?style=flat-square" alt="MIT license"></a>
+  <a href="https://github.com/JayPokale"><img src="https://img.shields.io/github/followers/JayPokale?style=flat-square&logo=github&color=ece8df&label=follow%20%40JayPokale" alt="Follow @JayPokale on GitHub"></a>
+  <a href="https://github.com/sponsors/JayPokale"><img src="https://img.shields.io/badge/Sponsor-EA4AAA?style=flat-square&logo=githubsponsors&logoColor=white" alt="Sponsor on GitHub"></a>
+  <a href="https://buymeacoffee.com/jaypokale3b"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=flat-square&logo=buymeacoffee&logoColor=black" alt="Buy me a coffee"></a>
+</p>
 
-**한도에 덜 걸리고, 걸려도 작업은 계속됩니다.**
+<p align="center">
+  <sub><a href="../README.md">English</a> &middot; <a href="README.zh-CN.md">简体中文</a> &middot; <a href="README.ja.md">日本語</a> &middot; <b>한국어</b> &middot; <a href="README.es.md">Español</a></sub>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/ko/stats-dark.svg">
+    <img src="../assets/readme/ko/stats-light.svg" width="880" alt="farmout 자체 벤치마크로 측정 · 원본 결과도 모두 공개">
+  </picture>
+</p>
+
+<p align="center"><b>한도에 덜 걸리고, 걸려도 작업은 계속됩니다.</b></p>
 
 farmout은 이미 구독 중인 AI 서비스(Claude, Codex, Gemini, GitHub Copilot, DeepSeek, 두 번째 Claude 계정, 로컬 모델)에 작업을 맡깁니다. 긴 문서 읽기와 리뷰를 맡기면 주력 모델의 사용량이 오래가고, 어느 하나가 사용 한도에 걸리거나 로그인이 만료되면 작업은 대화와 함께 다음 모델로 넘어갑니다. 어느 턴에서든 분기할 수 있는 대화, 병렬 코드 리뷰, 테스트가 승자를 정하는 레이스, 파이프라인을 터미널에서도 Claude Code 안에서도 쓸 수 있습니다. 기본은 읽기 전용이고 의존성은 0개입니다.
-
-[![CI](https://github.com/JayPokale/farmout/actions/workflows/ci.yml/badge.svg)](https://github.com/JayPokale/farmout/actions/workflows/ci.yml)
-![python](https://img.shields.io/badge/python-3.9%2B-3776ab)
-![dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)
-![MCP](https://img.shields.io/badge/MCP-stdio-6e56cf)
-![license](https://img.shields.io/badge/license-MIT-blue)
 
 > **참고:** 이 번역은 요약본입니다. 모든 기능(DeepSeek 워커, 스킬, 훅, 스토어, 설정 등)은 [영어 README](../README.md)를 참고하세요.
 
@@ -18,6 +38,15 @@ farmout은 이미 구독 중인 AI 서비스(Claude, Codex, Gemini, GitHub Copil
 pipx install git+https://github.com/JayPokale/farmout
 cd your-repo && farmout bench --share   # 내 코드의 실제 버그를 가장 잘 찾는 AI는?
 ```
+
+<p align="center">
+  <a href="https://buymeacoffee.com/jaypokale3b">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/ko/strip-dark.svg">
+      <img src="../assets/readme/ko/strip-light.svg" width="880" alt="farmout은 무료입니다. 모든 구독에서 테스트하는 건 무료가 아닙니다.">
+    </picture>
+  </a>
+</p>
 
 <p align="center"><img src="../assets/limits-demo.gif" width="900" alt="실제 실행 녹화(기다리는 시간만 빠르게): farmout run claude로 대화를 시작하고, Claude가 로그아웃되자 farmout send가 다음 턴을 Codex에 넘기며 Codex는 지금까지의 대화를 바탕으로 답한다. 이어서 farmout bench가 과거 버그 수정 3건으로 Claude Opus와 Sonnet을 비교하고 --apply가 승자를 기본값으로 정한다"></p>
 
@@ -39,6 +68,63 @@ farmout는 Claude Code를 **헤드(head)** 로 만듭니다. 작업을 계획하
 - 2,000줄 분류 작업은 **임의의 OpenAI 호환 모델**(Ollama, vLLM, OpenRouter, Qwen 등)로 전달됩니다
 
 이 모든 작업은 단 한 번의 툴 호출로 동시에 실행됩니다. 각 워커는 사용자의 구독 계정으로 로그인된 각 벤더의 자체 CLI이므로 CLI 워커에는 API 키가 필요 없습니다.
+
+<p align="center"><img src="../assets/readme/line.svg" width="100%" height="4" alt=""></p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/ko/relay-dark.svg">
+    <img src="../assets/readme/ko/relay-light.svg" width="880" alt="Claude Code 한도에 걸려도 계속 입력하세요.">
+  </picture>
+</p>
+
+<p align="center"><img src="../assets/readme/line.svg" width="100%" height="4" alt=""></p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/ko/review-dark.svg">
+    <img src="../assets/readme/ko/review-light.svg" width="880" alt="네 개의 구독이 하나의 변경을 리뷰합니다.">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/ko/race-dark.svg">
+    <img src="../assets/readme/ko/race-light.svg" width="880" alt="같은 작업을 모든 모델이. 승자는 테스트가 정합니다.">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/ko/bench-dark.svg">
+    <img src="../assets/readme/ko/bench-light.svg" width="880" alt="어떤 구독이 버그를 찾을까요?">
+  </picture>
+</p>
+
+<p align="center"><img src="../assets/readme/line.svg" width="100%" height="4" alt=""></p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/ko/tree-dark.svg">
+    <img src="../assets/readme/ko/tree-light.svg" width="880" alt="모든 대화는 트리입니다.">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/ko/pipe-dark.svg">
+    <img src="../assets/readme/ko/pipe-light.svg" width="880" alt="파이프라인: 앞 단계가 끝나면 다음 단계가 시작됩니다.">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/ko/hub-dark.svg">
+    <img src="../assets/readme/ko/hub-light.svg" width="880" alt="이미 일하는 곳에서 사용하세요.">
+  </picture>
+</p>
+
+<p align="center"><img src="../assets/readme/line.svg" width="100%" height="4" alt=""></p>
 
 ## 명령줄
 
@@ -127,3 +213,18 @@ Claude Code를 재시작하세요. 워커는 시작 시 자동으로 감지됩�
 ---
 
 이 문서는 요약 번역본입니다. 환경 설정, `delegate` 도구, 실무 참고 사항(field notes), FAQ 및 벤치마크에 대한 자세한 내용은 영문 [README](../README.md)를 참고하세요.
+
+<p align="center"><img src="../assets/readme/line.svg" width="100%" height="4" alt=""></p>
+
+<p align="center">
+  <a href="https://buymeacoffee.com/jaypokale3b">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/ko/support-dark.svg">
+      <img src="../assets/readme/ko/support-light.svg" width="880" alt="farmout은 무료입니다. 모든 구독에서의 테스트는 아닙니다.">
+    </picture>
+  </a>
+</p>
+
+<p align="center"><a href="https://github.com/sponsors/JayPokale">💖 GitHub에서 후원하기</a> (매월 또는 한 번) · <a href="https://buymeacoffee.com/jaypokale3b">☕ 커피 한 잔 사 주기</a></p>
+
+<p align="center"><a href="https://github.com/JayPokale/farmout/stargazers">⭐ 저장소에 스타 주기</a>: 사용량은 들지 않습니다. · <a href="https://github.com/JayPokale">@JayPokale 팔로우</a>하고 다른 도구도 만나 보세요.</p>

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="330" viewBox="0 0 880 330" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans',Helvetica,Arial,sans-serif" xml:space="preserve" role="img" aria-label="Bugs found out of 32 (23 planted, 9 real regressions from open-source projects) in farmout's benchmark: antigravity 32, claude (Sonnet) 32, copilot 30, codex 29. Typical review time: claude 23 to 94 seconds, copilot 49 seconds to 4 minutes, codex 78 seconds to 5 minutes, antigravity 5 to 11 minutes.">
+<rect x="0.5" y="0.5" width="879" height="329" rx="14" fill="#f7f5f0" stroke="#dbd6ca"/>
+<text x="28" y="40" font-size="19" font-weight="700" fill="#15171f">¿Qué suscripción encuentra los bugs?</text><text x="852" y="40" font-size="13" fill="#575b69" text-anchor="end">farmout bench</text>
+<text x="28" y="66" font-size="13.5" fill="#575b69">32 bugs: 23 sembrados y 9 regresiones reales de proyectos de código abierto</text>
+<text x="180" y="111" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace" font-size="14" font-weight="700" fill="#0f8478" text-anchor="end">antigravity</text>
+<rect x="196" y="96" width="440" height="20" rx="5" fill="#ebe7de"/>
+<rect x="196" y="96" width="440" height="20" rx="5" fill="#0f8478"><animate attributeName="width" values="0;0;440;440;0;0" keyTimes="0.0000;0.0600;0.3800;0.9500;0.9850;1.0000" dur="10s" repeatCount="indefinite"/></rect>
+<text x="650" y="111" font-size="15"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0.0000;0.3800;0.4000;0.9500;0.9700;1.0000" dur="10s" repeatCount="indefinite"/><tspan font-weight="700" fill="#15171f">32</tspan><tspan fill="#575b69"> / 32</tspan></text>
+<text x="852" y="111" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace" font-size="12" fill="#8c8f9a" text-anchor="end">5–11 min</text>
+<text x="180" y="157" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace" font-size="14" font-weight="700" fill="#c4433e" text-anchor="end">claude (Sonnet)</text>
+<rect x="196" y="142" width="440" height="20" rx="5" fill="#ebe7de"/>
+<rect x="196" y="142" width="440" height="20" rx="5" fill="#c4433e"><animate attributeName="width" values="0;0;440;440;0;0" keyTimes="0.0000;0.0600;0.3800;0.9500;0.9850;1.0000" dur="10s" repeatCount="indefinite"/></rect>
+<text x="650" y="157" font-size="15"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0.0000;0.3800;0.4000;0.9500;0.9700;1.0000" dur="10s" repeatCount="indefinite"/><tspan font-weight="700" fill="#15171f">32</tspan><tspan fill="#575b69"> / 32</tspan></text>
+<text x="852" y="157" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace" font-size="12" fill="#8c8f9a" text-anchor="end">23–94 s</text>
+<text x="180" y="203" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace" font-size="14" font-weight="700" fill="#6a4fd0" text-anchor="end">copilot</text>
+<rect x="196" y="188" width="440" height="20" rx="5" fill="#ebe7de"/>
+<rect x="196" y="188" width="412.5" height="20" rx="5" fill="#6a4fd0"><animate attributeName="width" values="0;0;412.5;412.5;0;0" keyTimes="0.0000;0.0600;0.3800;0.9500;0.9850;1.0000" dur="10s" repeatCount="indefinite"/></rect>
+<text x="650" y="203" font-size="15"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0.0000;0.3800;0.4000;0.9500;0.9700;1.0000" dur="10s" repeatCount="indefinite"/><tspan font-weight="700" fill="#15171f">30</tspan><tspan fill="#575b69"> / 32</tspan></text>
+<text x="852" y="203" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace" font-size="12" fill="#8c8f9a" text-anchor="end">49 s–4 min</text>
+<text x="180" y="249" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace" font-size="14" font-weight="700" fill="#b4621b" text-anchor="end">codex</text>
+<rect x="196" y="234" width="440" height="20" rx="5" fill="#ebe7de"/>
+<rect x="196" y="234" width="398.8" height="20" rx="5" fill="#b4621b"><animate attributeName="width" values="0;0;398.8;398.8;0;0" keyTimes="0.0000;0.0600;0.3800;0.9500;0.9850;1.0000" dur="10s" repeatCount="indefinite"/></rect>
+<text x="650" y="249" font-size="15"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0.0000;0.3800;0.4000;0.9500;0.9700;1.0000" dur="10s" repeatCount="indefinite"/><tspan font-weight="700" fill="#15171f">29</tspan><tspan fill="#575b69"> / 32</tspan></text>
+<text x="852" y="249" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace" font-size="12" fill="#8c8f9a" text-anchor="end">78 s–5 min</text>
+<text x="852" y="86" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace" font-size="11" fill="#8c8f9a" text-anchor="end">tiempo por revisión</text>
+<text x="28" y="308" font-size="12.5" fill="#8c8f9a">En tu propio código: farmout bench repite tus correcciones pasadas; --apply hace de los ganadores el predeterminado.</text>
+</svg>

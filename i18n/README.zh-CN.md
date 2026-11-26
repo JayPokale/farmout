@@ -1,16 +1,36 @@
-# farmout
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/zh-CN/banner-dark.svg">
+    <img src="../assets/readme/zh-CN/banner-light.svg" width="100%" alt="farmout: 少撞额度上限。 撞上了也能接着干。">
+  </picture>
+</h1>
 
-[English](../README.md) · **简体中文** · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md)
+<p align="center">
+  <a href="https://github.com/JayPokale/farmout/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/JayPokale/farmout/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
+  <a href="https://github.com/JayPokale/farmout/stargazers"><img src="https://img.shields.io/github/stars/JayPokale/farmout?style=flat-square&color=f2a65a&label=stars" alt="GitHub stars"></a>
+  <img src="https://img.shields.io/badge/python-3.9%2B-5ec4b6?style=flat-square" alt="Python 3.9+">
+  <img src="https://img.shields.io/badge/dependencies-0-a78bfa?style=flat-square" alt="Zero dependencies">
+  <img src="https://img.shields.io/badge/MCP%20%C2%B7%20ACP-stdio-f47c7c?style=flat-square" alt="MCP server and ACP agent">
+  <a href="../LICENSE"><img src="https://img.shields.io/badge/license-MIT-6f8bff?style=flat-square" alt="MIT license"></a>
+  <a href="https://github.com/JayPokale"><img src="https://img.shields.io/github/followers/JayPokale?style=flat-square&logo=github&color=ece8df&label=follow%20%40JayPokale" alt="Follow @JayPokale on GitHub"></a>
+  <a href="https://github.com/sponsors/JayPokale"><img src="https://img.shields.io/badge/Sponsor-EA4AAA?style=flat-square&logo=githubsponsors&logoColor=white" alt="Sponsor on GitHub"></a>
+  <a href="https://buymeacoffee.com/jaypokale3b"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=flat-square&logo=buymeacoffee&logoColor=black" alt="Buy me a coffee"></a>
+</p>
 
-**少撞额度上限；撞上了也能接着干。**
+<p align="center">
+  <sub><a href="../README.md">English</a> &middot; <b>简体中文</b> &middot; <a href="README.ja.md">日本語</a> &middot; <a href="README.ko.md">한국어</a> &middot; <a href="README.es.md">Español</a></sub>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/zh-CN/stats-dark.svg">
+    <img src="../assets/readme/zh-CN/stats-light.svg" width="880" alt="来自 farmout 自己的基准测试 · 原始结果均已提交">
+  </picture>
+</p>
+
+<p align="center"><b>少撞额度上限；撞上了也能接着干。</b></p>
 
 farmout 把工作交给你已经付费的各个 AI 订阅：Claude、Codex、Gemini、GitHub Copilot、DeepSeek、第二个 Claude 账号、本地模型。把长篇阅读和代码审查交给它们，主力模型的额度就能撑得更久；其中某个订阅触及用量上限或登录失效时，任务会交给下一个，对话也一起带过去。可以从任意一轮分叉的对话、并行代码审查、由你的测试裁定胜负的竞速，还有流水线，在终端里或在 Claude Code 内部都能用。默认只读，零依赖。
-
-[![CI](https://github.com/JayPokale/farmout/actions/workflows/ci.yml/badge.svg)](https://github.com/JayPokale/farmout/actions/workflows/ci.yml)
-![python](https://img.shields.io/badge/python-3.9%2B-3776ab)
-![dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)
-![MCP](https://img.shields.io/badge/MCP-stdio-6e56cf)
-![license](https://img.shields.io/badge/license-MIT-blue)
 
 > **公开预览版**：欢迎试用，遇到问题请到 [Discussions](https://github.com/JayPokale/farmout/discussions) 告诉我们；也可以给仓库点个 Star 或 Watch，0.1.0 发布时就能收到通知。
 
@@ -18,6 +38,15 @@ farmout 把工作交给你已经付费的各个 AI 订阅：Claude、Codex、Gem
 pipx install git+https://github.com/JayPokale/farmout
 cd your-repo && farmout bench --share   # 哪个 AI 订阅最能在你自己的代码里找出真实的 bug？
 ```
+
+<p align="center">
+  <a href="https://buymeacoffee.com/jaypokale3b">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/zh-CN/strip-dark.svg">
+      <img src="../assets/readme/zh-CN/strip-light.svg" width="880" alt="farmout 是免费的。在每个订阅上测试它可不免费。">
+    </picture>
+  </a>
+</p>
 
 <p align="center"><img src="../assets/limits-demo.gif" width="900" alt="真实运行的录屏，只有等待的部分被加速：farmout run claude 开始一段对话；Claude 退出登录后，farmout send 把下一轮交给 Codex，Codex 根据此前的对话作答；接着 farmout bench 在三个过去的 bug 修复上比较 Claude Opus 和 Sonnet，--apply 把胜者设为默认"></p>
 
@@ -33,6 +62,63 @@ cd your-repo && farmout bench --share   # 哪个 AI 订阅最能在你自己的�
 - **技能、钩子和商店**：在任意 worker 上运行 `SKILL.md` 技能（Claude Code、Codex 和 Copilot 通用的格式），挂接 farmout 的各类事件，还能安装经过审核的钩子、技能和工具，每个文件都用 SHA-256 锁定。
 
 你为 Claude 付了费，可能还订阅了 ChatGPT、Google AI、GitHub Copilot、第二个 Claude 席位，或者在 GPU 上跑着开源模型。它们各自待在自己的终端里，一天中的大部分时间都闲着。farmout 以你的身份驱动这些服务的官方 CLI，让它们并行干活、互相检查，在同一项工作上轮流接力。不需要 API Key，没有额外账单，也没有任何依赖：纯 Python 标准库实现，在把账号托付给它之前，你可以先把代码通读一遍。
+
+<p align="center"><img src="../assets/readme/line.svg" width="100%" height="4" alt=""></p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/zh-CN/relay-dark.svg">
+    <img src="../assets/readme/zh-CN/relay-light.svg" width="880" alt="撞上 Claude Code 的额度上限，照样接着打字。">
+  </picture>
+</p>
+
+<p align="center"><img src="../assets/readme/line.svg" width="100%" height="4" alt=""></p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/zh-CN/review-dark.svg">
+    <img src="../assets/readme/zh-CN/review-light.svg" width="880" alt="四个订阅同时审查一处改动。">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/zh-CN/race-dark.svg">
+    <img src="../assets/readme/zh-CN/race-light.svg" width="880" alt="同一个任务，每个模型都做一遍，由你的测试裁定胜负。">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/zh-CN/bench-dark.svg">
+    <img src="../assets/readme/zh-CN/bench-light.svg" width="880" alt="哪个订阅最能找出 bug？">
+  </picture>
+</p>
+
+<p align="center"><img src="../assets/readme/line.svg" width="100%" height="4" alt=""></p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/zh-CN/tree-dark.svg">
+    <img src="../assets/readme/zh-CN/tree-light.svg" width="880" alt="每段对话都是一棵树。">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/zh-CN/pipe-dark.svg">
+    <img src="../assets/readme/zh-CN/pipe-light.svg" width="880" alt="流水线：上一阶段结束，下一阶段就开始。">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/zh-CN/hub-dark.svg">
+    <img src="../assets/readme/zh-CN/hub-light.svg" width="880" alt="在你常用的地方驱动它。">
+  </picture>
+</p>
+
+<p align="center"><img src="../assets/readme/line.svg" width="100%" height="4" alt=""></p>
 
 ## 安装
 
@@ -525,3 +611,18 @@ farmout 在你的机器上以你的登录身份，按各厂商文档中说明的
 [MIT](../LICENSE)
 
 如果 farmout 帮你省下了额度，欢迎[给仓库点个 Star](https://github.com/JayPokale/farmout/stargazers)：这个不花额度。
+
+<p align="center"><img src="../assets/readme/line.svg" width="100%" height="4" alt=""></p>
+
+<p align="center">
+  <a href="https://buymeacoffee.com/jaypokale3b">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/zh-CN/support-dark.svg">
+      <img src="../assets/readme/zh-CN/support-light.svg" width="880" alt="farmout 是免费的。 在每个订阅上测试它可不免费。">
+    </picture>
+  </a>
+</p>
+
+<p align="center"><a href="https://github.com/sponsors/JayPokale">💖 在 GitHub 上赞助</a> （按月或一次性） · <a href="https://buymeacoffee.com/jaypokale3b">☕ 请我喝杯咖啡</a></p>
+
+<p align="center"><a href="https://github.com/JayPokale/farmout/stargazers">⭐ 给仓库点个星</a>: 不花额度。 · <a href="https://github.com/JayPokale">关注 @JayPokale</a>，看看更多工具。</p>
